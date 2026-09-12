@@ -72,7 +72,7 @@ export default function Scans() {
   async function deleteJob(id) { try { await api.scans.delete(id); setSelectedId(null); setDetail(null); await loadJobs(); } catch (e) { setError(e.message); } }
   async function doExplain() {
     setExplain({ loading: true, md: null });
-    try { const r = await api.llm.explainJob(selectedId); setExplain({ loading: false, md: r.explanation || r.text || r.raw || '(no explanation)' }); }
+    try { const r = await api.llm.explainJob(selectedId); setExplain({ loading: false, md: r.markdown || r.explanation || '(no explanation)' }); }
     catch (e) { setExplain({ loading: false, md: 'error: ' + e.message }); }
   }
 
@@ -176,7 +176,7 @@ export default function Scans() {
           {tab === 'findings' && (
             <div className="findings-pad">
               {(job.findings || []).length === 0 ? <div className="io-empty" style={{ fontFamily: 'var(--font-mono)', fontSize: 13 }}>No findings.</div> :
-                job.findings.slice().sort((a, b) => SEV_ORDER[a.severity] - SEV_ORDER[b.severity]).map((f, i) => (
+                job.findings.slice().sort((a, b) => (SEV_ORDER[a.severity] ?? 9) - (SEV_ORDER[b.severity] ?? 9)).map((f, i) => (
                   <div key={i} className="finding">
                     <div className="finding__top"><Sev s={f.severity} /><span className="mono truncate" style={{ fontSize: 11, color: 'var(--text-faint)', maxWidth: 280 }} title={f.target}>{f.target}</span></div>
                     <div className="finding__title">{f.title}</div>

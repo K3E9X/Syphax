@@ -25,7 +25,7 @@ export default function Surface() {
   }, [engId]);
 
   const openPorts = (h) => (h.ports || []).filter((p) => p.state === 'open').length;
-  const shown = hosts.filter((h) => !q || h.host.includes(q.toLowerCase()));
+  const shown = hosts.filter((h) => !q || (h.host || '').toLowerCase().includes(q.toLowerCase()));
   const h = hosts.find((x) => x.host === sel);
   const totEndpoints = hosts.reduce((n, x) => n + (x.endpoints || []).length, 0);
   const totParams = hosts.reduce((n, x) => n + (x.endpoints || []).filter((e) => (e.params || []).length).length, 0);

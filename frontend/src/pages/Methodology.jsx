@@ -25,7 +25,7 @@ export default function Methodology() {
     if (engId) {
       setStandalone(false);
       api.engagements.coverage(engId).then((r) => {
-        const c = (r.categories || []).filter((g) => g.items.length);
+        const c = (r.categories || []).filter((g) => (g.items || []).length);
         setCats(c);
         setOpen(c.map((x) => x.cat));
       }).catch(() => setCats([]));

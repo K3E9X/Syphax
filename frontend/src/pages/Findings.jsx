@@ -112,7 +112,7 @@ export default function Findings() {
           <div className="card__body">
             {chains.map((c) => (
               <div key={c.id} className="fnd-chain">
-                <span className={'sev sev-' + (c.severity || 'info')}>{c.severity}</span>
+                <span className={'sev sev--' + (c.severity || 'info')}>{c.severity}</span>
                 <span className="fnd-chain__t">{c.title}</span>
                 <span className="fnd-chain__s">{(c.steps || c.steps_json || []).length || ''} step(s)</span>
               </div>

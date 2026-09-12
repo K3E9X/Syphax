@@ -48,7 +48,7 @@ export default function Proxy() {
     setSugg({ loading: true, items: null });
     try {
       const r = await api.llm.suggestForFlow(sel);
-      const items = r?.parsed?.suggestions || r?.suggestions || [];
+      const items = r?.parsed?.suggested_scans || [];
       setSugg({ loading: false, items });
     } catch (e) { setSugg({ loading: false, items: [] }); flash(e.message); }
   }
@@ -144,7 +144,7 @@ export default function Proxy() {
                 sugg.items.map((s, i) => (
                   <div key={i} className="sugg__item">
                     <span className="sugg__tool">{s.tool}</span>
-                    <span className="sugg__why">{s.reason || s.why || s.target}</span>
+                    <span className="sugg__why">{s.rationale || s.target}</span>
                     <button className="btn btn--solid btn--sm" onClick={() => runScan(s)} disabled={!engagementId}>Run</button>
                   </div>
                 ))}
