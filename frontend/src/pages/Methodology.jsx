@@ -1,23 +1,19 @@
 import { useEffect, useState } from 'react';
 import { api } from '../lib/api.js';
+import { useEngagements } from '../lib/useApi.js';
+import { Notice } from '../components/ui.jsx';
 
 const FILTERS = ['all', 'done', 'running', 'queued', 'skipped'];
 
 export default function Methodology() {
-  const [engagements, setEngagements] = useState([]);
-  const [engId, setEngId] = useState('');
+  // One shared picker: five pages each rebuilt this and each swallowed
+  // its failure, so a dead backend looked exactly like an empty install.
+  const { engagements, engId, setEngId, error: engError, reload: reloadEngagements } = useEngagements();
   const [cats, setCats] = useState([]);
   const [filter, setFilter] = useState('all');
   const [open, setOpen] = useState([]);
   const [standalone, setStandalone] = useState(false);
 
-  useEffect(() => {
-    api.engagements.list().then((r) => {
-      const items = r.items || [];
-      setEngagements(items);
-      if (items.length) setEngId(items[0].id);
-    }).catch(() => {});
-  }, []);
   // With an engagement selected we show its coverage. Without one (fresh
   // install, or before any engagement exists) fall back to the raw catalog so
   // the methodology is still browsable instead of showing an empty page.
@@ -59,6 +55,8 @@ export default function Methodology() {
 
   return (
     <div className="page">
+      <Notice kind="error" title="Could not load engagements"
+              message={engError} onRetry={reloadEngagements} />
       <div className="lv-head">
         <div className="lv-title"><h1>Methodology coverage</h1><span className="lv-title__host">OWASP WSTG &middot; MITRE ATT&amp;CK</span></div>
         <div className="select-box"><select className="select" value={engId} onChange={(e) => setEngId(e.target.value)}>

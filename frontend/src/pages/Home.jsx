@@ -1,13 +1,24 @@
 import { useEffect, useState } from 'react';
 import { api } from '../lib/api.js';
+import { useApi } from '../lib/useApi.js';
+import { Notice, UsageRow, fmtTokens, fmtUsd } from '../components/ui.jsx';
 
 const PHASE_ORDER = ['Reconnaissance', 'Scanning & enumeration', 'Exploitation', 'Capture & analysis', 'Other'];
 const LLM_ROLES = ['planner', 'executor', 'validator'];
 
 export default function Home() {
-  const [config, setConfig] = useState(null);
-  const [dash, setDash] = useState(null);
-  const [tools, setTools] = useState([]);
+  // These four used to be `.then(set).catch(() => {})`. A dead backend, a
+  // wrong API key or a refused VPN all rendered as "-" with no explanation,
+  // which for a security tool is the worst failure mode there is: "I see no
+  // findings" must never look like "the API is down".
+  const cfg = useApi(() => api.config(), []);
+  const dashboard = useApi(() => api.dashboard(), []);
+  const toolList = useApi(() => api.tools(), [], { initial: [] });
+  const config = cfg.data;
+  const dash = dashboard.data;
+  const tools = Array.isArray(toolList.data) ? toolList.data : [];
+  const loadError = cfg.error || dashboard.error || toolList.error;
+
   const [pinging, setPinging] = useState(false);
   const [pings, setPings] = useState([]);
   const [net, setNet] = useState(null);
@@ -20,11 +31,8 @@ export default function Home() {
   const [guard, setGuard] = useState(null);
 
   useEffect(() => {
-    api.config().then(setConfig).catch(() => {});
-    api.dashboard().then(setDash).catch(() => {});
-    api.tools().then((t) => setTools(Array.isArray(t) ? t : [])).catch(() => {});
-    api.network.status().then(setNet).catch(() => {});
     refreshIdentity();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Ping every role, not just the planner: they can sit on different
@@ -145,6 +153,8 @@ export default function Home() {
 
   return (
     <div className="page">
+      <Notice kind="error" title="Backend unreachable" message={loadError}
+              onRetry={() => { cfg.reload(); dashboard.reload(); toolList.reload(); }} />
       {budget?.over && (
         <div className="card budget-alert">
           <div className="card__body">
@@ -206,6 +216,33 @@ export default function Home() {
                 <dt>MITM proxy</dt><dd className="mono kv-yes">:{config?.mitm_port ?? '-'} listening</dd>
                 <dt>Data directory</dt><dd className="mono">{config?.data_dir || '-'}</dd>
               </dl>
+            </div>
+          </div>
+
+          <div className="card">
+            <div className="card__head">
+              <span className="card__title">Spend by role</span>
+              <span className="card__meta">{fmtTokens(usage.total_tokens)} tokens</span>
+            </div>
+            <div className="card__body">
+              {/* Which part of the system is spending, not just which model.
+                  Two roles often share a model, and the planner is re-invoked
+                  on every loop iteration - so this is where a runaway run
+                  shows up first. */}
+              <div className="usage">
+                {(usage.by_role || []).length === 0 && <div className="empty">No LLM calls yet.</div>}
+                {(usage.by_role || []).map((r) => (
+                  <UsageRow key={r.role} label={r.role} pct={r.pct}
+                            value={fmtTokens(r.tokens)}
+                            title={`${r.calls} call(s) · ${fmtUsd(r.cost_usd, 4)} · ${r.pct}% of all tokens`} />
+                ))}
+              </div>
+              {usage.total_tokens > 0 && (
+                <div className="tok__legend" style={{ marginTop: 8 }}>
+                  <span><i className="tok__dot tok__dot--prompt" />prompt <b>{usage.prompt_pct ?? 0}%</b></span>
+                  <span><i className="tok__dot tok__dot--completion" />completion <b>{100 - (usage.prompt_pct ?? 0)}%</b></span>
+                </div>
+              )}
             </div>
           </div>
 

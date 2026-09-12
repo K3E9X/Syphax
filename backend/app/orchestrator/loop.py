@@ -46,6 +46,7 @@ _REASON_LABELS = {
     "coverage_saturated": "all applicable tests have run",
     "time_budget": "time budget reached",
     "job_budget": "job budget reached",
+    "llm_budget": "LLM spend cap reached",
     "no_tools": "no launchable tasks (required tools unavailable)",
     "max_iterations": "iteration cap reached",
     "stopped": "stopped by operator",
@@ -125,6 +126,20 @@ async def run_engagement_loop(run_id: str) -> dict:
             if run.jobs_launched >= max_jobs:
                 logger.info("[%s] job budget reached (%d)", run.id, max_jobs)
                 run.stop_reason = "job_budget"
+                break
+            # The operator can cap LLM spend per engagement in Settings. That
+            # input existed from the start and nothing ever read it, so the cap
+            # silently did nothing; a runaway planner loop could bill freely.
+            over_budget = await _llm_budget_exceeded(engagement.id)
+            if over_budget:
+                logger.info("[%s] LLM budget reached ($%.2f)", run.id, over_budget)
+                run.stop_reason = "llm_budget"
+                await events.emit(
+                    engagement.id, events.RUN_FINISHED,
+                    f"LLM budget reached: ${over_budget:.2f} spent on this "
+                    "engagement. Raise or clear the cap in Settings.",
+                    run_id=run.id,
+                )
                 break
 
             # One iteration of plan -> launch -> wait -> ingest. A transient
@@ -268,6 +283,28 @@ async def run_engagement_loop(run_id: str) -> dict:
                       run_id=run.id, status=run.status, stop_reason=run.stop_reason,
                       jobs=run.jobs_launched)
     return run.to_public()
+
+
+async def _llm_budget_exceeded(engagement_id: str):
+    """Spend so far if it has crossed the per-engagement cap, else None.
+
+    No cap configured means no ceiling. Any failure reading the setting or the
+    spend returns None: a budget guardrail that cannot be evaluated must not
+    stop a run the operator asked for.
+    """
+    try:
+        from app import settings_store
+        from app.llm import usage as llm_usage
+        cfg = (await settings_store.get_public()).get("budget") or {}
+        limit = cfg.get("per_engagement_usd")
+        if not llm_usage.budget_verdict(limit, 0)["limit_usd"]:
+            return None   # no cap configured: no ceiling, and no query needed
+        spent = await llm_usage.spend(engagement_id)
+        verdict = llm_usage.budget_verdict(limit, spent)
+        return verdict["spend_usd"] if verdict["over"] else None
+    except Exception:  # noqa: BLE001
+        logger.debug("could not evaluate the LLM budget", exc_info=True)
+        return None
 
 
 async def _materialise_js(engagement, run) -> None:

@@ -90,6 +90,15 @@ async def dashboard() -> Dict[str, Any]:
         by_model_rows = await conn.fetch(
             "SELECT model, COALESCE(SUM(prompt_tokens+completion_tokens),0) AS tok "
             "FROM llm_usage GROUP BY model ORDER BY tok DESC")
+        # Which ROLE is spending, not just which model. Two roles often sit on
+        # the same model, so the per-model bar cannot answer "is the planner
+        # burning this?" - and the planner runs once per loop iteration.
+        by_role_rows = await conn.fetch(
+            "SELECT COALESCE(role,'(unknown)') AS role, COUNT(*) AS calls, "
+            "COALESCE(SUM(prompt_tokens),0) AS pt, "
+            "COALESCE(SUM(completion_tokens),0) AS ct, "
+            "COALESCE(SUM(cost_usd),0) AS cost "
+            "FROM llm_usage GROUP BY role ORDER BY SUM(prompt_tokens+completion_tokens) DESC")
         # Spend since the start of the current calendar month, for the budget
         # guardrail. ts is epoch seconds, so compare against the month boundary.
         month_start = datetime.now(timezone.utc).replace(
@@ -103,6 +112,18 @@ async def dashboard() -> Dict[str, Any]:
         sev[(r["severity"] or "info").lower()] = int(r["n"])
 
     total_tokens = int(usage["pt"]) + int(usage["ct"])
+    from app.llm.usage import pct_of
+
+    by_role = []
+    for r in by_role_rows:
+        tok = int(r["pt"]) + int(r["ct"])
+        by_role.append({
+            "role": r["role"], "calls": int(r["calls"]), "tokens": tok,
+            "prompt_tokens": int(r["pt"]), "completion_tokens": int(r["ct"]),
+            "cost_usd": round(float(r["cost"]), 4),
+            "pct": pct_of(tok, total_tokens),
+        })
+
     by_model = []
     for r in by_model_rows:
         tok = int(r["tok"])
@@ -141,8 +162,12 @@ async def dashboard() -> Dict[str, Any]:
         "llm_usage": {
             "calls": int(usage["calls"]),
             "total_tokens": total_tokens,
+            "prompt_tokens": int(usage["pt"]),
+            "completion_tokens": int(usage["ct"]),
+            "prompt_pct": pct_of(int(usage["pt"]), total_tokens),
             "cost_usd": round(float(usage["cost"]), 4),
             "by_model": by_model,
+            "by_role": by_role,
         },
         "budget": budget,
     }

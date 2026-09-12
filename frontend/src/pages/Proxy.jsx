@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { api } from '../lib/api.js';
+import { Notice } from '../components/ui.jsx';
 
 const METHODS = ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS', 'HEAD'];
 const fmtBytes = (n) => n == null ? '-' : n < 1024 ? n + ' B' : (n / 1024).toFixed(1) + ' KB';
@@ -8,6 +9,7 @@ const timeOf = (ts) => ts ? new Date(ts * 1000).toLocaleTimeString('en-US', { ho
 
 export default function Proxy() {
   const [status, setStatus] = useState(null);
+  const [loadError, setLoadError] = useState(null);
   const [hosts, setHosts] = useState([]);
   const [flows, setFlows] = useState([]);
   const [host, setHost] = useState('');
@@ -29,12 +31,13 @@ export default function Proxy() {
   }, [host, method, search]);
 
   useEffect(() => {
-    api.proxy.status().then(setStatus).catch(() => {});
-    api.proxy.hosts().then((r) => setHosts((r.items || r || []).map((h) => h.host || h))).catch(() => {});
+    api.proxy.status().then(setStatus).catch((e) => setLoadError(e.message));
+    api.proxy.hosts().then((r) => setHosts((r.items || r || []).map((h) => h.host || h)))
+      .catch((e) => setLoadError(e.message));
     api.engagements.list().then((r) => {
       const a = (r.items || []).find((e) => e.status === 'authorized') || (r.items || [])[0];
       if (a) setEngagementId(a.id);
-    }).catch(() => {});
+    }).catch((e) => setLoadError(e.message));
   }, []);
   useEffect(() => { loadFlows(); }, [loadFlows]);
 
@@ -63,6 +66,7 @@ export default function Proxy() {
 
   return (
     <div className="page">
+      <Notice kind="error" message={loadError} />
       <div className="card">
         <div className="card__head"><span className="card__title">Proxy capture</span>
           <div style={{ display: 'flex', gap: 8 }}>

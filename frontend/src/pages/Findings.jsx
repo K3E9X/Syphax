@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { api } from '../lib/api.js';
+import { Notice } from '../components/ui.jsx';
 
 const SEVS = ['critical', 'high', 'medium', 'low'];
 const STATUSES = ['new', 'triaged', 'confirmed', 'reported', 'false_positive'];
@@ -22,12 +23,14 @@ export default function Findings() {
   const [sel, setSel] = useState(null);
   const [toast, setToast] = useState(null);
   const [engagements, setEngagements] = useState([]);
+  const [loadError, setLoadError] = useState(null);
   const [engId, setEngId] = useState('');
   const [chains, setChains] = useState([]);
   const flash = (m) => { setToast(m); setTimeout(() => setToast(null), 2000); };
 
   useEffect(() => {
-    api.engagements.list().then((r) => setEngagements(r.items || [])).catch(() => {});
+    api.engagements.list().then((r) => setEngagements(r.items || []))
+      .catch((e) => setLoadError(e.message));
   }, []);
 
   // The default list is deduped across engagements, which is right for triage
@@ -76,6 +79,7 @@ export default function Findings() {
 
   return (
     <div className="page">
+      <Notice kind="error" message={loadError} />
       <div className="metrics" style={{ gridTemplateColumns: 'repeat(4,1fr)' }}>
         <div className="metric metric--alert"><div className="metric__l">Critical</div><div className="metric__v">{counts.critical}</div></div>
         <div className="metric"><div className="metric__l" style={{ color: 'var(--severity-high)' }}>High</div><div className="metric__v" style={{ color: 'var(--severity-high)' }}>{counts.high}</div></div>

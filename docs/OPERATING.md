@@ -395,6 +395,42 @@ POSTing a guessed form to a guessed endpoint creates orders and sends mail.
 unverified ones in section 4 as leads for manual confirmation. `meta` carries
 `proven_findings`, `unverified_findings` and the real `false_positive_rate_pct`.
 
+## Where the tokens went
+
+The `llm_usage` table always recorded the role, the timestamp and the
+prompt/completion split. The UI showed one total and a per-model bar, so the
+question that actually matters - *which part of the system is spending this* -
+had no answer. The planner is re-invoked on every loop iteration, which is the
+usual reason a run costs more than expected.
+
+`GET /api/engagements/{id}/usage` now returns all of it, and the live view has
+a **Tokens** tab showing:
+
+- **by role** — planner / executor / validator, counted by distinct call. Two
+  roles often share a model, so the per-model bar could never answer this;
+- **prompt vs completion** — a run at 95% prompt is wasted context, and
+  `LLM_RECON_BUDGET_CHARS` (150k) is the first thing to look at when it is;
+- **burn rate** — tokens per minute over the window the engagement has run, so
+  "is this going to cost $0.50 or $15?" is answerable *while* it runs;
+- **tokens over the run** — a sparkline; a spike is usually the planner being
+  re-asked;
+- **most expensive calls** — because a summary cannot tell you that one
+  80k-token prompt is the whole bill;
+- **cost per confirmed finding** — the only ratio that says whether the spend
+  bought anything.
+
+The Home page carries the same role breakdown globally, next to the per-model one.
+
+### The per-engagement budget now does something
+
+`budget.per_engagement_usd` had an input in Settings from the start and
+**nothing ever read it** — an operator could set a cap that did nothing while a
+runaway planner loop billed freely. The orchestrator now checks it once per
+iteration and ends the run with `stop_reason = llm_budget`; the live view and
+the Tokens tab report the same state. A cap of 0, unset or unparseable means no
+ceiling, never "always over": a guardrail that cannot be read must not stop a
+run you asked for.
+
 ## Is the tunnel actually covering DNS?
 
 A tunnel can carry the traffic while name lookups still go to the host resolver

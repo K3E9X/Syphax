@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { api } from '../lib/api.js';
+import { Notice } from '../components/ui.jsx';
 import PocReview from '../components/PocReview.jsx';
 
 // PoC sandbox. The isolated, scope-enforced, read-only runner
@@ -10,6 +11,7 @@ const TYPES = ['curl', 'http-raw', 'python', 'javascript'];
 
 export default function Sandbox() {
   const [engagements, setEngagements] = useState([]);
+  const [loadError, setLoadError] = useState(null);
   const [form, setForm] = useState({ engagement_id: '', type: 'curl', target: '', code: '' });
   const [out, setOut] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -20,7 +22,7 @@ export default function Sandbox() {
       const items = r.items || [];
       setEngagements(items);
       if (items.length) set({ engagement_id: items[0].id });
-    }).catch(() => {});
+    }).catch((e) => setLoadError(e.message));
   }, []);
 
   async function run() {
@@ -35,6 +37,7 @@ export default function Sandbox() {
 
   return (
     <div className="page">
+      <Notice kind="error" message={loadError} />
       <PocReview engagementId={form.engagement_id} />
 
       <div className="card">

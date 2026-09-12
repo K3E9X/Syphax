@@ -1,12 +1,20 @@
 import { useEffect, useState } from 'react';
 import { api } from '../lib/api.js';
+import { useEngagements } from '../lib/useApi.js';
+import { Async, Card, Notice } from '../components/ui.jsx';
+import { useApi } from '../lib/useApi.js';
 
 const SEV_HEX = { critical: '#ef4444', high: '#f97316', medium: '#eab308', low: '#06b6d4', info: '#525252' };
 const SEV_ORDER = { critical: 0, high: 1, medium: 2, low: 3, info: 4 };
 
 export default function Reports() {
-  const [engagements, setEngagements] = useState([]);
-  const [engId, setEngId] = useState('');
+  // One shared picker: five pages each rebuilt this and each swallowed
+  // its failure, so a dead backend looked exactly like an empty install.
+  const { engagements, engId, setEngId, error: engError, reload: reloadEngagements } = useEngagements();
+  // Retest comparison. The endpoint shipped with no caller at all: you could
+  // compute what a client fixed and what came back, and never see it.
+  const [against, setAgainst] = useState('');
+  const diff = useApi(() => api.engagements.diff(engId, against), [], { immediate: false });
   const [state, setState] = useState(null);
   const [tmpl, setTmpl] = useState('technical');
   const [open, setOpen] = useState([]);
@@ -14,13 +22,6 @@ export default function Reports() {
   const flash = (m) => { setToast(m); setTimeout(() => setToast(null), 2000); };
   const tech = tmpl === 'technical';
 
-  useEffect(() => {
-    api.engagements.list().then((r) => {
-      const items = r.items || [];
-      setEngagements(items);
-      if (items.length) setEngId(items[0].id);
-    }).catch(() => {});
-  }, []);
   useEffect(() => {
     if (!engId) return;
     api.engagements.state(engId).then(setState).catch(() => setState(null));
@@ -82,6 +83,8 @@ export default function Reports() {
 
   return (
     <div className="page">
+      <Notice kind="error" title="Could not load engagements"
+              message={engError} onRetry={reloadEngagements} />
       <div className="rep-bar">
         <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
           <div className="select-box"><select className="select" value={engId} onChange={(e) => setEngId(e.target.value)}>
@@ -189,6 +192,62 @@ export default function Reports() {
             {findings.length === 0 && <div className="empty">No validated findings yet.</div>}
           </div>
         </div>
+      )}
+      {engId && (
+        <Card title="Retest comparison"
+              meta={diff.data ? `${diff.data.counts.fixed} fixed · ${diff.data.counts.new} new` : null}>
+          <p className="intro">
+            Compare this engagement with an earlier one on the same target: what the
+            client fixed, what came back, and what is new.
+          </p>
+          <div className="row" style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+            <label className="rfind__lbl" htmlFor="diff-against">Earlier engagement</label>
+            <div className="select-box">
+              <select id="diff-against" className="select" value={against}
+                      onChange={(e) => setAgainst(e.target.value)}>
+                <option value="">select…</option>
+                {engagements.filter((e) => e.id !== engId).map((e) => (
+                  <option key={e.id} value={e.id}>{e.target_host || e.target_url} — {e.id.slice(0, 8)}</option>
+                ))}
+              </select>
+            </div>
+            <button className="btn" disabled={!against || diff.loading}
+                    onClick={() => diff.reload()}>
+              {diff.loading ? 'Comparing…' : 'Compare'}
+            </button>
+          </div>
+          {(diff.data || diff.error) && (
+            <div style={{ marginTop: 12 }}>
+              <Async loading={diff.loading} error={diff.error} data={diff.data}
+                     onRetry={() => diff.reload()} empty="Nothing to compare.">
+                <>
+                  <p className="intro">{diff.data?.summary}</p>
+                  <div className="stats">
+                    <div className="stat stat--alert"><div className="stat__l">New</div><div className="stat__v">{diff.data?.counts.new ?? 0}</div></div>
+                    <div className="stat"><div className="stat__l">Fixed</div><div className="stat__v">{diff.data?.counts.fixed ?? 0}</div></div>
+                    <div className="stat"><div className="stat__l">Unchanged</div><div className="stat__v">{diff.data?.counts.unchanged ?? 0}</div></div>
+                    <div className="stat"><div className="stat__l">Worsened</div><div className="stat__v">{diff.data?.counts.worsened ?? 0}</div></div>
+                    <div className="stat"><div className="stat__l">Improved</div><div className="stat__v">{diff.data?.counts.improved ?? 0}</div></div>
+                  </div>
+                  {['new', 'worsened', 'fixed'].map((k) => (
+                    (diff.data?.[k] || []).length > 0 && (
+                      <div key={k} style={{ marginTop: 10 }}>
+                        <div className="rfind__lbl">{k}</div>
+                        {(diff.data[k] || []).slice(0, 20).map((f, i) => (
+                          <div key={i} className="calls__row">
+                            <span className={'sev sev--' + (f.severity || 'info')}>{f.severity}</span>
+                            <span className="calls__model">{f.title}</span>
+                            <span className="calls__n">{f.target}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )
+                  ))}
+                </>
+              </Async>
+            </div>
+          )}
+        </Card>
       )}
       {toast && <div className="toast">{toast}</div>}
     </div>

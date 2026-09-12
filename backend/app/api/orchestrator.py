@@ -230,6 +230,49 @@ async def engagement_diff(engagement_id: str, against: str) -> dict:
     return result
 
 
+@router.get("/{engagement_id}/usage")
+async def engagement_usage(engagement_id: str) -> dict:
+    """Token spend for one engagement, broken down every way we record it.
+
+    The table has always carried `role`, `ts` and the prompt/completion split;
+    until now the UI showed one total and a per-model bar, so the question that
+    matters - which part of the system is spending this - had no answer.
+
+    Also returns the cost per confirmed finding, which is the only figure that
+    says whether the spend bought anything, and the per-engagement budget the
+    operator can set in Settings.
+    """
+    if await _engagements.get(engagement_id) is None:
+        raise HTTPException(status_code=404, detail="engagement not found")
+    from app.llm import usage as llm_usage
+
+    data = await llm_usage.detail(engagement_id)
+    vsum = await _vf.summary(engagement_id)
+    confirmed = int(vsum.get("confirmed", 0) or 0)
+    data["confirmed_findings"] = confirmed
+    data["cost_per_finding_usd"] = llm_usage.cost_per_finding(data["cost_usd"], confirmed)
+    data["budget"] = await engagement_budget_state(engagement_id, data["cost_usd"])
+    return data
+
+
+async def engagement_budget_state(engagement_id: str, spend_usd: float) -> dict:
+    """The per-engagement LLM budget and where this engagement sits against it.
+
+    `budget.per_engagement_usd` has had an input in Settings since it shipped
+    and nothing ever read it, so an operator could set a cap that did nothing.
+    The orchestrator now stops a run that crosses it; this reports the same
+    state to the UI.
+    """
+    from app.llm.usage import budget_verdict
+    try:
+        from app import settings_store
+        cfg = (await settings_store.get_public()).get("budget") or {}
+        limit = cfg.get("per_engagement_usd")
+    except Exception:  # noqa: BLE001 - a malformed setting must not 500 the page
+        limit = 0
+    return budget_verdict(limit, spend_usd)
+
+
 @router.get("/{engagement_id}/findings")
 async def validated_findings(engagement_id: str) -> dict:
     items = await _vf.list(engagement_id)

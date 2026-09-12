@@ -9,6 +9,7 @@
 @import "./styles/tokens/typography.css";
 @import "./styles/tokens/spacing.css";
 @import "./styles/tokens/base.css";
+@import "./styles/ui.css";
 
 /* shared chrome: topnav, page, btn, card, tabs, console, stats, tbl, st, sev,
    coverage, findings, chains, toast (from the design-system live view) */

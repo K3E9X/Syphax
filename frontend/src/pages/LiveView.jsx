@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { api, getApiKey } from '../lib/api.js';
+import { useApi, usePoll } from '../lib/useApi.js';
+import TokenPanel from '../components/TokenPanel.jsx';
+import { Async, Card, Notice } from '../components/ui.jsx';
 
 const PHASES = ['recon', 'mapping', 'vuln_analysis', 'exploitation', 'validation'];
 const PHASE_LABEL = { recon: 'Recon', mapping: 'Mapping', vuln_analysis: 'Vuln analysis', exploitation: 'Exploitation', validation: 'Validation' };
@@ -9,6 +12,7 @@ const REASON_LABEL = {
   job_budget: 'job budget reached', no_tools: 'required tools unavailable',
   max_iterations: 'iteration cap reached', stopped: 'stopped by operator',
   exploit_denied: 'exploitation not approved', cancelled: 'cancelled', error: 'stopped after errors',
+  llm_budget: 'LLM spend cap reached',
 };
 const SEV_ORDER = { critical: 0, high: 1, medium: 2, low: 3, info: 4 };
 const CATS = [
@@ -66,9 +70,24 @@ export default function LiveView() {
     || state?.run?.status === 'queued';
   useEffect(() => {
     if (!polling) return undefined;
-    const t = setInterval(loadState, 3000);
+    const t = setInterval(() => {
+      // Don't poll a tab nobody is looking at: this ran forever otherwise.
+      if (document.visibilityState !== 'hidden') loadState();
+    }, 3000);
     return () => clearInterval(t);
   }, [loadState, polling]);
+
+  // Token spend, refreshed on the same cadence while the run can still change.
+  // usePoll pauses when the tab is hidden and refetches on return.
+  const usageFn = useCallback(() => api.engagements.usage(id), [id]);
+  const usage = usePoll(usageFn, 5000, { active: polling, deps: [id] });
+
+  // The audit trail is written on every authorisation-relevant action and had
+  // no reader: the endpoint existed, the client method existed, and no page
+  // ever called it. For an offensive tool that record is the point.
+  const auditFn = useCallback(() => api.audit.list({ engagement_id: id, limit: 200 }), [id]);
+  const audit = useApi(auditFn, [id], { immediate: false });
+  useEffect(() => { if (tab === 'audit') audit.reload(); }, [tab, id]);  // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     let closed = false;
@@ -200,6 +219,8 @@ export default function LiveView() {
     { key: 'jobs', label: 'Jobs', count: jobs.length },
     { key: 'findings', label: 'Findings', count: findingsAll.length, alert: true },
     { key: 'chains', label: 'Chains', count: chains.length },
+    { key: 'tokens', label: 'Tokens' },
+    { key: 'audit', label: 'Audit' },
   ];
   const findings = (cat === 'all' ? findingsAll : findingsAll.filter((f) => (f.category || 'other') === cat))
     .slice().sort((a, b) => (SEV_ORDER[a.severity] ?? 9) - (SEV_ORDER[b.severity] ?? 9));
@@ -307,10 +328,9 @@ export default function LiveView() {
                 <div className="stat"><div className="stat__l">Technologies</div><div className="stat__v">{tech.length}</div></div>
                 <div className="stat stat--alert"><div className="stat__l">Confirmed vulns</div><div className="stat__v">{vsum.confirmed || 0}</div></div>
                 <div className="stat"><div className="stat__l">False-positive rate</div><div className="stat__v">{vsum.false_positive_rate_pct ?? 0}<small>%</small></div></div>
-                <div className="stat"><div className="stat__l">LLM calls</div><div className="stat__v">{llm.calls || 0}</div></div>
+                <div className="stat"><div className="stat__l">Jobs launched</div><div className="stat__v">{run0.jobs_launched || 0}</div></div>
                 <div className="stat"><div className="stat__l">Tokens</div><div className="stat__v">{((llm.total_tokens || 0) / 1000).toFixed(1)}<small>k</small></div></div>
                 <div className="stat"><div className="stat__l">API cost</div><div className="stat__v"><small>$</small>{(llm.cost_usd || 0).toFixed(4)}</div></div>
-                <div className="stat"><div className="stat__l">Jobs launched</div><div className="stat__v">{run0.jobs_launched || 0}</div></div>
               </div>
               {tech.length > 0 && <div className="techrow"><span className="stat__l" style={{ margin: 0 }}>Tech:</span>{tech.map((t) => <span key={t} className="tech-chip">{t}</span>)}</div>}
             </div>
@@ -480,6 +500,33 @@ export default function LiveView() {
             {chains.length === 0 && <div className="empty">No multi-step attack chains identified yet.</div>}
           </div>
         </div>
+      )}
+      {tab === 'audit' && (
+        <Card title="Audit trail"
+              meta={`${(audit.data?.items || []).length} recorded action(s)`}>
+          <Async loading={audit.loading} error={audit.error} data={audit.data}
+                 onRetry={audit.reload} empty="No actions recorded yet."
+                 isEmpty={(d) => !d || !(d.items || []).length}>
+            <div className="calls">
+              {(audit.data?.items || []).map((a) => (
+                <div key={a.id} className="calls__row" title={new Date((a.ts || 0) * 1000).toISOString()}>
+                  <span className="calls__role">{time(a.ts)}</span>
+                  <span className="calls__model">{a.action}</span>
+                  <span className="calls__n">
+                    {Object.keys(a.detail || {}).length
+                      ? Object.entries(a.detail).slice(0, 3).map(([k, v]) =>
+                          `${k}=${typeof v === 'object' ? JSON.stringify(v).slice(0, 40) : v}`).join(' ')
+                      : ''}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </Async>
+        </Card>
+      )}
+      {tab === 'tokens' && (
+        <TokenPanel usage={usage.data} loading={usage.loading} error={usage.error}
+                    onRetry={usage.reload} />
       )}
       {toast && <div className="toast">{toast}</div>}
     </div>

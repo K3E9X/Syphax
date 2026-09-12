@@ -31,12 +31,13 @@ export default function Scans() {
   }, []);
 
   useEffect(() => {
-    api.scans.tools().then((t) => setTools(Array.isArray(t) ? t : [])).catch(() => {});
+    api.scans.tools().then((t) => setTools(Array.isArray(t) ? t : []))
+      .catch((e) => setError(e.message));
     api.engagements.list().then((r) => {
       const items = r.items || [];
       setEngagements(items);
       if (items.length) set({ engagement_id: items[0].id });
-    }).catch(() => {});
+    }).catch((e) => setError(e.message));
     loadJobs();
   }, [loadJobs]);
 

@@ -150,18 +150,6 @@ body { background: var(--bg); color: var(--text-primary); font: var(--font-body)
 .cov-summary b { color: var(--text-primary); font-weight: 600; margin-left: 4px; }
 .cov-summary .hit b { color: var(--severity-high); }
 .cov-matrix { display: flex; flex-direction: column; }
-.cov-cat { display: grid; grid-template-columns: 190px 1fr 96px; align-items: center; gap: 16px; padding: 10px 2px; border-bottom: 1px solid var(--border); }
-.cov-cat:last-child { border-bottom: none; }
-.cov-cat__name { font-size: 13px; color: var(--text-primary); }
-.cov-cat__wstg { font-family: var(--font-mono); font-size: 10px; color: var(--text-faint); margin-top: 1px; }
-.cov-bar { height: 6px; border-radius: 2px; background: var(--neutral-800); overflow: hidden; display: flex; }
-.cov-bar__seg { height: 100%; }
-.cov-bar__seg--done { background: var(--term-ok); }
-.cov-bar__seg--running { background: var(--accent); }
-.cov-bar__seg--queued { background: var(--border-strong); }
-.cov-cat__counts { font-family: var(--font-mono); font-size: 11px; color: var(--text-secondary); text-align: right; }
-.cov-cat__counts .hit { color: var(--severity-high); }
-.cov-cat__counts .clean { color: var(--text-faint); }
 
 /* ---------- findings ---------- */
 .subtabs { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 16px; }
@@ -222,7 +210,6 @@ body { background: var(--bg); color: var(--text-primary); font: var(--font-body)
   .stats { grid-template-columns: repeat(2, 1fr); }
   .stepper { flex-direction: column; }
   .step { border-right: none; border-bottom: 1px solid var(--border); }
-  .cov-cat { grid-template-columns: 1fr; gap: 6px; }
 }
 
 /* Backend reachability. Silent when up: a permanent green dot is noise. It only

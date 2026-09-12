@@ -42,14 +42,16 @@ export const api = {
   tools: () => request('/api/tools'),
 
   engagements: {
+    // `get` and `verify` used to live here with no caller: state() returns a
+    // superset of get(), and the DNS-TXT / .well-known ownership proof is a
+    // deliberate API-only feature with no UI. The endpoints remain; the dead
+    // client methods do not.
     list: () => request('/api/engagements'),
-    get: (id) => request(`/api/engagements/${id}`),
     create: (payload) => request('/api/engagements', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     }),
-    verify: (id) => request(`/api/engagements/${id}/verify`, { method: 'POST' }),
     close: (id) => request(`/api/engagements/${id}/close`, { method: 'POST' }),
     run: (id) => request(`/api/engagements/${id}/run`, { method: 'POST' }),
     stop: (id) => request(`/api/engagements/${id}/stop`, { method: 'POST' }),
@@ -65,6 +67,8 @@ export const api = {
     reportJson: (id) => request(`/api/engagements/${id}/report.json`),
     verifyProof: (fid) => request(`/api/findings/${fid}/verify-proof`, { method: 'POST' }),
     memory: (id) => request(`/api/engagements/${id}/memory`),
+    usage: (id) => request(`/api/engagements/${id}/usage`),
+    diff: (id, against) => request(`/api/engagements/${id}/diff?against=${against}`),
     retestFinding: (id, fid) => request(`/api/engagements/${id}/findings/${fid}/retest`, { method: 'POST' }),
     decideApproval: (id, approvalId, decision) =>
       request(`/api/engagements/${id}/approvals/${approvalId}`, {

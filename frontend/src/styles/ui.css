@@ -1,0 +1,56 @@
+/* Shared primitive styles (components/ui.jsx).
+   The error affordance had drifted into four shapes - .form-error,
+   .scan-error, .budget-alert and inline styles - so one page's failure looked
+   nothing like another's. .notice is the single one; the page-specific rules
+   that remain are kept as aliases so no existing markup changes meaning. */
+
+.notice {
+  display: flex; align-items: flex-start; justify-content: space-between;
+  gap: var(--space-3, 12px);
+  padding: var(--space-3, 12px) var(--space-4, 16px);
+  margin-bottom: var(--space-3, 12px);
+  border: 1px solid; border-radius: var(--radius-sm, 6px);
+  font-size: 13px; line-height: 1.5;
+}
+.notice__body { display: flex; flex-wrap: wrap; gap: 6px; align-items: baseline; }
+.notice__t { font-weight: 600; }
+.notice__m { color: var(--text-secondary); word-break: break-word; }
+
+.notice--error { border-color: rgba(239, 68, 68, .45); background: rgba(239, 68, 68, .06); }
+.notice--error .notice__t { color: var(--sev-critical); }
+.notice--warn  { border-color: rgba(234, 179, 8, .40); background: rgba(234, 179, 8, .05); }
+.notice--warn  .notice__t { color: var(--sev-medium); }
+.notice--info  { border-color: var(--border); background: var(--surface-raised); }
+.notice--info  .notice__t { color: var(--text-primary); }
+
+/* The loading state of a panel, distinct from its empty state: "nothing found"
+   and "not fetched yet" are different answers to the same question. */
+.empty--loading { opacity: .65; font-style: italic; }
+
+/* Token panel ------------------------------------------------------------- */
+.tok { display: flex; flex-direction: column; gap: var(--space-3, 12px); }
+.tok__grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(104px, 1fr)); gap: var(--space-2, 8px); }
+.tok__split { display: flex; height: 6px; border-radius: 3px; overflow: hidden; background: var(--surface-raised); }
+.tok__split-seg { height: 100%; }
+.tok__split-seg--prompt { background: var(--accent-dim); }
+.tok__split-seg--completion { background: var(--term-ok); }
+.tok__legend { display: flex; gap: var(--space-3, 12px); font-family: var(--font-mono); font-size: 10.5px; color: var(--text-secondary); }
+.tok__legend b { font-weight: 500; color: var(--text-primary); }
+.tok__dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 5px; }
+.tok__dot--prompt { background: var(--accent-dim); }
+.tok__dot--completion { background: var(--term-ok); }
+
+/* Sparkline: one bar per time bucket, tallest = busiest. */
+.spark { display: flex; align-items: flex-end; gap: 1px; height: 34px; }
+.spark__b { flex: 1 1 0; min-width: 2px; background: var(--accent-dim); border-radius: 1px 1px 0 0; opacity: .8; }
+.spark__b:hover { opacity: 1; background: var(--accent); }
+.spark__b--empty { background: var(--border); opacity: .35; }
+.spark__axis { display: flex; justify-content: space-between; font-family: var(--font-mono); font-size: 10px; color: var(--text-faint); margin-top: 4px; }
+
+/* Most expensive calls. */
+.calls { display: flex; flex-direction: column; gap: 2px; }
+.calls__row { display: grid; grid-template-columns: 64px 1fr auto; gap: var(--space-2, 8px); align-items: baseline; font-family: var(--font-mono); font-size: 11px; padding: 3px 0; border-bottom: 1px solid var(--border); }
+.calls__row:last-child { border-bottom: 0; }
+.calls__role { color: var(--accent); text-transform: uppercase; font-size: 10px; letter-spacing: .04em; }
+.calls__model { color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.calls__n { color: var(--text-primary); }

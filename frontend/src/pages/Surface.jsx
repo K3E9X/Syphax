@@ -1,20 +1,16 @@
 import { useEffect, useState } from 'react';
 import { api } from '../lib/api.js';
+import { useEngagements } from '../lib/useApi.js';
+import { Notice } from '../components/ui.jsx';
 
 export default function Surface() {
-  const [engagements, setEngagements] = useState([]);
-  const [engId, setEngId] = useState('');
+  // One shared picker: five pages each rebuilt this and each swallowed
+  // its failure, so a dead backend looked exactly like an empty install.
+  const { engagements, engId, setEngId, error: engError, reload: reloadEngagements } = useEngagements();
   const [hosts, setHosts] = useState([]);
   const [sel, setSel] = useState(null);
   const [q, setQ] = useState('');
 
-  useEffect(() => {
-    api.engagements.list().then((r) => {
-      const items = r.items || [];
-      setEngagements(items);
-      if (items.length) setEngId(items[0].id);
-    }).catch(() => {});
-  }, []);
   useEffect(() => {
     if (!engId) return;
     api.engagements.surface(engId).then((r) => {
@@ -34,6 +30,8 @@ export default function Surface() {
 
   return (
     <div className="page">
+      <Notice kind="error" title="Could not load engagements"
+              message={engError} onRetry={reloadEngagements} />
       <div className="lv-head">
         <div className="lv-title"><h1>Attack surface</h1></div>
         <div className="select-box"><select className="select" value={engId} onChange={(e) => setEngId(e.target.value)}>
