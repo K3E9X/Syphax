@@ -13,6 +13,7 @@ is serializable, inspectable in the UI, and safe to ship to the LLM planner:
     {"requires_params": true}         - only on URLs that have query params
     {"tech_any": ["wordpress"]}       - only if a fingerprint matched one of these
     {"is_host": true}                 - run against a host, not a URL (nmap/naabu/dns)
+    {"path_any": ["openapi"]}         - only on an asset whose URL says so
 """
 from __future__ import annotations
 
@@ -174,6 +175,29 @@ CATALOG: List[CatalogItem] = [
         applies_when={"always": True},
     ),
     CatalogItem(
+        id="MAP-HIDDEN-PARAMS",
+        wstg_id="WSTG-INFO-07",
+        attack_techniques=["T1595"],
+        vuln_class="recon",
+        phase=PHASE_MAPPING,
+        tool="arjun",
+        description="Discover undocumented HTTP parameters by differential "
+                    "analysis - the injection points every later test needs.",
+        applies_when={"is_endpoint": True},
+    ),
+    CatalogItem(
+        id="MAP-JS-ENDPOINTS",
+        wstg_id="WSTG-INFO-07",
+        attack_techniques=["T1595"],
+        vuln_class="recon",
+        phase=PHASE_MAPPING,
+        tool="jsluice",
+        description="Extract endpoints and parameters from the captured "
+                    "JavaScript with a real parser (not regex).",
+        default_options=["urls"],
+        applies_when={"is_endpoint": True},
+    ),
+    CatalogItem(
         id="MAP-TAKEOVER",
         wstg_id="WSTG-CONF-10",
         attack_techniques=["T1584.001"],
@@ -256,6 +280,57 @@ CATALOG: List[CatalogItem] = [
         default_options=["-tags", "exposure,exposures,config,backup,disclosure",
                          "-severity", "info,low,medium,high,critical"],
         applies_when={"always": True},
+    ),
+    CatalogItem(
+        id="VULN-CLIENT-LIBS",
+        wstg_id="WSTG-CONF-01",
+        attack_techniques=["T1190"],
+        vuln_class="vulnerable_component",
+        phase=PHASE_VULN,
+        tool="retirejs",
+        description="Rate the client-side JavaScript libraries the page loads "
+                    "against the known-vulnerable version database.",
+        severity_default="medium",
+        applies_when={"is_endpoint": True},
+    ),
+    CatalogItem(
+        id="VULN-API-CONTRACT",
+        wstg_id="WSTG-INPV-00",
+        attack_techniques=["T1190"],
+        vuln_class="api_contract_violation",
+        phase=PHASE_VULN,
+        tool="schemathesis",
+        description="Property-test every documented operation against the API's "
+                    "own OpenAPI contract (unhandled 500s, schema violations, "
+                    "ignored auth).",
+        severity_default="medium",
+        applies_when={"path_any": ["openapi", "swagger", "api-docs", "openapi.json",
+                                   "swagger.json", ".well-known/openapi"]},
+    ),
+    CatalogItem(
+        id="VULN-GIT-DUMP",
+        wstg_id="WSTG-CONF-04",
+        attack_techniques=["T1213"],
+        vuln_class="source_code_disclosure",
+        phase=PHASE_VULN,
+        tool="gitdumper",
+        description="Recover the source tree from an exposed .git directory, "
+                    "turning a readable path into the actual source.",
+        severity_default="high",
+        applies_when={"is_endpoint": True},
+    ),
+    CatalogItem(
+        id="VULN-VERIFIED-SECRETS",
+        wstg_id="WSTG-CONF-04",
+        attack_techniques=["T1552.001"],
+        vuln_class="secret_exposure",
+        phase=PHASE_VULN,
+        tool="trufflehog",
+        description="Verify each secret found in the recovered source and the "
+                    "captured JavaScript against its own provider - a hit is a "
+                    "credential that answered, not a pattern that matched.",
+        severity_default="high",
+        applies_when={"is_endpoint": True},
     ),
     CatalogItem(
         id="VULN-AUTH",
@@ -412,6 +487,7 @@ def applies(item: CatalogItem, context: Dict[str, Any]) -> bool:
       is_host          - the target is a bare host (no path)
       is_https         - target uses https
       requires_params  - target URL has query parameters
+      url              - the asset's value, for path_any matching
       tech             - list[str] of fingerprinted technologies (lowercased)
     """
     cond = item.applies_when or {"always": True}
@@ -429,6 +505,15 @@ def applies(item: CatalogItem, context: Dict[str, Any]) -> bool:
     # themselves (sqlmap --forms, nuclei -dast, dalfox mining).
     if cond.get("is_endpoint") and context.get("is_host"):
         return False
+    # path_any: only on an asset whose URL contains one of these markers. Used
+    # for tools that need a specific document rather than any endpoint -
+    # schemathesis needs the OpenAPI schema, not the home page, and running it
+    # on the wrong URL just produces a load error every engagement.
+    path_any = cond.get("path_any")
+    if path_any:
+        url = str(context.get("url") or "").lower()
+        if not any(str(want).lower() in url for want in path_any):
+            return False
     tech_any = cond.get("tech_any")
     if tech_any:
         tech = [t.lower() for t in context.get("tech", [])]

@@ -35,6 +35,7 @@ from app.validation.models import ValidationStatus
 # (which is a disproof oracle).
 ORACLE_PREFIXES = (
     "tool-confirmed",
+    "provider-verified",
     "safe-poc",
     "proof-replay",
     "baseline",

@@ -35,6 +35,11 @@ logger = logging.getLogger("syphax.validation.validator")
 # Tools whose positive findings are already actively proven.
 _TOOL_CONFIRMED = {"sqlmap", "commix", "dalfox"}
 
+# Tools that verify a finding against a third party rather than against the
+# target: trufflehog authenticates a candidate secret with its provider, so a
+# hit it marks verified is proof the credential is live.
+_PROVIDER_VERIFIED = {"trufflehog"}
+
 # Traffic-driven analyzers that precompute their own status/confidence/PoC in
 # finding.metadata (see app/analysis/*). We trust that verdict verbatim.
 _ANALYSIS_TOOLS = {"logic", "js-recon", "jwt", "access-control", "cors",
@@ -96,6 +101,19 @@ class FindingValidator:
             return ValidationResult(
                 status=status, confidence=conf, method=f"analysis ({tool})",
                 poc=finding.evidence or "", detail="From captured traffic analysis.",
+            )
+
+        # 0b. a secret trufflehog authenticated against its own provider. This
+        # is the strongest oracle in the system and it is not ours: the
+        # credential answered. js_recon reports the same shapes as "likely"
+        # because a regex cannot tell a rotated key from a live one.
+        if tool in _PROVIDER_VERIFIED and (finding.metadata or {}).get("verified"):
+            return ValidationResult.confirmed(
+                method=f"provider-verified ({tool})",
+                poc=finding.evidence or "",
+                confidence=0.97,
+                detail="The credential was authenticated against its provider "
+                       "and is currently valid.",
             )
 
         # 1. tool already proved it

@@ -173,12 +173,51 @@ plainly exists.
 Recon: `nmap`, `naabu`, `subfinder`, `dnsx`, `httpx`, `katana`, `gau`.
 Fingerprint / WAF: `whatweb`, `httpx`, `wafw00f`.
 Content discovery: `ffuf`.
+Parameter discovery: `arjun`, `jsluice`.
 Vuln / CMS / server: `nuclei`, `nikto`, `wpscan`.
+API: `schemathesis`. Client-side: `retire.js`.
+Secrets / source: `trufflehog` (verified), `git-dumper`.
 Injection: `sqlmap` (SQLi), `commix` (command).
 XSS: `dalfox`. TLS: `testssl.sh`. Capture: `mitmproxy`.
 
 `GET /api/scans/tools` reports each tool's category and whether its binary is
 present. WordPress CVE correlation needs `WPSCAN_API_TOKEN` (free, optional).
+
+### The six that need a word of explanation
+
+- **`arjun`** (mapping) discovers undocumented HTTP parameters by differential
+  response analysis. It produces **injection points, not findings**: every
+  injection test can only decide things that have parameters, and `?debug=1`
+  is in neither the HTML nor the JS. Discovered parameters are attached to the
+  endpoint so the later phases pick them up.
+- **`schemathesis`** (vuln) property-tests a published OpenAPI schema against
+  the API's **own contract** — unhandled 500s, responses that violate the
+  schema the API publishes, undocumented status codes, an operation that
+  ignores the auth it declares. Runs only on an asset whose URL looks like a
+  schema (`openapi`, `swagger`, `api-docs`), and only the fuzzing/examples
+  phases: the coverage phase sends PUT/DELETE/TRACE to every operation, which
+  is a write against a live target. Add `--phases=coverage` per scan if you
+  want it.
+- **`retire.js`** (vuln) rates the **client-side** libraries. Nothing else in
+  the image looks at them: httpx and whatweb fingerprint the server, nuclei
+  matches server-side CVEs. A page shipping jQuery 1.7.2 was invisible.
+- **`jsluice`** (mapping) extracts URLs, parameters and secrets from a real
+  JavaScript AST, so it sees endpoints built by string concatenation that a
+  regex pass cannot, and reports the method and parameter names with them.
+- **`git-dumper`** (vuln) **acts** on an exposed `.git` instead of only
+  reporting that the path is readable: it rebuilds the working tree into
+  `{DATA_DIR}/artifacts/{host}/git/`.
+- **`trufflehog`** (vuln) scans that recovered tree and the captured
+  JavaScript in `--results=verified` mode: it **authenticates each candidate
+  secret against its own provider**, so a hit is a credential that answered,
+  not a pattern that matched. It is the only tool here whose verdict is
+  `confirmed` without syphax touching the target — the provider decided.
+  Verification is an outbound call to AWS/GitHub/Stripe, never to the target.
+
+`retire.js`, `jsluice` and `trufflehog` read files, not URLs. The proxy's
+captured JavaScript is written to `{DATA_DIR}/artifacts/{host}/js/` at the
+mapping → vuln-analysis boundary, so those tasks have something to read.
+A directory that was never produced yields zero findings, not an error.
 
 ## Full configuration reference
 
@@ -301,6 +340,60 @@ proof** replays it through SafePoC and reports whether it held.
 The verdict is a substring test, not a second opinion - the judge already chose
 the observable. No response at all is reported as `inconclusive`, never as a
 refutation: the target may simply have been down.
+
+## How a finding gets its verdict (and why the FP rate is what it is)
+
+Validation runs in two passes, and the report separates what the passes could
+prove from what they could not.
+
+**Per-finding.** In order, first match wins:
+
+1. **Provider-verified.** trufflehog authenticated a secret against its own
+   provider → `confirmed`. The provider decided, not us.
+2. **Tool-confirmed.** sqlmap/commix/dalfox actively proved their own finding.
+3. **Safe-PoC re-check.** An exposed resource is fetched and must match a real
+   content signature (a dotenv line, an `.htaccess` directive, `[core]`); a
+   reflected-XSS candidate gets a benign unique marker in **every** parameter.
+4. **Catch-all baseline.** Once per engagement, syphax asks the target for a
+   few paths that cannot exist and remembers the shape of the answer. On a
+   server that returns 200 for everything, every guessed path "exists", so a
+   path-existence finding whose answer has that same shape is `false_positive`,
+   not `likely`. An honest 404 costs no extra request; a failed calibration
+   discards nothing.
+5. **Surface inventory.** A live host, a banner, a discovered path is not a
+   weakness — it cannot be "likely vulnerable", so it is filed as
+   informational and stays out of the FP-rate denominator. Previously nine
+   registered tools had no class at all and their output shipped as `likely`
+   findings next to real ones.
+6. **Heuristic.** The scanner's own match, scaled by severity. nikto's
+   findings are now rated from the message it prints, so an exposed `.git` and
+   an `X-Powered-By` header are no longer the same finding.
+
+**Across findings.** The whole validated set is then arbitrated, grouped by
+`(vuln_class, target-without-query)` so sqlmap's `?id=1`, nuclei's bare path
+and nikto's `:443` land in the same group:
+
+- independent agreement raises confidence, counted by **distinct tool** — one
+  noisy tool firing five templates is still one voice;
+- an oracle that looked at the target and **could not reproduce** the class
+  demotes the pattern matches that claimed it;
+- a guess inherits ground from a proven sibling at the same target;
+- a lone unchecked pattern match loses confidence.
+
+Nothing is ever promoted to `confirmed` by agreement: agreement between
+guesses is not proof, so unproven findings are capped below the confirmed
+band. The reasoning is stored on the finding and printed in the report.
+
+**Widening the oracle.** The adaptive prober used to reach query parameters
+only, so a finding on `POST /api/login` or `GET /api/users/1337` could never
+be *decided*. It now addresses three channels — query, a field of a request
+body we actually captured, and a path segment that looks like a value. The
+body channel is never invented: no captured request, no body channel, because
+POSTing a guessed form to a guessed endpoint creates orders and sends mail.
+
+**The report** puts proven findings in section 3 with their proofs and
+unverified ones in section 4 as leads for manual confirmation. `meta` carries
+`proven_findings`, `unverified_findings` and the real `false_positive_rate_pct`.
 
 ## Is the tunnel actually covering DNS?
 

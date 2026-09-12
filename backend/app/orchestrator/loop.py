@@ -151,6 +151,7 @@ async def run_engagement_loop(run_id: str) -> dict:
                     # enough to be worth joining - and still early enough for
                     # the leads to change what gets scanned.
                     if current_phase == PHASE_VULN:
+                        await _materialise_js(engagement, run)
                         await _run_correlation(engagement, run, executor, runs)
 
                 # Human checkpoint before exploitation (spec §11 approval).
@@ -267,6 +268,28 @@ async def run_engagement_loop(run_id: str) -> dict:
                       run_id=run.id, status=run.status, stop_reason=run.stop_reason,
                       jobs=run.jobs_launched)
     return run.to_public()
+
+
+async def _materialise_js(engagement, run) -> None:
+    """Write the captured JavaScript to disk before the vuln phase runs.
+
+    retire.js and jsluice read files, not URLs, and the analyzer that has the
+    bundles in hand (js_recon) only runs during finalisation - after every scan
+    phase is over. Without this the two tools would be scheduled against an
+    empty directory and would report nothing, every time.
+    """
+    try:
+        from app.analysis.js_cache import materialise_js
+        result = await materialise_js(engagement.id)
+        written = int(result.get("written", 0) or 0)
+        if written:
+            await events.emit(
+                engagement.id, events.PHASE_CHANGED,
+                f"Cached {written} JavaScript file(s) for client-side analysis",
+                level=events.LEVEL_VERBOSE, run_id=run.id,
+            )
+    except Exception:  # noqa: BLE001 - never block the phase transition
+        logger.exception("[%s] could not cache captured JavaScript", run.id)
 
 
 async def _run_correlation(engagement, run: Run, executor: Executor,

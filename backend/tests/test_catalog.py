@@ -7,11 +7,12 @@ from app.methodology.catalog import (
 )
 from app.reporting.mappings import category_for_class
 
-_KNOWN_TOOLS = {
-    "nuclei", "sqlmap", "ffuf", "dalfox", "nmap", "subfinder", "httpx",
-    "katana", "gau", "dnsx", "naabu", "testssl", "wpscan", "commix",
-    "wafw00f", "whatweb", "nikto",
-}
+# Read from the real registry rather than restated here: a hardcoded copy
+# drifts, and the property that matters is "every catalog item names a
+# wrapper that exists", not "names one of these seventeen".
+from app.scans.wrappers import _WRAPPERS
+
+_KNOWN_TOOLS = set(_WRAPPERS)
 
 
 def test_ids_are_unique():

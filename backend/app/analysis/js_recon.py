@@ -11,6 +11,10 @@ Two high-value passes over the traffic captured through the proxy:
     rest of the engagement tests surface that isn't linked from the UI.
     Discovered same-origin endpoints are seeded as engagement assets.
 
+The same captured JavaScript is written to disk for the file-based tools by
+app/analysis/js_cache.py - separately, because that has to happen before the
+vuln-analysis phase and this analyzer runs after every scan.
+
 Everything is read-only: we only parse bodies already captured.
 
 Stored as a synthetic job (tool="js-recon").

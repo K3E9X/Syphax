@@ -16,6 +16,7 @@ from __future__ import annotations
 import logging
 from typing import Dict
 
+from app.analysis.js_cache import materialise_js
 from app.analysis.logic import analyze_logic
 from app.analysis.js_recon import analyze_js
 from app.analysis.jwt_analysis import analyze_jwt
@@ -27,7 +28,7 @@ from app.analysis.public_exploits import analyze_public_exploits
 
 logger = logging.getLogger("syphax.analysis")
 
-__all__ = ["analyze_logic", "analyze_js", "analyze_jwt",
+__all__ = ["analyze_logic", "analyze_js", "analyze_jwt", "materialise_js",
            "analyze_access_control", "analyze_cors", "analyze_params",
            "analyze_graphql", "analyze_public_exploits", "run_analysis"]
 
@@ -42,6 +43,9 @@ async def run_analysis(engagement_id: str, *, allow_active: bool = True) -> Dict
     from app.exploit import run_cve_checks  # targeted CVE checks (safe-PoC GETs)
     from app.analysis.llm_recon import analyze_llm_recon  # LLM response analyst
     steps = [
+        # Keep the JS on disk current for retire.js/jsluice, in case the
+        # operator re-runs analysis and then a manual scan.
+        ("js_cache", materialise_js),
         ("js_recon", analyze_js),            # first: may seed new endpoints
         ("params", analyze_params),          # also seeds parameterised endpoints
         ("logic", analyze_logic),

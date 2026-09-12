@@ -89,6 +89,7 @@ class Asset:
             "is_host": self.kind == "host",
             "is_https": self.is_https,
             "requires_params": self.has_params,
+            "url": self.value,
             "tech": tech,
         }
 
