@@ -45,9 +45,13 @@ class FfufWrapper(BaseWrapper):
         except json.JSONDecodeError:
             return ToolResult(findings=[])
 
+        if not isinstance(data, dict):
+            return ToolResult(findings=[])   # ffuf emits an object; anything else is noise
         results = data.get("results") or []
         findings: List[Finding] = []
         for item in results:
+            if not isinstance(item, dict):
+                continue
             url = item.get("url") or target
             status = item.get("status")
             length = item.get("length")

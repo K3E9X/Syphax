@@ -10,6 +10,8 @@ stay pure and unit-testable (no asyncio, no DB).
 """
 from __future__ import annotations
 
+import json
+
 import shutil
 from dataclasses import dataclass
 from typing import List, Sequence
@@ -44,3 +46,27 @@ class BaseWrapper:
 
     def parse(self, stdout: bytes, stderr: bytes, exit_code: int, target: str) -> ToolResult:
         raise NotImplementedError
+
+def iter_json_lines(stdout: bytes):
+    """Yield each JSONL record from a tool's stdout as a dict.
+
+    Everything that is not a usable record is skipped rather than raising, one
+    line at a time, so a single corrupt line costs one record and not the whole
+    scan. Three real failure modes this centralises:
+
+      * bytes handed straight to json.loads: it sniffs the encoding, and binary
+        output made it guess UTF-16 and raise UnicodeDecodeError;
+      * a top-level list/string/number, whose .get() raised AttributeError;
+      * blank lines and progress noise.
+    """
+    text = (stdout or b"").decode("utf-8", errors="replace")
+    for line in text.splitlines():
+        line = line.strip()
+        if not line or line[0] not in "{[":
+            continue
+        try:
+            obj = json.loads(line)
+        except (json.JSONDecodeError, ValueError):
+            continue
+        if isinstance(obj, dict):
+            yield obj

@@ -10,7 +10,7 @@ from typing import List, Sequence
 from urllib.parse import urlparse
 
 from app.scans.models import Finding
-from app.scans.wrappers.base import BaseWrapper, ToolResult
+from app.scans.wrappers.base import iter_json_lines, BaseWrapper, ToolResult
 
 
 class NaabuWrapper(BaseWrapper):
@@ -35,14 +35,7 @@ class NaabuWrapper(BaseWrapper):
 
     def parse(self, stdout: bytes, stderr: bytes, exit_code: int, target: str) -> ToolResult:
         findings: List[Finding] = []
-        for line in stdout.splitlines():
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                obj = json.loads(line)
-            except json.JSONDecodeError:
-                continue
+        for obj in iter_json_lines(stdout):
             host = obj.get("host") or obj.get("ip") or _target_to_host(target)
             port = obj.get("port")
             if port is None:

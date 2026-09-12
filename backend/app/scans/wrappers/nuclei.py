@@ -11,7 +11,7 @@ from typing import List, Sequence
 from app.cve_refs import exploit_refs as _exploit_refs
 from app.cve_refs import first_cve, normalize_cve, refs_text as _refs_text
 from app.scans.models import Finding
-from app.scans.wrappers.base import BaseWrapper, ToolResult
+from app.scans.wrappers.base import iter_json_lines, BaseWrapper, ToolResult
 
 
 def _first_cve(cls_cve, tags, template_id) -> str | None:
@@ -52,14 +52,7 @@ class NucleiWrapper(BaseWrapper):
 
     def parse(self, stdout: bytes, stderr: bytes, exit_code: int, target: str) -> ToolResult:
         findings: List[Finding] = []
-        for line in stdout.splitlines():
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                obj = json.loads(line)
-            except json.JSONDecodeError:
-                continue
+        for obj in iter_json_lines(stdout):
 
             info = obj.get("info") or {}
             severity = (info.get("severity") or "info").lower()

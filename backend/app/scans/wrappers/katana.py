@@ -10,7 +10,7 @@ import json
 from typing import List, Sequence
 
 from app.scans.models import Finding
-from app.scans.wrappers.base import BaseWrapper, ToolResult
+from app.scans.wrappers.base import iter_json_lines, BaseWrapper, ToolResult
 
 
 class KatanaWrapper(BaseWrapper):
@@ -36,14 +36,7 @@ class KatanaWrapper(BaseWrapper):
 
     def parse(self, stdout: bytes, stderr: bytes, exit_code: int, target: str) -> ToolResult:
         findings: List[Finding] = []
-        for line in stdout.splitlines():
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                obj = json.loads(line)
-            except json.JSONDecodeError:
-                continue
+        for obj in iter_json_lines(stdout):
 
             # Newer katana emits {"timestamp","request":{...},"response":{...}}.
             # Older/simpler outputs may flatten these. Handle both.

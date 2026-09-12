@@ -6,6 +6,7 @@ and cap to keep finding volume sane.
 """
 from __future__ import annotations
 
+import re
 from typing import List, Sequence
 from urllib.parse import urlparse
 
@@ -13,6 +14,13 @@ from app.scans.models import Finding
 from app.scans.wrappers.base import BaseWrapper, ToolResult
 
 MAX_URLS = 2000
+
+# Deliberately strict: a scheme, a host with a dot, and no whitespace.
+_URL_RE = re.compile(r"^https?://[A-Za-z0-9._~%-]+\.[A-Za-z0-9._~%-]+(?:[:/?#]\S*)?$")
+
+
+def _looks_like_url(value: str) -> bool:
+    return bool(_URL_RE.match(value))
 
 
 class GauWrapper(BaseWrapper):
@@ -36,7 +44,10 @@ class GauWrapper(BaseWrapper):
         findings: List[Finding] = []
         for raw in stdout.decode("utf-8", "replace").splitlines():
             url = raw.strip()
-            if not url or url in seen:
+            # gau prints one URL per line, but an error page, a JSON blob or
+            # binary noise on stdout used to become "historical URL" findings -
+            # and those are fed back as assets the scanners then target.
+            if not url or url in seen or not _looks_like_url(url):
                 continue
             seen.add(url)
             # Flag URLs with query parameters as more interesting (testable inputs).
