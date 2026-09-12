@@ -88,6 +88,14 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
+      # Seconds, and it answers the question the 20-minute QEMU build below
+      # answers expensively: does every pinned release still exist, on both
+      # architectures? It runs first so a yanked or missing asset is reported
+      # immediately instead of four minutes into an emulated build - which is
+      # exactly how the naabu/arm64 gap stayed hidden.
+      - name: Pinned downloads still exist (both architectures)
+        run: python3 backend/scripts/check_download_urls.py
+
       # Emulation, so the arm64 build is exercised on an amd64 runner. Slow,
       # which is why this lives in the nightly and not on every push.
       - uses: docker/setup-qemu-action@v3

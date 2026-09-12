@@ -185,10 +185,21 @@ RUN set -eux; \
     \
     # naabu (port scanner). We use connect-scan mode at runtime so no libpcap
     # / NET_RAW capability is required.
-    curl -fsSL -o naabu.zip \
+    #
+    # The ONE download allowed to fail. naabu links libpcap and publishes no
+    # linux/arm64 asset at any version - every other ProjectDiscovery tool
+    # here does - so a hard `curl -f` broke the whole arm64 image build on a
+    # 404. Degrade the way nikto and whatweb already do: the wrapper reports
+    # the tool as unavailable, the orchestrator skips RECON-PORTS, and
+    # RECON-NMAP-SERVICES still covers port and service detection.
+    if curl -fsSL -o naabu.zip \
         "https://github.com/projectdiscovery/naabu/releases/download/v${NAABU_VERSION}/naabu_${NAABU_VERSION}_linux_${ARCH_SUFFIX}.zip"; \
-    unzip -q naabu.zip; \
-    install -m 0755 naabu /usr/local/bin/naabu; \
+    then \
+        unzip -q naabu.zip; \
+        install -m 0755 naabu /usr/local/bin/naabu; \
+    else \
+        echo "naabu: no linux/${ARCH_SUFFIX} release; skipping (nmap covers port scanning)" >&2; \
+    fi; \
     rm -f naabu naabu.zip LICENSE.md README*.md; \
     \
     # dnsx (DNS toolkit)
