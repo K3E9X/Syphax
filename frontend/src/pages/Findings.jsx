@@ -59,7 +59,7 @@ export default function Findings() {
         q: q || undefined,
       });
       setRows(r.items || []);
-    } catch { /* ignore */ }
+    } catch (e) { console.error('findings load failed', e); }
   }, [sevFilter, statusFilter, q, engId]);
   useEffect(() => { load(); }, [load]);
 

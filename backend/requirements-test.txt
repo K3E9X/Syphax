@@ -1,18 +1,20 @@
-# Minimal dependency set to IMPORT and RUN the unit tests in CI.
-# The unit tests are pure logic; they do NOT need the full web/proxy stack
-# (fastapi, uvicorn, mitmproxy, psycopg), so we keep CI fast and reliable.
+# Dependency set to IMPORT and RUN the unit tests in CI. Mostly pure logic, so
+# the heavy proxy/server stack (uvicorn, mitmproxy, psycopg) stays out and CI
+# stays fast - but fastapi IS needed: the API layer holds the authorization
+# gates, and while it was absent the one API test skipped in silence.
 # The full production requirements are still resolution-checked in CI
 # (pip install --dry-run -r requirements.txt) to catch version conflicts.
-asyncpg==0.30.0
-httpx==0.28.0
-pydantic==2.10.2
+asyncpg==0.31.0
+httpx[socks]==0.28.1
+pydantic==2.13.5
 pydantic-settings==2.6.1
 python-dotenv==1.0.1
 dnspython==2.7.0
-arq==0.26.3
-cryptography==43.0.1
+arq==0.28.0
+cryptography==44.0.3
 # The sandbox isolation tests assert against docker-compose.yml: that config
 # IS the isolation (no route to Postgres, no env_file), so CI has to parse it.
+fastapi==0.141.1
 PyYAML==6.0.2
 pytest==9.0.3
 pytest-asyncio==1.4.0

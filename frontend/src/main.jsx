@@ -17,6 +17,19 @@ import { api } from './lib/api.js';
 import './styles.css';
 
 // "/live" resolves to the most-recent engagement's live view.
+function NotFound() {
+  return (
+    <div className="page">
+      <div className="card">
+        <div className="card__head"><span className="card__title">Not found</span></div>
+        <div className="card__body">
+          <div className="empty">That page does not exist. Use the navigation above.</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function LiveRedirect() {
   const [to, setTo] = useState(null);
   useEffect(() => {
@@ -48,6 +61,9 @@ ReactDOM.createRoot(document.getElementById('root')).render(
           <Route path="proxy" element={<Proxy />} />
           <Route path="reports" element={<Reports />} />
           <Route path="settings" element={<Settings />} />
+          {/* Without a catch-all, a URL matching no child renders null for the
+              whole <Routes> - a blank page with no nav to escape from. */}
+          <Route path="*" element={<NotFound />} />
         </Route>
       </Routes>
     </BrowserRouter>

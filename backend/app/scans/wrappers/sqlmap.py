@@ -13,10 +13,44 @@ from typing import List, Sequence
 from app.scans.models import Finding
 from app.scans.wrappers.base import BaseWrapper, ToolResult
 
-_FINDING_BLOCK = re.compile(
-    r"Parameter:\s*(?P<param>[^\s]+).*?Type:\s*(?P<type>[^\n]+).*?Title:\s*(?P<title>[^\n]+).*?Payload:\s*(?P<payload>[^\n]+)",
-    re.DOTALL,
-)
+# One DOTALL pattern spanning Parameter->Payload used to run straight past the
+# end of a truncated block and pair a parameter with the NEXT block's payload -
+# and since sqlmap findings are auto-trusted as confirmed, that shipped a
+# critical whose PoC did not reproduce. Split on the parameter headers first and
+# parse each block in isolation instead.
+_PARAM_HEADER = re.compile(r"^\s*Parameter:\s*(?P<param>\S+)(?P<rest>.*)$", re.M)
+_FIELD = {
+    "type": re.compile(r"^\s*Type:\s*(?P<v>.+)$", re.M),
+    "title": re.compile(r"^\s*Title:\s*(?P<v>.+)$", re.M),
+    "payload": re.compile(r"^\s*Payload:\s*(?P<v>.+)$", re.M),
+}
+
+
+def parse_injection_blocks(text: str) -> List[dict]:
+    """sqlmap's "Parameter: / Type: / Title: / Payload:" blocks.
+
+    A block without a Payload line is incomplete (tool killed, output truncated)
+    and is skipped rather than completed from its neighbour.
+    """
+    heads = list(_PARAM_HEADER.finditer(text or ""))
+    out: List[dict] = []
+    for i, head in enumerate(heads):
+        end = heads[i + 1].start() if i + 1 < len(heads) else len(text)
+        block = text[head.end():end]
+        fields = {}
+        for name, pat in _FIELD.items():
+            m = pat.search(block)
+            if m:
+                fields[name] = m.group("v").strip()
+        if "payload" not in fields:
+            continue                      # incomplete block: do not guess
+        out.append({
+            "parameter": head.group("param").strip(),
+            "injection_type": fields.get("type", "unknown"),
+            "technique_title": fields.get("title", ""),
+            "payload": fields["payload"],
+        })
+    return out
 
 
 class SqlmapWrapper(BaseWrapper):
@@ -43,12 +77,11 @@ class SqlmapWrapper(BaseWrapper):
         text = stdout.decode("utf-8", errors="replace")
         findings: List[Finding] = []
 
-        # Look for sqlmap's standard "Parameter: ... Type: ... Title: ... Payload: ..." blocks
-        for match in _FINDING_BLOCK.finditer(text):
-            param = match.group("param").strip()
-            injection_type = match.group("type").strip()
-            title = match.group("title").strip()
-            payload = match.group("payload").strip()
+        for block in parse_injection_blocks(text):
+            param = block["parameter"]
+            injection_type = block["injection_type"]
+            title = block["technique_title"]
+            payload = block["payload"]
 
             findings.append(
                 Finding(

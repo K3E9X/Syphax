@@ -60,3 +60,22 @@ jobs:
         run: npm ci --no-audit --no-fund
       - name: Build
         run: npm run build
+
+  compose:
+    name: Compose + Dockerfile (validate)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      # The stack ships only as docker compose, so a broken compose file or
+      # Dockerfile used to surface at deploy time. Validating costs seconds;
+      # the full image build (all the scanner binaries) runs in nightly.yml.
+      - name: Validate docker-compose.yml
+        run: |
+          cp .env.example .env
+          docker compose config --quiet
+          echo "compose OK"
+      - name: Lint the Dockerfiles
+        uses: hadolint/hadolint-action@v3.1.0
+        with:
+          dockerfile: backend/Dockerfile
+          failure-threshold: error

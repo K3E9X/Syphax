@@ -32,16 +32,20 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import ipaddress
+import socket
 import os
 from pathlib import Path
+from urllib.parse import urlparse
 import shutil
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
 import httpx
 
 from app.config import settings
+from app.network import shared_state
 
 app_settings = settings   # alias used by the config-path helpers below
 
@@ -104,7 +108,90 @@ def config_path_allowed(config_path: str, roots: Optional[list] = None) -> bool:
     return False
 
 
-def prepare_wg_config(config_path: str, *, dest_dir: str = PREPARED_DIR) -> str:
+HOSTS_FILE = "/etc/hosts"
+_HOSTS_BEGIN = "# >>> syphax internal services (pinned before the tunnel) >>>"
+_HOSTS_END = "# <<< syphax internal services <<<"
+
+
+def internal_hostnames(*urls) -> list:
+    """Service names this container must keep resolving once the tunnel owns DNS.
+
+    Only real names: an IP or an empty host needs no pinning.
+    """
+    out = []
+    for url in urls:
+        host = (urlparse(str(url or "")).hostname or "").strip()
+        if not host or host in out:
+            continue
+        try:
+            ipaddress.ip_address(host)
+            continue                      # already an address
+        except ValueError:
+            pass
+        out.append(host)
+    return out
+
+
+def hosts_block(mapping: dict) -> str:
+    """The /etc/hosts section for the resolved internal services."""
+    lines = [_HOSTS_BEGIN]
+    for host, ip in sorted(mapping.items()):
+        lines.append(f"{ip}\t{host}")
+    lines.append(_HOSTS_END)
+    return "\n".join(lines)
+
+
+def merge_hosts(existing: str, block: str) -> str:
+    """Insert or replace our block. Idempotent: reconnecting must not stack
+    duplicate entries, and everything Docker wrote stays untouched."""
+    text = existing or ""
+    start = text.find(_HOSTS_BEGIN)
+    end = text.find(_HOSTS_END)
+    if start != -1 and end != -1 and end > start:
+        text = text[:start].rstrip("\n") + "\n" + text[end + len(_HOSTS_END):].lstrip("\n")
+    body = text.rstrip("\n")
+    return (body + "\n\n" if body else "") + block + "\n"
+
+
+def pin_internal_hosts(hostnames=None, hosts_file: str = HOSTS_FILE) -> dict:
+    """Resolve the internal service names NOW and write them to /etc/hosts.
+
+    Called before wg-quick brings the tunnel up. Once these names resolve from
+    the file, the tunnel's own DNS can be kept - which is what stops every
+    target lookup going to the host's resolver in cleartext.
+
+    Returns {host: ip} for what was pinned; empty means nothing was pinned and
+    the caller must fall back to stripping DNS (and say so).
+    """
+    names = hostnames if hostnames is not None else internal_hostnames(
+        app_settings.database_url, app_settings.redis_url)
+    if not names:
+        return {}
+    resolved = {}
+    for host in names:
+        try:
+            info = socket.getaddrinfo(host, None, socket.AF_INET)
+            if info:
+                resolved[host] = info[0][4][0]
+        except OSError:
+            logger.warning("could not resolve %s before the tunnel; not pinning", host)
+    if not resolved:
+        return {}
+    try:
+        with open(hosts_file, "r", encoding="utf-8") as fh:
+            existing = fh.read()
+        with open(hosts_file, "w", encoding="utf-8") as fh:
+            fh.write(merge_hosts(existing, hosts_block(resolved)))
+    except OSError as exc:
+        logger.warning("could not write %s: %s", hosts_file, exc)
+        return {}
+    logger.info("pinned %d internal host(s) before the tunnel: %s",
+                len(resolved), ", ".join(sorted(resolved)))
+    return resolved
+
+
+def prepare_wg_config(config_path: str, *, dest_dir: str = PREPARED_DIR,
+                      keep_dns: bool = False) -> str:
     """Rewrite a provider's WireGuard config into one a container can use.
 
     Two things in a stock provider config break inside Docker, and both fail in
@@ -145,7 +232,7 @@ def prepare_wg_config(config_path: str, *, dest_dir: str = PREPARED_DIR) -> str:
 
     kept, dropped = [], []
     for line in lines:
-        if _re.match(r"^\s*DNS\s*=", line, _re.I):
+        if not keep_dns and _re.match(r"^\s*DNS\s*=", line, _re.I):
             dropped.append(line.strip())
             continue
         kept.append(line)
@@ -154,8 +241,12 @@ def prepare_wg_config(config_path: str, *, dest_dir: str = PREPARED_DIR) -> str:
     dest = os.path.join(dest_dir, "wg0.conf")
     header = [
         "# Prepared by Syphax from " + os.path.basename(config_path),
-        "# DNS lines removed so Docker's resolver keeps working; traffic still",
-        "# exits through the tunnel. Original left untouched.",
+        ("# Tunnel DNS kept: internal services are pinned in /etc/hosts, so target"
+         if keep_dns else
+         "# DNS lines removed so Docker's resolver keeps working, which means target"),
+        ("# lookups go through the tunnel instead of the host resolver."
+         if keep_dns else
+         "# lookups LEAK to the host resolver. Original left untouched."),
     ]
     with open(dest, "w", encoding="utf-8") as fh:
         fh.write("\n".join(header + kept) + "\n")
@@ -171,6 +262,10 @@ class NetworkState:
     mode: str = MODE_OFF
     connected: bool = False
     baseline_ip: Optional[str] = None   # real IP, recorded before any tunnel
+    # Whether target name lookups go through the tunnel. False means the tunnel
+    # carries the traffic but DNS still exits via the host resolver.
+    dns_through_tunnel: bool = False
+    dns_pinned_hosts: List[str] = field(default_factory=list)
     current_ip: Optional[str] = None
     proxy_url: Optional[str] = None
     config_path: Optional[str] = None
@@ -182,6 +277,8 @@ class NetworkState:
             "mode": self.mode,
             "connected": self.connected,
             "baseline_ip": self.baseline_ip,
+            "dns_through_tunnel": self.dns_through_tunnel,
+            "dns_pinned_hosts": list(self.dns_pinned_hosts),
             "current_ip": self.current_ip,
             "ip_changed": bool(
                 self.baseline_ip and self.current_ip and self.baseline_ip != self.current_ip
@@ -317,10 +414,13 @@ class NetworkPrivacyManager:
 
         check = await self.verify_exit_ip()
         self.state.connected = check["safe"]
+        if check["safe"]:
+            await shared_state.publish(self.state.mode, None)
         if not check["safe"]:
             self.state.mode, self.state.proxy_url = previous_mode, previous_proxy
             return {"ok": False, "error": check["reason"], **self.state.to_dict()}
 
+        await shared_state.publish(MODE_PROXY, proxy_url)
         return {"ok": True, **self.state.to_dict()}
 
     # ---- VPN ----
@@ -337,10 +437,20 @@ class NetworkPrivacyManager:
         # corrected copy rather than asking the operator to hand-edit the file
         # their provider generated. See prepare_wg_config for what and why.
         if mode == MODE_WIREGUARD:
+            # Pin the internal service IPs BEFORE the tunnel owns DNS. If that
+            # works we can keep the provider's DNS line, and target lookups go
+            # through the tunnel instead of leaking to the host resolver.
+            pinned = pin_internal_hosts()
+            self.state.dns_pinned_hosts = sorted(pinned)
+            self.state.dns_through_tunnel = bool(pinned)
             try:
-                config_path = prepare_wg_config(config_path)
+                config_path = prepare_wg_config(config_path, keep_dns=bool(pinned))
             except Exception as exc:  # noqa: BLE001
                 return {"ok": False, "error": f"could not prepare the config: {exc}"}
+            if not pinned:
+                logger.warning(
+                    "internal hosts could not be pinned; keeping Docker DNS, so "
+                    "target name lookups will NOT go through the tunnel")
 
         binary = "wg-quick" if mode == MODE_WIREGUARD else "openvpn"
         if not shutil.which(binary):
@@ -395,6 +505,7 @@ class NetworkPrivacyManager:
         baseline = self.state.baseline_ip
         self.state = NetworkState(baseline_ip=baseline)
         self.state.current_ip = await self.get_public_ip(through_proxy=False)
+        await shared_state.publish(MODE_OFF, None)
         return {"ok": True, **self.state.to_dict()}
 
     @staticmethod
@@ -412,10 +523,23 @@ class NetworkPrivacyManager:
     # ---- Used by the scan path ----
 
     def proxy_for_tools(self) -> Optional[str]:
-        """Proxy URL to hand to tool subprocesses, or None"""
+        """Proxy URL for tool subprocesses from THIS process's state, or None."""
         if self.state.mode == MODE_PROXY and self.state.proxy_url:
             return self.state.proxy_url
         return None
+
+    async def proxy_for_tools_shared(self) -> Optional[str]:
+        """Same, but also honouring a proxy set in another container.
+
+        The worker and orchestrator submit scans from their own processes, where
+        a proxy chosen in the UI was never visible. Local state wins (it is the
+        live one); otherwise fall back to what the backend published.
+        """
+        local = self.proxy_for_tools()
+        if local:
+            return local
+        mode, proxy_url = await shared_state.read()
+        return proxy_url if mode == MODE_PROXY and proxy_url else None
 
     async def guard_scan(self) -> Dict[str, Any]:
         """
@@ -429,10 +553,14 @@ class NetworkPrivacyManager:
             return {"allowed": True, "reason": "require_vpn is off"}
 
         if self.state.mode == MODE_OFF:
-            return {
-                "allowed": False,
-                "reason": "REQUIRE_VPN is on but no VPN or proxy is configured",
-            }
+            # This process may simply not be the one that configured the tunnel:
+            # the UI talks to the backend, scans are submitted from the worker.
+            shared_mode, _ = await shared_state.read()
+            if shared_mode in (None, MODE_OFF):
+                return {
+                    "allowed": False,
+                    "reason": "REQUIRE_VPN is on but no VPN or proxy is configured",
+                }
 
         check = await self.verify_exit_ip()
         return {

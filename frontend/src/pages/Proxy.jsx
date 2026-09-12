@@ -25,7 +25,7 @@ export default function Proxy() {
     try {
       const r = await api.proxy.flows({ host: host || undefined, method: method || undefined, search: search || undefined, limit: 200 });
       setFlows(r.items || r || []);
-    } catch (e) { /* ignore */ }
+    } catch (e) { flash(e.message); }
   }, [host, method, search]);
 
   useEffect(() => {
@@ -40,7 +40,7 @@ export default function Proxy() {
 
   async function select(id) {
     setSel(id); setTab('request'); setDetail(null); setSugg({ loading: false, items: null });
-    try { setDetail(await api.proxy.flow(id)); } catch (e) { /* ignore */ }
+    try { setDetail(await api.proxy.flow(id)); } catch (e) { flash(e.message); }
   }
   async function clearFlows() { try { await api.proxy.clear(); await loadFlows(); flash('Cleared captured flows'); } catch (e) { flash(e.message); } }
   async function suggest() {

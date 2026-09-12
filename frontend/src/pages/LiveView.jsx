@@ -41,7 +41,11 @@ export default function LiveView() {
       const [s, a] = await Promise.all([api.engagements.state(id), api.engagements.approvals(id)]);
       setState(s);
       setApprovals((a.items || []).filter((x) => x.decision === null));
-    } catch (e) { /* ignore */ }
+    } catch (e) {
+      // A backend 500 used to look exactly like "no data": the panels just
+      // kept their last values while the header still said running.
+      console.error('live state refresh failed', e);
+    }
   }, [id]);
 
   useEffect(() => { loadState(); }, [loadState]);
@@ -143,7 +147,8 @@ export default function LiveView() {
   async function toggleJob(jid) {
     if (openJob === jid) { setOpenJob(null); setJobDetail(null); return; }
     setOpenJob(jid); setJobDetail(null);
-    try { setJobDetail(await api.scans.get(jid)); } catch { /* ignore */ }
+    try { setJobDetail(await api.scans.get(jid)); }
+    catch (e) { flash(e.message); setOpenJob(null); }
   }
 
   const s = state || {};

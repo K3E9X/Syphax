@@ -136,7 +136,7 @@ class Runner:
             from app.scans.identity import identity_args, proxy_args
 
             options = identity_args(tool) + options
-            proxy = netmgr.proxy_for_tools()
+            proxy = await netmgr.proxy_for_tools_shared()
             if proxy:
                 options = proxy_args(tool, proxy) + options
         except Exception:  # noqa: BLE001 - never block a scan on identity wiring
