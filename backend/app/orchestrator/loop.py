@@ -409,6 +409,15 @@ async def _finalize_engagement(engagement, run: Run, runs: RunRepository,
                 await run_payload_validation(engagement.id)
             except Exception:  # noqa: BLE001 - probing never fails the run
                 logger.exception("[%s] payload-probe error", run.id)
+        # Fold this engagement's final verdicts into the cross-engagement
+        # memory, so the next run on a similar stack starts informed. Verdicts
+        # are final by here: the judge and the probes have both run.
+        try:
+            from app import memory
+            await memory.record_engagement(engagement.id)
+        except Exception:  # noqa: BLE001 - memory must never fail a run
+            logger.exception("[%s] memory update failed", run.id)
+
         chains = await build_chains(engagement.id)
         await audit(
             "engagement.validated",

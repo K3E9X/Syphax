@@ -116,13 +116,6 @@ def insert_flow_sync(row: Dict[str, Any]) -> None:
         logger.warning("flow queue full; dropping capture for %s", row.get("url"))
 
 
-def write_flow_now(row: Dict[str, Any]) -> None:
-    """Synchronous insert on a fresh connection. Used by tests and one-offs."""
-    conn = db.sync_connect()
-    try:
-        _write_row(conn, row)
-    finally:
-        conn.close()
 
 
 def _write_row(conn, row: Dict[str, Any]) -> None:

@@ -224,9 +224,6 @@ async def get_public() -> Dict[str, Any]:
     return data
 
 
-async def get_provider_key(provider: str) -> str:
-    row = await _read_row()
-    return row["secrets"].get(provider, "")
 
 
 async def save(patch: Dict[str, Any]) -> Dict[str, Any]:
