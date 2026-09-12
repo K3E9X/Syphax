@@ -48,7 +48,14 @@ async def start_run(engagement_id: str) -> dict:
             detail=f"engagement is '{e.status.value}', not 'authorized'. Verify ownership first.",
         )
 
-    # One active run at a time.
+    # One active run at a time - but a worker that died used to leave a run at
+    # 'running' forever, and this guard then refused every new run with a 409
+    # that never cleared. Reclaim anything with no live loop first.
+    reclaimed = await _runs.reclaim_stale(engagement_id)
+    if reclaimed:
+        await audit("engagement.run_reclaimed", engagement_id=engagement_id,
+                    count=reclaimed)
+
     latest = await _runs.latest_for_engagement(engagement_id)
     if latest and latest.status in ("queued", "running"):
         raise HTTPException(status_code=409, detail=f"run {latest.id} already active")
@@ -176,6 +183,29 @@ async def analyze_traffic(engagement_id: str) -> dict:
     await validate_engagement(engagement_id)
     await build_chains(engagement_id)
     await audit("engagement.analyzed_traffic", engagement_id=engagement_id, result=result)
+    return result
+
+
+@router.get("/{engagement_id}/diff")
+async def engagement_diff(engagement_id: str, against: str) -> dict:
+    """Compare this engagement's findings with another engagement's.
+
+    The retest question: what did we fix, what came back, what is new. Both
+    engagements must exist; `against` is the earlier one.
+    """
+    for eid in (engagement_id, against):
+        if await _engagements.get(eid) is None:
+            raise HTTPException(status_code=404, detail=f"engagement {eid} not found")
+    if engagement_id == against:
+        raise HTTPException(status_code=400, detail="cannot diff an engagement against itself")
+
+    from app.reporting.diff import diff_findings
+
+    previous = [v.to_public() for v in await _vf.list(against)]
+    current = [v.to_public() for v in await _vf.list(engagement_id)]
+    result = diff_findings(previous, current).to_public()
+    result["previous_engagement"] = against
+    result["current_engagement"] = engagement_id
     return result
 
 

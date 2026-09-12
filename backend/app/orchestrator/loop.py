@@ -88,6 +88,7 @@ async def run_engagement_loop(run_id: str) -> dict:
 
     run.status = "running"
     run.started_at = time.time()
+    run.heartbeat_at = time.time()
     await runs.update(run)
     await audit("engagement.run_started", engagement_id=engagement.id, run_id=run.id)
     await events.emit(engagement.id, events.RUN_STARTED, "Autonomous run started",
@@ -109,6 +110,9 @@ async def run_engagement_loop(run_id: str) -> dict:
     error_streak = 0
     try:
         for iteration in range(MAX_ITERATIONS):
+            # A sign of life, so a worker that dies can be told apart from a
+            # loop legitimately waiting on a slow batch.
+            await runs.beat(run.id)
             if await runs.stop_requested(run.id):
                 run.status = "stopped"
                 run.stop_reason = "stopped"
