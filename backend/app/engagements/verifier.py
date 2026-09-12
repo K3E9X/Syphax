@@ -17,7 +17,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from dataclasses import dataclass
-from typing import Optional
+from typing import Any, Optional
 
 import httpx
 
@@ -27,10 +27,59 @@ logger = logging.getLogger("syphax.engagements.verifier")
 
 
 @dataclass
+
 class VerificationResult:
     ok: bool
     method: Optional[VerificationMethod]
     detail: str
+
+
+# --------------------------------------------------------------------------- #
+# Comparison logic, extracted and pure.
+#
+# This is what decides whether an engagement is authorised against a host, so
+# it must not be loose: a comparison that accepts a near-miss authorises
+# scanning something the operator does not control. Kept separate from the
+# resolver/HTTP plumbing so it can be tested exhaustively.
+
+def expected_txt_value(token: str) -> str:
+    """The exact TXT value an owner has to publish."""
+    return f"syphax-verify={token}"
+
+
+def txt_record_value(rdata: Any) -> str:
+    """Read one TXT answer as a string.
+
+    dnspython gives the chunks in .strings (bytes); a long record arrives split
+    and must be joined before comparing. The str() fallback covers stubs and
+    other rdata shapes, and carries surrounding quotes we have to strip.
+    """
+    chunks = getattr(rdata, "strings", None)
+    if chunks:
+        try:
+            return b"".join(chunks).decode("utf-8", "replace")
+        except (TypeError, AttributeError):
+            pass
+    return str(rdata or "").strip().strip('"')
+
+
+def txt_matches(rdata: Any, token: str) -> bool:
+    """Does this TXT answer prove ownership? Exact match after trimming."""
+    if not token:
+        return False
+    return txt_record_value(rdata).strip() == expected_txt_value(token)
+
+
+def well_known_matches(body: Optional[str], token: str) -> bool:
+    """Does the .well-known file prove ownership?
+
+    Trailing whitespace and a newline are fine - editors add them. Anything
+    else, including the token merely appearing inside a larger page, is not a
+    proof: an error page that echoes the URL would otherwise authorise us.
+    """
+    if not token:
+        return False
+    return (body or "").strip() == token
 
 
 class AuthorizationVerifier:
@@ -63,7 +112,6 @@ class AuthorizationVerifier:
         )
 
     async def _verify_dns(self, host: str, token: str) -> VerificationResult:
-        expected = f"syphax-verify={token}"
         try:
             import dns.asyncresolver  # dnspython
 
@@ -71,11 +119,7 @@ class AuthorizationVerifier:
             resolver.lifetime = self.dns_timeout
             answers = await resolver.resolve(host, "TXT")
             for rdata in answers:
-                # Each TXT record can be a list of byte strings; join them.
-                value = b"".join(getattr(rdata, "strings", [])).decode("utf-8", "replace")
-                if not value:
-                    value = str(rdata).strip('"')
-                if value.strip() == expected:
+                if txt_matches(rdata, token):
                     return VerificationResult(True, VerificationMethod.DNS_TXT, "TXT record matched")
             return VerificationResult(False, None, "no matching TXT record")
         except ModuleNotFoundError:
@@ -92,8 +136,7 @@ class AuthorizationVerifier:
                 resp = await client.get(url)
             if resp.status_code != 200:
                 return VerificationResult(False, None, f"HTTP {resp.status_code}")
-            body = (resp.text or "").strip()
-            if body == token:
+            if well_known_matches(resp.text, token):
                 return VerificationResult(
                     True, VerificationMethod.WELL_KNOWN, "well-known file matched"
                 )

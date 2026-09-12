@@ -146,6 +146,31 @@ async def _retest(engagement_id: str, finding_id: str) -> Dict[str, Any]:
     return {"dedup": key, "status": "false_positive", "note": "no longer reproduced"}
 
 
+@router.post("/api/findings/{finding_id}/verify-proof")
+async def verify_proof(finding_id: str) -> Dict[str, Any]:
+    """Replay the proof the LLM judge suggested for this finding.
+
+    The judge already paid a call to produce a single read-only request and the
+    substring that settles the question; this sends it and reports whether it
+    held. Goes through SafePoC, so the usual policy applies.
+    """
+    f = await _vf.get(finding_id)
+    if f is None:
+        raise HTTPException(status_code=404, detail="finding not found")
+    eng = await _engagements.get(f.engagement_id)
+    if eng is None:
+        raise HTTPException(status_code=404, detail="engagement not found")
+    if eng.status != EngagementStatus.AUTHORIZED:
+        raise HTTPException(status_code=403, detail="engagement is not authorized")
+
+    from app.validation.proof_replay import replay
+
+    result = await replay(f, eng.host_in_scope)
+    await audit("finding.proof_replayed", finding_id=finding_id,
+                engagement_id=f.engagement_id, outcome=result.get("outcome"))
+    return {"finding_id": finding_id, **result}
+
+
 @router.post("/api/findings/{finding_id}/retest")
 async def retest_finding(finding_id: str) -> Dict[str, Any]:
     f = await _vf.get(finding_id)

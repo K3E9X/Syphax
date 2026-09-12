@@ -286,6 +286,18 @@ export default function Home() {
                 <dd className={guard?.allowed ? 'kv-yes' : 'kv-no'}>
                   {guard ? (guard.allowed ? 'yes' : `no — ${guard.reason}`) : '—'}
                 </dd>
+                {/* A tunnel can carry the traffic while name lookups still go
+                    to the host resolver in cleartext. Say which it is. */}
+                {net?.mode && net.mode !== 'off' && (
+                  <>
+                    <dt>Target DNS via tunnel</dt>
+                    <dd className={net.dns_through_tunnel ? 'kv-yes' : 'kv-no'}>
+                      {net.dns_through_tunnel
+                        ? `yes — ${(net.dns_pinned_hosts || []).length} internal host(s) pinned`
+                        : 'no — lookups leak to the host resolver'}
+                    </dd>
+                  </>
+                )}
               </dl>
 
               <div className="key-row" style={{ marginTop: 8 }}>

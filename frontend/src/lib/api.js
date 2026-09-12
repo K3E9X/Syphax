@@ -63,6 +63,8 @@ export const api = {
     findings: (id) => request(`/api/engagements/${id}/findings`),
     chains: (id) => request(`/api/engagements/${id}/chains`),
     reportJson: (id) => request(`/api/engagements/${id}/report.json`),
+    verifyProof: (fid) => request(`/api/findings/${fid}/verify-proof`, { method: 'POST' }),
+    memory: (id) => request(`/api/engagements/${id}/memory`),
     retestFinding: (id, fid) => request(`/api/engagements/${id}/findings/${fid}/retest`, { method: 'POST' }),
     decideApproval: (id, approvalId, decision) =>
       request(`/api/engagements/${id}/approvals/${approvalId}`, {

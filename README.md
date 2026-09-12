@@ -47,7 +47,7 @@ and `docker compose up -d` work just as well.
 | UI | http://localhost:3000 |
 | API | http://localhost:8000 |
 | API docs | http://localhost:8000/docs |
-| MITM proxy | http://localhost:8080 |
+| MITM proxy | http://localhost:8080 (loopback only by default) |
 
 ### What to put in `.env`
 
@@ -68,7 +68,13 @@ VALIDATOR_API_KEY=...
 #    because a model that is not listed is costed at zero.
 LLM_PRICING=kimi-k3=3.0/15.0,glm-5.2=1.4/4.4
 
-# 3. Where your traffic exits. Empty = your own IP.
+# 3. API key — optional, and empty is fine while the API is bound to 127.0.0.1
+#    (the compose default). Set it before exposing :8000 or the proxy :8080 to
+#    anything else: the API can read captured sessions and bring up a VPN.
+#    Then paste the same value into Settings -> API key in the UI.
+SYPHAX_API_KEY=
+
+# 4. Where your traffic exits. Empty = your own IP.
 REQUIRE_VPN=false          # true refuses to scan unless the exit IP changed
 SCAN_PROXY=                # socks5://127.0.0.1:9050 for Tor — no privileges
 VPN_CONFIG_PATH=           # /data/vpn/wg0.conf for WireGuard/OpenVPN
@@ -102,7 +108,7 @@ included) and wiping state: **[docs/OPERATING.md](docs/OPERATING.md)**.
       API (FastAPI)                              :8000
        │        │              │
   Engagements  Orchestrator   Proxy capture      :8080
-  + authz gate  (the brain)   (mitmproxy → Postgres)
+  + authz gate  (the brain)   (own image: mitmproxy → Postgres)
                     │
       Planner ──> Executor ──> Validator
       (catalog)   (arq worker)  (safe-PoC)
@@ -114,9 +120,20 @@ included) and wiping state: **[docs/OPERATING.md](docs/OPERATING.md)**.
       sandbox-runner  ── isolated network, no secrets, pinned egress
 ```
 
-Five app containers — `backend`, `worker`, `orchestrator`, `frontend`,
-`sandbox-runner` — plus Postgres and Redis. The orchestrator has its own queue
-so a long autonomous run never starves the scan worker.
+Six app containers — `backend`, `proxy`, `worker`, `orchestrator`, `frontend`,
+`sandbox-runner` — plus Postgres and Redis. Three details are load-bearing:
+
+- The orchestrator has **its own arq queue**. A long autonomous run holds a
+  worker slot for its whole life, so sharing one pool let a run starve the
+  scans it was itself waiting on.
+- `worker` and `orchestrator` run on **`network_mode: "service:backend"`**.
+  Only `backend` has `NET_ADMIN` + `/dev/net/tun`, so it is the only namespace
+  `wg-quick` can route — without sharing it the tools egressed directly while
+  the UI reported a healthy tunnel. Changing this needs a full
+  `docker compose down`, not a restart.
+- `proxy` is a **separate image** (`--target proxy`). mitmproxy pins
+  `cryptography<44.1`; while it shared an environment with the API that pin
+  applied to the whole stack.
 
 `sandbox-runner` sits on a separate Docker network with no route to Postgres,
 Redis or the backend's secrets. It is where untrusted third-party PoCs run,

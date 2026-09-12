@@ -231,3 +231,17 @@ body { background: var(--bg); color: var(--text-primary); font: var(--font-body)
 .topnav__health { font-family: var(--font-mono); font-size: 11px; margin-left: 10px; }
 .topnav__health--up, .topnav__health--unknown { display: none; }
 .topnav__health--down { color: var(--sev-critical); }
+
+/* ---------- suggested proof (LLM judge) + cross-engagement memory ---------- */
+.finding__proof { margin-top: 8px; padding: 8px 10px; border: 1px dashed var(--border); border-radius: var(--radius-sm); font-family: var(--font-mono); font-size: 11.5px; display: flex; flex-direction: column; gap: 4px; }
+.finding__proof-l { color: var(--text-faint); text-transform: uppercase; letter-spacing: .04em; font-size: 10px; }
+.finding__proof code { color: var(--text-secondary); word-break: break-all; }
+.finding__proof-r { margin-top: 4px; }
+.finding__proof-r--held { color: var(--severity-critical); }
+.finding__proof-r--did_not_hold { color: var(--term-ok); }
+.finding__proof-r--inconclusive, .finding__proof-r--refused, .finding__proof-r--error, .finding__proof-r--running { color: var(--text-faint); }
+
+.mem-strip { display: flex; align-items: center; gap: 10px; margin-top: 10px; flex-wrap: wrap; font-family: var(--font-mono); font-size: 11.5px; }
+.mem-strip__l { color: var(--text-faint); text-transform: uppercase; letter-spacing: .04em; font-size: 10px; }
+.mem-strip__item { padding: 2px 8px; border: 1px solid var(--border); border-radius: 999px; color: var(--text-secondary); cursor: default; }
+.mem-strip__item b { color: var(--accent); font-weight: 500; }

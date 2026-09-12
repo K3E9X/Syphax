@@ -190,6 +190,8 @@ present. WordPress CVE correlation needs `WPSCAN_API_TOKEN` (free, optional).
 | `REQUIRE_VPN` / `SCAN_PROXY` / `VPN_CONFIG_PATH` | Route scan traffic through a proxy or tunnel, and refuse to scan when the exit IP still matches your real one. |
 | `RESET_ON_START`               | Wipe scan artefacts on every boot (default `true`). See **Full wipe** below for what it does *not* cover. |
 | `OPENROUTER_API_KEY` / `_MODEL` / `_FALLBACK_MODELS` | **Optional** free fallback aggregator, used only for roles whose own key is blank. |
+| `SYPHAX_API_KEY`               | **Optional.** Empty = no authentication, which is fine while `:8000` / `:8080` are bound to `127.0.0.1` (the compose default). Set it before exposing either, then paste the same value into **Settings → API key**. Enforced on `/api` and on the WebSocket (as `?key=`, since a browser cannot set headers on a WS handshake). `/api/health` stays open for the healthcheck. |
+| `LLM_RECON_MAX_FLOWS` / `_BODY_CHARS` / `_BUDGET_CHARS` | How much captured traffic the LLM response analyst sees. Defaults suit ~128K context; raise to `200` / `600000` for a 262K model. Flows are ranked (server errors > auth/validation errors > parameterised > plain 200s > 404s) and added until either cap binds. |
 | `POSTGRES_*`                   | Database credentials (defaults work out of the box). |
 | `WPSCAN_API_TOKEN`             | Optional WordPress CVE lookups.                    |
 
@@ -253,3 +255,61 @@ install.sh / start.sh
   container runs them. The autonomous run is itself a long-lived worker task
   that launches scan sub-tasks concurrently.
 - The MITM addon writes flows via sync psycopg; everything else uses asyncpg.
+
+## Retesting the same target
+
+Two things make a second engagement on a target worth more than the first.
+
+**Diff.** `GET /api/engagements/<new>/diff?against=<old>` answers the retest
+question: what was fixed, what came back, what is new. Findings are matched on
+(class, endpoint path, title) with the query string dropped, because `?id=1`
+and `?id=7` are the same issue - keeping it would report every retest as
+entirely new. Only `confirmed` and `likely` findings are compared: one the
+judge killed was never real, so it is neither a fix nor a regression.
+
+**Memory.** After each validation, the engagement's final verdicts are folded
+into a shared store keyed on (normalised technology, vuln_class). The planner
+then puts classes that held up on this stack first *within a phase* -
+`GET /api/engagements/<id>/memory` shows what it learned and why, and the Live
+view prints it as a strip above the tabs.
+
+It is deliberately conservative. Only final verdicts count (a `likely` is an
+opinion, and remembering opinions compounds them), a lesson needs at least two
+observations and better than 50% precision before it steers anything, and it
+never adds or drops a task or touches a gate. On a fresh install it is empty
+and does nothing.
+
+## When a run is interrupted
+
+The loop writes a heartbeat every iteration. If the worker dies, the run stays
+at `running` with nothing driving it - which used to make `POST .../run` refuse
+every new run with a 409 that never cleared. Starting a run now reclaims
+anything with no live loop first, and marks it `failed` with
+`stop_reason: interrupted`. The Live view shows `no worker reporting` on such a
+run.
+
+Coverage rows are kept on purpose: the planner skips what already ran, so the
+next run **continues** rather than redoing the work. Just press Run again.
+
+## Verifying a finding by hand
+
+When an LLM validator role is configured, the judge proposes a *proof* for each
+finding it reviews: one read-only request, plus the exact substring that
+settles the question. The Live view shows it under the finding, and **Verify
+proof** replays it through SafePoC and reports whether it held.
+
+The verdict is a substring test, not a second opinion - the judge already chose
+the observable. No response at all is reported as `inconclusive`, never as a
+refutation: the target may simply have been down.
+
+## Is the tunnel actually covering DNS?
+
+A tunnel can carry the traffic while name lookups still go to the host resolver
+in cleartext. `wg-quick` replaces `/etc/resolv.conf` with the provider's `DNS`,
+which breaks resolution of `postgres` and `redis` inside the container - so the
+DNS line used to be stripped, and every target lookup leaked.
+
+Now the internal service IPs are resolved and pinned into `/etc/hosts` *before*
+the tunnel comes up, which lets the tunnel keep its own DNS. The Home page
+reports which of the two you have under **Target DNS via tunnel**; if pinning
+failed it says so rather than pretending.

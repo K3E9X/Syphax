@@ -28,6 +28,10 @@ export default function LiveView() {
   const [openJob, setOpenJob] = useState(null);
   const [jobDetail, setJobDetail] = useState(null);
   const [openReq, setOpenReq] = useState(null);
+  // Replayed proofs, by finding id. The judge already paid a call to produce
+  // each one; this is what finally uses it.
+  const [proofs, setProofs] = useState({});
+  const [memory, setMemory] = useState([]);
   const [busy, setBusy] = useState(false);
   const [toast, setToast] = useState(null);
   const wsRef = useRef(null);
@@ -49,6 +53,13 @@ export default function LiveView() {
   }, [id]);
 
   useEffect(() => { loadState(); }, [loadState]);
+  // What past engagements suggest on this stack. Advisory, so a failure here
+  // must not disturb the page.
+  useEffect(() => {
+    api.engagements.memory(id)
+      .then((r) => setMemory(r.lessons || []))
+      .catch((e) => console.error('memory unavailable', e));
+  }, [id]);
   // Poll only while a run can still change. A finished run polled forever,
   // firing two requests every 3s for as long as the tab stayed open.
   const polling = state === null || state?.run?.status === 'running'
@@ -144,6 +155,17 @@ export default function LiveView() {
       flash(r.status === 'false_positive' ? 'Retest: no longer reproduced' : 'Retest complete');
     } catch (e) { flash(e.message); }
   }
+  async function verifyProof(fid) {
+    setProofs((p) => ({ ...p, [fid]: { outcome: 'running', detail: 'replaying...' } }));
+    try {
+      const r = await api.engagements.verifyProof(fid);
+      setProofs((p) => ({ ...p, [fid]: r }));
+      if (r.outcome === 'held' || r.outcome === 'did_not_hold') await loadState();
+    } catch (e) {
+      setProofs((p) => ({ ...p, [fid]: { outcome: 'error', detail: e.message } }));
+    }
+  }
+
   async function toggleJob(jid) {
     if (openJob === jid) { setOpenJob(null); setJobDetail(null); return; }
     setOpenJob(jid); setJobDetail(null);
@@ -215,6 +237,9 @@ export default function LiveView() {
       <div className="run-meta">
         {active && <span className="live-dot pulse"></span>}
         Run: <b className={active ? 'run-status--running' : ''}>{run0.status || 'not started'}</b>
+        {run0.stale && (
+          <><span>&middot;</span><span className="run-reason">no worker reporting &mdash; Run reclaims it</span></>
+        )}
         {!active && run0.stop_reason && (
           <><span>&middot;</span><span className="run-reason">{REASON_LABEL[run0.stop_reason] || run0.stop_reason}</span></>
         )}
@@ -222,6 +247,18 @@ export default function LiveView() {
         <span>&middot;</span><span><b>{run0.jobs_launched || 0}</b> jobs launched</span>
         <span>&middot;</span><span><b>{vsum.confirmed || 0}</b> confirmed</span>
       </div>
+
+      {memory.length > 0 && (
+        <div className="mem-strip">
+          <span className="mem-strip__l">From past engagements on this stack</span>
+          {memory.slice(0, 6).map((l) => (
+            <span key={l.technology + l.vuln_class} className="mem-strip__item"
+                  title={`${l.confirmed} confirmed / ${l.observations} seen${l.example_title ? ' · e.g. ' + l.example_title : ''}`}>
+              {l.vuln_class} <b>{Math.round(l.precision * 100)}%</b>
+            </span>
+          ))}
+        </div>
+      )}
 
       {approvals.map((a) => (
         <div key={a.id} className="approval">
@@ -369,8 +406,20 @@ export default function LiveView() {
                 <div className="finding__target">{f.target}</div>
                 <div className="finding__meta">{f.tool} &middot; {f.vuln_class}{f.method ? ' · ' + f.method : ''}</div>
                 {f.poc && <pre className="finding__poc">{f.poc}</pre>}
+                {(f.metadata || {}).suggested_proof && (
+                  <div className="finding__proof">
+                    <span className="finding__proof-l">Suggested proof</span>
+                    <code>{(f.metadata.suggested_proof.method || 'GET')} {f.metadata.suggested_proof.url}</code>
+                    <span className="finding__proof-l">expects</span>
+                    <code>{f.metadata.suggested_proof.expect}</code>
+                    {proofs[f.id] && <div className={'finding__proof-r finding__proof-r--' + proofs[f.id].outcome}>{proofs[f.id].outcome}: {proofs[f.id].detail}</div>}
+                  </div>
+                )}
                 <div className="finding__actions">
                   <button className="btn btn--muted btn--sm" onClick={() => retest(f.id)}>Retest</button>
+                  {(f.metadata || {}).suggested_proof && (
+                    <button className="btn btn--muted btn--sm" onClick={() => verifyProof(f.id)}>Verify proof</button>
+                  )}
                   {(f.req || f.resp) && <button className="btn btn--muted btn--sm" onClick={() => setOpenReq(openReq === f.id ? null : f.id)}>{openReq === f.id ? 'Hide' : 'Request / response'}</button>}
                 </div>
                 {openReq === f.id && (f.req || f.resp) && (
