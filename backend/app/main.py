@@ -11,6 +11,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 # Importing the storage modules registers their CREATE TABLE statements with
 # app.db; init_db() then runs them all in lifespan startup.
@@ -80,6 +81,20 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+# --- API key (opt-in; see app/api_auth.py) -----------------------------------
+@app.middleware("http")
+async def _api_key_guard(request, call_next):
+    from app.api_auth import authorize
+    if not authorize(request.url.path, request.headers, settings.api_key,
+                     request.query_params.get("key")):
+        return JSONResponse(
+            status_code=401,
+            content={"detail": "missing or invalid API key "
+                                "(send X-API-Key or Authorization: Bearer)"},
+        )
+    return await call_next(request)
 
 
 @app.get("/api/health")

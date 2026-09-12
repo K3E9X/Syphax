@@ -4,6 +4,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import List
 
+from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -54,6 +55,11 @@ class Settings(BaseSettings):
     llm_recon_max_flows: int = 60
     llm_recon_body_chars: int = 6000
     llm_recon_budget_chars: int = 150_000
+
+    # API authentication. Empty = disabled (loopback-only local use). Set it to
+    # require X-API-Key / Authorization: Bearer on every /api route - do that
+    # before publishing the API or the proxy beyond 127.0.0.1.
+    api_key: str = Field("", validation_alias=AliasChoices("SYPHAX_API_KEY", "API_KEY"))
 
     # Storage
     data_dir: Path = Path("/data")

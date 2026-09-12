@@ -22,6 +22,15 @@ POLL_INTERVAL = 1.0
 
 @router.websocket("/ws/engagements/{engagement_id}/stream")
 async def engagement_stream(websocket: WebSocket, engagement_id: str) -> None:
+    # The HTTP middleware does not cover the WebSocket handshake, and a browser
+    # cannot set headers on one - so the key travels as ?key= here. Refuse
+    # before accept() so an unauthorised client never gets a socket.
+    from app.api_auth import key_ok
+    from app.config import settings as _settings
+    if _settings.api_key and not key_ok(websocket.query_params.get("key", ""),
+                                        _settings.api_key):
+        await websocket.close(code=1008)   # policy violation
+        return
     await websocket.accept()
     # Allow the client to resume from a known id: ?after=<id>
     try:

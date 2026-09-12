@@ -33,6 +33,7 @@ import asyncio
 import json
 import logging
 import os
+from pathlib import Path
 import shutil
 import time
 from dataclasses import dataclass
@@ -41,6 +42,8 @@ from typing import Any, Dict, List, Optional
 import httpx
 
 from app.config import settings
+
+app_settings = settings   # alias used by the config-path helpers below
 
 logger = logging.getLogger("syphax.network.privacy")
 
@@ -65,6 +68,40 @@ PREPARED_DIR = "/tmp/syphax-wg"
 
 # wg-quick derives the interface name from the filename, and the kernel caps it.
 WG_IFACE_MAX = 15
+
+
+def config_roots() -> list:
+    """Directories a VPN config may be read from.
+
+    config_path arrives in an API request body and is handed to wg-quick, so it
+    is confined to the operator's own data dir (and whatever VPN_CONFIG_PATH
+    points at, which the operator set themselves in .env).
+    """
+    roots = [str(Path(app_settings.data_dir).resolve())]
+    configured = (app_settings.vpn_config_path or "").strip()
+    if configured:
+        roots.append(str(Path(configured).resolve().parent))
+    return roots
+
+
+def config_path_allowed(config_path: str, roots: Optional[list] = None) -> bool:
+    """True if config_path resolves inside one of the allowed roots.
+
+    Resolving first defeats ../ traversal and symlinks that point elsewhere.
+    """
+    if not config_path:
+        return False
+    try:
+        target = Path(config_path).resolve()
+    except (OSError, RuntimeError):
+        return False
+    for root in (roots if roots is not None else config_roots()):
+        try:
+            target.relative_to(Path(root).resolve())
+            return True
+        except (ValueError, OSError):
+            continue
+    return False
 
 
 def prepare_wg_config(config_path: str, *, dest_dir: str = PREPARED_DIR) -> str:
@@ -92,6 +129,19 @@ def prepare_wg_config(config_path: str, *, dest_dir: str = PREPARED_DIR) -> str:
 
     with open(config_path, "r", encoding="utf-8", errors="replace") as fh:
         lines = fh.read().splitlines()
+
+    # wg-quick runs PreUp/PostUp/PreDown/PostDown as root, and Table can reroute
+    # everything. A config path reaches us from an API request body, so these are
+    # refused outright rather than copied through: a tunnel definition has no
+    # business executing commands.
+    hooks = [ln.strip() for ln in lines
+             if _re.match(r"^\s*(PreUp|PostUp|PreDown|PostDown|Table)\s*=", ln, _re.I)]
+    if hooks:
+        raise ValueError(
+            "refusing this WireGuard config: it defines "
+            + ", ".join(sorted({h.split("=")[0].strip() for h in hooks}))
+            + " which wg-quick executes as root. Remove those lines."
+        )
 
     kept, dropped = [], []
     for line in lines:
@@ -215,7 +265,21 @@ class NetworkPrivacyManager:
                 "current_ip": None,
             }
 
-        if self.state.baseline_ip and current == self.state.baseline_ip:
+        if not self.state.baseline_ip:
+            # Without a pre-VPN reading there is nothing to compare against, so
+            # we cannot show the tunnel changed anything. record_baseline() is
+            # best-effort at startup; a silent failure there used to make this
+            # return safe=True and let REQUIRE_VPN scans through unverified.
+            self.state.last_error = "no pre-VPN baseline recorded"
+            return {
+                "safe": False,
+                "reason": "no pre-VPN baseline to compare against; cannot confirm "
+                          "the tunnel changed the exit IP",
+                "current_ip": current,
+                "baseline_ip": None,
+            }
+
+        if current == self.state.baseline_ip:
             self.state.last_error = "exit IP equals the pre-VPN IP"
             return {
                 "safe": False,
@@ -262,6 +326,10 @@ class NetworkPrivacyManager:
     # ---- VPN ----
 
     async def connect_vpn(self, config_path: str, mode: str = MODE_WIREGUARD) -> Dict[str, Any]:
+        if not config_path_allowed(config_path):
+            return {"ok": False, "error":
+                    f"config must live under one of {config_roots()}; "
+                    f"refusing {config_path}"}
         if not os.path.isfile(config_path):
             return {"ok": False, "error": f"config not found: {config_path}"}
 

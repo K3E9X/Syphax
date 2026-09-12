@@ -64,8 +64,13 @@ services:
       - DATABASE_URL=postgresql://${POSTGRES_USER:-syphax}:${POSTGRES_PASSWORD:-syphax}@postgres:5432/${POSTGRES_DB:-syphax}
       - REDIS_URL=redis://redis:6379/0
     ports:
-      - "8000:8000"
-      - "8080:8080"
+      # Loopback only. The API has no authentication beyond the optional
+      # SYPHAX_API_KEY, and 8080 is a live HTTPS-intercepting proxy holding the
+      # operator's captured sessions - neither belongs on every host interface.
+      # To point a phone or VM at the proxy, change 8080 deliberately and set
+      # SYPHAX_API_KEY first.
+      - "127.0.0.1:8000:8000"
+      - "127.0.0.1:8080:8080"
     volumes:
       # Bind mount: mitmproxy CA cert lives here, users download it from /api/proxy/ca.pem.
       - ./data:/data
@@ -83,13 +88,19 @@ services:
       - /dev/net/tun:/dev/net/tun
 
   worker:
-    networks: [syphax-net]
     build:
       context: ./backend
       dockerfile: Dockerfile
     container_name: syphax-worker
     restart: unless-stopped
+    # Share the backend's network namespace. The backend is the only container
+    # with NET_ADMIN + /dev/net/tun, so it is the only one wg-quick can route.
+    # Without this the tools spawned here egress directly and the "VPN connected"
+    # badge is a lie: verify_exit_ip() measures the backend, not the scanners.
+    network_mode: "service:backend"
     depends_on:
+      backend:
+        condition: service_started
       postgres:
         condition: service_healthy
       redis:
@@ -112,13 +123,19 @@ services:
   # Dedicated worker for the autonomous orchestrator loops, on its own queue so
   # a long-lived run never starves the scan worker's pool (avoids deadlock).
   orchestrator:
-    networks: [syphax-net]
     build:
       context: ./backend
       dockerfile: Dockerfile
     container_name: syphax-orchestrator
     restart: unless-stopped
+    # Share the backend's network namespace. The backend is the only container
+    # with NET_ADMIN + /dev/net/tun, so it is the only one wg-quick can route.
+    # Without this the tools spawned here egress directly and the "VPN connected"
+    # badge is a lie: verify_exit_ip() measures the backend, not the scanners.
+    network_mode: "service:backend"
     depends_on:
+      backend:
+        condition: service_started
       postgres:
         condition: service_healthy
       redis:

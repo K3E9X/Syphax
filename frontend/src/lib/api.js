@@ -1,8 +1,26 @@
 // Thin fetch wrappers for the FastAPI backend. Paths are relative so they
 // work behind the nginx proxy in production and the Vite dev proxy locally.
 
+// Optional API key (backend SYPHAX_API_KEY). Stored per browser; empty when the
+// backend runs unauthenticated on loopback, which is the default.
+const KEY_STORAGE = 'syphax_api_key';
+
+export function getApiKey() {
+  try { return localStorage.getItem(KEY_STORAGE) || ''; } catch { return ''; }
+}
+
+export function setApiKey(key) {
+  try {
+    if (key) localStorage.setItem(KEY_STORAGE, key);
+    else localStorage.removeItem(KEY_STORAGE);
+  } catch { /* private mode: the key just won't persist */ }
+}
+
 async function request(path, opts = {}) {
-  const res = await fetch(path, opts);
+  const key = getApiKey();
+  const res = await fetch(path, key
+    ? { ...opts, headers: { ...(opts.headers || {}), 'X-API-Key': key } }
+    : opts);
   const text = await res.text();
   const body = text ? safeJson(text) : null;
   if (!res.ok) {

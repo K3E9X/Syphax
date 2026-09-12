@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { api } from '../lib/api.js';
+import { api, getApiKey } from '../lib/api.js';
 
 const PHASES = ['recon', 'mapping', 'vuln_analysis', 'exploitation', 'validation'];
 const PHASE_LABEL = { recon: 'Recon', mapping: 'Mapping', vuln_analysis: 'Vuln analysis', exploitation: 'Exploitation', validation: 'Validation' };
@@ -57,7 +57,11 @@ export default function LiveView() {
         lastIdRef.current = (back.items || []).reduce((m, e) => Math.max(m, e.id), 0);
       } catch { /* ignore */ }
       const proto = location.protocol === 'https:' ? 'wss' : 'ws';
-      const ws = new WebSocket(`${proto}://${location.host}/ws/engagements/${id}/stream?after=${lastIdRef.current}`);
+      // A browser cannot set headers on a WebSocket handshake, so the optional
+      // API key travels as ?key= (the backend checks it before accept()).
+      const k = getApiKey();
+      const ws = new WebSocket(`${proto}://${location.host}/ws/engagements/${id}/stream?after=${lastIdRef.current}`
+        + (k ? `&key=${encodeURIComponent(k)}` : ''));
       wsRef.current = ws;
       ws.onmessage = (msg) => {
         try { const ev = JSON.parse(msg.data); lastIdRef.current = Math.max(lastIdRef.current, ev.id || 0); setEvents((p) => [...p.slice(-500), ev]); } catch { /* ignore */ }

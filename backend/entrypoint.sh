@@ -28,7 +28,6 @@ mitmdump \
     --listen-host 0.0.0.0 \
     --listen-port "${MITM_PORT}" \
     --set confdir="${MITM_CONFDIR}" \
-    --set block_global=false \
     --quiet \
     -s /app/app/proxy/addon.py \
     &

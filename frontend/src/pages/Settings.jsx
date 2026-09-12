@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { api } from '../lib/api.js';
+import { api, getApiKey, setApiKey } from '../lib/api.js';
 
 function Toggle({ on, onChange }) {
   return (
@@ -17,6 +17,8 @@ export default function Settings() {
   const [s, setS] = useState(null);
   const [keyInput, setKeyInput] = useState({ zai: '', moonshot: '', openrouter: '' });
   const [saved, setSaved] = useState(null);
+  const [apiKeyInput, setApiKeyInput] = useState(getApiKey());
+  const apiKey = apiKeyInput;
 
   useEffect(() => { api.settings.get().then(setS).catch(() => setS(null)); }, []);
 
@@ -49,6 +51,22 @@ export default function Settings() {
   return (
     <div className="page">
       <div className="set-grid">
+        <div className="card set-full">
+          <div className="card__head"><span className="card__title">API key</span><span className="card__meta">this browser only &middot; never sent to the server settings</span></div>
+          <div className="card__body">
+            <div className="field">
+              <label className="field__label">X-API-Key sent with every request</label>
+              <input className="input" type="password" placeholder="leave empty if the backend runs unauthenticated"
+                     value={apiKey} onChange={(e) => setApiKeyInput(e.target.value)} />
+            </div>
+            <div className="scan-note">
+              Required only when the backend sets SYPHAX_API_KEY. Stored in this
+              browser&apos;s localStorage, not in the server settings.
+            </div>
+            <button className="btn btn--muted" onClick={() => { setApiKey(apiKeyInput); setSaved('API key saved in this browser'); setTimeout(() => setSaved(null), 2500); }}>Save API key</button>
+          </div>
+        </div>
+
         <div className="card set-full">
           <div className="card__head"><span className="card__title">Model router</span><span className="card__meta">per-role endpoint + model</span></div>
           <div className="card__body">
