@@ -45,7 +45,20 @@ class FlowLogger:
         except Exception:  # noqa: BLE001 - never crash the proxy
             logger.exception("Failed to persist flow %s", flow.id)
 
-    def _persist(self, flow: http.HTTPFlow) -> None:
+    def error(self, flow: http.HTTPFlow) -> None:
+        """Called when a flow fails: connection reset, timeout, TLS failure.
+
+        Persistence used to happen only in response(), so a request that made
+        the target drop the connection left no row at all - which on a pentest
+        is precisely the request worth looking at. The row is stored with no
+        response; the tag carries the reason.
+        """
+        try:
+            self._persist(flow, error=str(getattr(flow, "error", "") or "failed"))
+        except Exception:  # noqa: BLE001 - never crash the proxy
+            logger.exception("Failed to persist failed flow %s", flow.id)
+
+    def _persist(self, flow: http.HTTPFlow, error: str = "") -> None:
         req = flow.request
         resp = flow.response
 
@@ -90,7 +103,7 @@ class FlowLogger:
             "response_body": response_body,
             "response_content_type": response_ct,
             "response_size": response_size,
-            "tag": None,
+            "tag": ("error:" + error[:120]) if error else None,
         }
 
         insert_flow_sync(row)

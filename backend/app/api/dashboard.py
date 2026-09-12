@@ -18,6 +18,21 @@ from app.scans.wrappers import available_wrappers
 router = APIRouter(tags=["dashboard"])
 
 
+def budget_exceeded(monthly_limit: float, spend: float) -> bool:
+    """Is the LLM spend at or over the configured cap?
+
+    No cap (0 / unset) means no ceiling, not "always over".
+    """
+    return bool(monthly_limit and spend >= monthly_limit)
+
+
+def budget_pct(monthly_limit: float, spend: float) -> int:
+    """Spend as a percentage of the cap; 0 when no cap is set."""
+    if not monthly_limit:
+        return 0
+    return round(spend / monthly_limit * 100)
+
+
 def _positive_float(value: Any) -> float:
     """Coerce an operator-supplied number, never raising. 0 means no limit."""
     try:
@@ -114,8 +129,8 @@ async def dashboard() -> Dict[str, Any]:
     budget = {
         "monthly_limit_usd": monthly_limit,
         "month_spend_usd": round(month_cost, 4),
-        "over": bool(monthly_limit and month_cost >= monthly_limit),
-        "pct": round(month_cost / monthly_limit * 100) if monthly_limit else 0,
+        "over": budget_exceeded(monthly_limit, month_cost),
+        "pct": budget_pct(monthly_limit, month_cost),
         "priced": bool((app_settings.llm_pricing or "").strip()),
     }
 

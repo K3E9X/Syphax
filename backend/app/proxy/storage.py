@@ -11,11 +11,16 @@ Both share the same DATABASE_URL via app.config.
 from __future__ import annotations
 
 import json
+import logging
+import threading
+import queue
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
 from app import db
 
+
+logger = logging.getLogger("syphax.proxy.storage")
 
 SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS flows (
@@ -52,10 +57,77 @@ db.register_schema(SCHEMA_SQL)
 # Sync path (mitmproxy addon)
 # -----------------------------------------------------------------------------
 
+# --------------------------------------------------------------------------- #
+# Write path for the mitmproxy addon.
+#
+# The addon's hooks run on the proxy's own event loop, so anything slow there
+# stalls every proxied request. Opening and closing a Postgres connection per
+# flow meant a full TCP + auth handshake in that hot path, and a crawl of a few
+# thousand requests could exhaust max_connections. Hand the row to a single
+# writer thread instead and return immediately.
+
+_QUEUE: "queue.Queue[Optional[Dict[str, Any]]]" = queue.Queue(maxsize=2000)
+_writer: Optional[threading.Thread] = None
+_writer_lock = threading.Lock()
+
+
+def _ensure_writer() -> None:
+    global _writer
+    with _writer_lock:
+        if _writer is None or not _writer.is_alive():
+            _writer = threading.Thread(target=_drain, name="flow-writer", daemon=True)
+            _writer.start()
+
+
+def _drain() -> None:
+    """One connection for the life of the thread, reopened if the server drops
+    it. A row that cannot be written is logged and abandoned - losing a capture
+    is bad, wedging the proxy is worse."""
+    conn = None
+    while True:
+        row = _QUEUE.get()
+        if row is None:                       # shutdown sentinel
+            break
+        for attempt in (1, 2):                # one retry on a dead connection
+            try:
+                if conn is None or getattr(conn, "closed", False):
+                    conn = db.sync_connect()
+                _write_row(conn, row)
+                break
+            except Exception as exc:  # noqa: BLE001
+                try:
+                    if conn is not None:
+                        conn.close()
+                except Exception:  # noqa: BLE001
+                    pass
+                conn = None
+                if attempt == 2:
+                    logger.warning("dropping captured flow %s: %s",
+                                   row.get("id"), exc)
+
+
 def insert_flow_sync(row: Dict[str, Any]) -> None:
-    """Insert a captured flow synchronously. Called from the mitmproxy addon."""
+    """Queue a captured flow for the writer thread. Never blocks the proxy."""
+    _ensure_writer()
+    try:
+        _QUEUE.put_nowait(row)
+    except queue.Full:
+        # Under a flood, a dropped capture beats a stalled proxy.
+        logger.warning("flow queue full; dropping capture for %s", row.get("url"))
+
+
+def write_flow_now(row: Dict[str, Any]) -> None:
+    """Synchronous insert on a fresh connection. Used by tests and one-offs."""
     conn = db.sync_connect()
     try:
+        _write_row(conn, row)
+    finally:
+        conn.close()
+
+
+def _write_row(conn, row: Dict[str, Any]) -> None:
+    """Insert/update one flow on an already-open connection."""
+    if True:
         with conn.cursor() as cur:
             cur.execute(
                 """
@@ -115,8 +187,6 @@ def insert_flow_sync(row: Dict[str, Any]) -> None:
                 ),
             )
         conn.commit()
-    finally:
-        conn.close()
 
 
 def init_schema_sync() -> None:

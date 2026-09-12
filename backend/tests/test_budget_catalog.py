@@ -61,8 +61,17 @@ def test_malformed_pricing_entries_are_skipped(clean_pricing):
     (100.0, 250.0, True),
 ])
 def test_budget_over_threshold(limit, spend, expected_over):
-    over = bool(limit and spend >= limit)
-    assert over is expected_over
+    # This used to recompute the rule inline, so deleting the dashboard's whole
+    # budget block left it green. Exercise the real function instead.
+    from app.api.dashboard import budget_exceeded
+    assert budget_exceeded(limit, spend) is expected_over
+
+
+def test_budget_pct_handles_no_cap():
+    from app.api.dashboard import budget_pct
+    assert budget_pct(0, 12.0) == 0          # no cap -> no percentage
+    assert budget_pct(20.0, 5.0) == 25
+    assert budget_pct(20.0, 30.0) == 150     # over 100 is meaningful, not clamped
 
 
 def test_budget_defaults_are_off():

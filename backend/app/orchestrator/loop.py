@@ -229,66 +229,7 @@ async def run_engagement_loop(run_id: str) -> dict:
 
         # Validation phase: confirm findings with safe PoC, then build chains.
         # Always run it (even on stop) so partial results are still validated.
-        run.phase = "validation"
-        await runs.update(run)
-        await events.emit(engagement.id, events.PHASE_CHANGED, "Phase: validation",
-                          run_id=run.id, phase="validation")
-        try:
-            # Traffic-driven analysis (logic/IDOR/CSRF/BFLA, JS secrets+endpoints,
-            # JWT, access-control, CORS, params, GraphQL) over captured traffic.
-            from app.analysis import run_analysis
-            _active_ok = run.stop_reason not in {"exploit_denied", "stopped", "cancelled"}
-            await run_analysis(engagement.id, allow_active=_active_ok)
-            # Proof-of-impact: prove confirmed injections (RCE/SQLi) with a
-            # benign read-only command. Double opt-in: requires
-            # allow_active_exploit (the exploitation phase already passed its
-            # approval checkpoint, which is the other gate).
-            # ...but never run active exploitation if the operator denied the
-            # exploitation checkpoint or stopped/cancelled the run.
-            _suppressed = {"exploit_denied", "stopped", "cancelled"}
-            if engagement.allow_active_exploit and run.stop_reason not in _suppressed:
-                try:
-                    from app.exploit import (prove_impact, run_auth_spray,
-                                             run_known_exploits)
-                    # Known-CVE exploitation: run the public PoC templates for the
-                    # fingerprinted stack (OOB-confirmed) before proof-of-impact.
-                    await run_known_exploits(engagement.id)
-                    await run_auth_spray(engagement.id)
-                    await prove_impact(engagement.id)
-                except Exception:  # noqa: BLE001 - never fail the run on proof
-                    logger.exception("[%s] active-exploit phase error", run.id)
-            stats = await validate_engagement(engagement.id)
-            # Intelligence #3: LLM judge pass to kill false positives / confirm
-            # with grounded evidence (best-effort; no-op without an LLM).
-            try:
-                from app.validation.llm_judge import judge_engagement
-                await judge_engagement(engagement.id)
-            except Exception:  # noqa: BLE001 - judging never fails the run
-                logger.exception("[%s] llm-judge error", run.id)
-            # Intelligence #5: settle what is still 'likely' by firing an
-            # adaptive, oracle-backed probe at the target. Active, so it obeys
-            # the same gate + denial suppression as the exploitation block.
-            if engagement.allow_active_exploit and run.stop_reason not in _suppressed:
-                try:
-                    from app.exploit.payload_gen import run_payload_validation
-                    await run_payload_validation(engagement.id)
-                except Exception:  # noqa: BLE001 - probing never fails the run
-                    logger.exception("[%s] payload-probe error", run.id)
-            chains = await build_chains(engagement.id)
-            await audit(
-                "engagement.validated",
-                engagement_id=engagement.id, run_id=run.id, stats=stats,
-            )
-            await events.emit(engagement.id, events.VALIDATED,
-                              f"Validated: {stats.get('confirmed',0)} confirmed, "
-                              f"{stats.get('false_positive',0)} false positive",
-                              run_id=run.id, stats=stats)
-            if chains:
-                await events.emit(engagement.id, events.CHAIN_BUILT,
-                                  f"{len(chains)} kill-chain(s) identified",
-                                  run_id=run.id, count=len(chains))
-        except Exception:  # noqa: BLE001 - validation must not fail the run
-            logger.exception("[%s] validation phase error", run.id)
+        await _finalize_engagement(engagement, run, runs, state)
 
         if run.status != "stopped":
             run.status = "completed"
@@ -408,6 +349,77 @@ async def _run_correlation(engagement, run: Run, executor: Executor,
         await runs.update(run)
     logger.info("[%s] correlation launched %d/%d lead(s)", run.id, launched, len(leads))
     return launched
+
+
+async def _finalize_engagement(engagement, run: Run, runs: RunRepository,
+                               state: EngagementState) -> None:
+    """Everything after the plan/execute loop: analysis, active exploitation,
+    validation, the LLM judge, adaptive probes and kill-chains.
+
+    Lifted out of run_engagement_loop, which had grown to 355 lines as each of
+    these phases was added - long enough that the recon deadlock hid in it.
+    Each step stays best-effort: none of them may fail the run.
+    """
+    run.phase = "validation"
+    await runs.update(run)
+    await events.emit(engagement.id, events.PHASE_CHANGED, "Phase: validation",
+                      run_id=run.id, phase="validation")
+    try:
+        # Traffic-driven analysis (logic/IDOR/CSRF/BFLA, JS secrets+endpoints,
+        # JWT, access-control, CORS, params, GraphQL) over captured traffic.
+        from app.analysis import run_analysis
+        _active_ok = run.stop_reason not in {"exploit_denied", "stopped", "cancelled"}
+        await run_analysis(engagement.id, allow_active=_active_ok)
+        # Proof-of-impact: prove confirmed injections (RCE/SQLi) with a
+        # benign read-only command. Double opt-in: requires
+        # allow_active_exploit (the exploitation phase already passed its
+        # approval checkpoint, which is the other gate).
+        # ...but never run active exploitation if the operator denied the
+        # exploitation checkpoint or stopped/cancelled the run.
+        _suppressed = {"exploit_denied", "stopped", "cancelled"}
+        if engagement.allow_active_exploit and run.stop_reason not in _suppressed:
+            try:
+                from app.exploit import (prove_impact, run_auth_spray,
+                                         run_known_exploits)
+                # Known-CVE exploitation: run the public PoC templates for the
+                # fingerprinted stack (OOB-confirmed) before proof-of-impact.
+                await run_known_exploits(engagement.id)
+                await run_auth_spray(engagement.id)
+                await prove_impact(engagement.id)
+            except Exception:  # noqa: BLE001 - never fail the run on proof
+                logger.exception("[%s] active-exploit phase error", run.id)
+        stats = await validate_engagement(engagement.id)
+        # Intelligence #3: LLM judge pass to kill false positives / confirm
+        # with grounded evidence (best-effort; no-op without an LLM).
+        try:
+            from app.validation.llm_judge import judge_engagement
+            await judge_engagement(engagement.id)
+        except Exception:  # noqa: BLE001 - judging never fails the run
+            logger.exception("[%s] llm-judge error", run.id)
+        # Intelligence #5: settle what is still 'likely' by firing an
+        # adaptive, oracle-backed probe at the target. Active, so it obeys
+        # the same gate + denial suppression as the exploitation block.
+        if engagement.allow_active_exploit and run.stop_reason not in _suppressed:
+            try:
+                from app.exploit.payload_gen import run_payload_validation
+                await run_payload_validation(engagement.id)
+            except Exception:  # noqa: BLE001 - probing never fails the run
+                logger.exception("[%s] payload-probe error", run.id)
+        chains = await build_chains(engagement.id)
+        await audit(
+            "engagement.validated",
+            engagement_id=engagement.id, run_id=run.id, stats=stats,
+        )
+        await events.emit(engagement.id, events.VALIDATED,
+                          f"Validated: {stats.get('confirmed',0)} confirmed, "
+                          f"{stats.get('false_positive',0)} false positive",
+                          run_id=run.id, stats=stats)
+        if chains:
+            await events.emit(engagement.id, events.CHAIN_BUILT,
+                              f"{len(chains)} kill-chain(s) identified",
+                              run_id=run.id, count=len(chains))
+    except Exception:  # noqa: BLE001 - validation must not fail the run
+        logger.exception("[%s] validation phase error", run.id)
 
 
 async def _seed_from_proxy(state: "EngagementState", engagement) -> int:
