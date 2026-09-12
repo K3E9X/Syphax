@@ -8,6 +8,13 @@ name: Nightly
 #   * a wrapped tool disappears from its upstream install source
 #
 # Runs on a schedule, and on demand from the Actions tab.
+#
+# main ONLY. A scheduled workflow already runs nowhere else - GitHub restricts
+# `schedule` to the default branch - but the Run workflow dropdown will happily
+# dispatch this against any branch, and a run against a stale one builds stale
+# code while the run is labelled with that branch. That is worse than not
+# running: it answers "does the shipping image build?" with someone else's
+# code. The `guard` job below stops that, loudly.
 on:
   schedule:
     # 05:17 UTC daily. Off the hour on purpose: GitHub queues scheduled jobs
@@ -19,8 +26,25 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 
 jobs:
+  # Fails fast and explicitly on any branch but main, so a mis-selected branch
+  # costs five seconds and says why - instead of twenty minutes of QEMU and a
+  # result about the wrong commit. It must FAIL rather than skip: a green run
+  # that tested nothing is the one outcome worse than a red one.
+  guard:
+    name: Branch check (main only)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Refuse to run off main
+        run: |
+          if [ "${{ github.ref_name }}" != "main" ]; then
+            echo "::error title=Nightly runs on main only::Dispatched against '${{ github.ref_name }}'. The nightly validates what ships, so re-run it with 'main' selected in the Run workflow dropdown."
+            exit 1
+          fi
+          echo "on main (${{ github.sha }}) - proceeding"
+
   backend:
     name: Backend (tests, pinned + latest deps)
+    needs: guard
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -58,6 +82,7 @@ jobs:
 
   frontend:
     name: Frontend (build + audit)
+    needs: guard
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -84,6 +109,7 @@ jobs:
 
   docker:
     name: Images build (amd64 + arm64)
+    needs: guard
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -143,6 +169,7 @@ jobs:
 
   ci-env-parity:
     name: CI env parity
+    needs: guard
     runs-on: ubuntu-latest
     defaults:
       run:
