@@ -68,3 +68,51 @@ def test_wpscan_without_cve_sets_no_cve_id():
     meta = _wpscan_finding([]).metadata
     assert "cve_id" not in meta
     assert meta["cve"] == []
+
+
+# ---- 4. recon lines were listed as client findings ---------------------------
+class _F:
+    def __init__(self, severity, vuln_class="xss", status="likely"):
+        self.severity, self.vuln_class, self.status = severity, vuln_class, status
+
+
+def test_recon_and_info_lines_are_not_client_findings():
+    from app.reporting.report import is_reportable
+    # "Technology: nginx" / "Live host: ..." used to sit in section 3 next to a
+    # critical, because the validator marks unmapped recon lines `likely`.
+    assert not is_reportable(_F("info", "recon"))
+    assert not is_reportable(_F("medium", "fingerprint"))
+    assert not is_reportable(_F("low", "content_discovery"))
+    assert not is_reportable(_F("info", "xss"))          # info never reports
+    assert is_reportable(_F("high", "xss"))
+    assert is_reportable(_F("critical", "sql_injection"))
+
+
+# ---- 5. findings with an off-list severity vanished from the report ----------
+def test_unknown_severity_is_folded_in_not_dropped():
+    from app.reporting.report import _by_severity, norm_severity
+    assert norm_severity("Critical") == "critical"       # case
+    assert norm_severity("warning") == "info"            # unknown -> info
+    assert norm_severity(None) == "info"
+
+    buckets = _by_severity([_F("Critical"), _F("warning"), _F("high")])
+    # every finding lands in one of the five printed buckets; none is lost
+    assert sum(len(v) for v in buckets.values()) == 3
+    assert set(buckets) == {"critical", "high", "medium", "low", "info"}
+
+
+# ---- 6. a real XSS on the second parameter was recorded as a false positive --
+def test_reflection_probe_covers_every_parameter():
+    from app.validation.validator import marker_variants
+    variants = marker_variants("https://t/a?id=1&q=x&z=3", "MARK")
+    assert [p for p, _ in variants] == ["id", "q", "z"]
+    # each URL carries the marker in exactly its own parameter
+    assert "id=MARK&q=x&z=3" in variants[0][1]
+    assert "id=1&q=MARK&z=3" in variants[1][1]
+    assert marker_variants("https://t/a", "MARK") == []
+
+
+def test_reflection_probe_is_bounded():
+    from app.validation.validator import MAX_REFLECTION_PARAMS, marker_variants
+    url = "https://t/a?" + "&".join(f"p{i}=1" for i in range(30))
+    assert len(marker_variants(url, "MARK")) == MAX_REFLECTION_PARAMS

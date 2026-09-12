@@ -45,17 +45,26 @@ export default function LiveView() {
   }, [id]);
 
   useEffect(() => { loadState(); }, [loadState]);
-  useEffect(() => { const t = setInterval(loadState, 3000); return () => clearInterval(t); }, [loadState]);
+  // Poll only while a run can still change. A finished run polled forever,
+  // firing two requests every 3s for as long as the tab stayed open.
+  const polling = state === null || state?.run?.status === 'running'
+    || state?.run?.status === 'queued';
+  useEffect(() => {
+    if (!polling) return undefined;
+    const t = setInterval(loadState, 3000);
+    return () => clearInterval(t);
+  }, [loadState, polling]);
 
   useEffect(() => {
     let closed = false;
-    (async () => {
-      try {
-        const back = await api.engagements.events(id, 0);
-        if (closed) return;
-        setEvents(back.items || []);
-        lastIdRef.current = (back.items || []).reduce((m, e) => Math.max(m, e.id), 0);
-      } catch { /* ignore */ }
+    let retry = null;
+    let attempt = 0;
+
+    // The server closes the socket on any DB hiccup. With no onclose handler the
+    // console went silent for the rest of the run while the UI still said
+    // "running", so reconnect with backoff and resume from the last id we saw.
+    const connect = () => {
+      if (closed) return;
       const proto = location.protocol === 'https:' ? 'wss' : 'ws';
       // A browser cannot set headers on a WebSocket handshake, so the optional
       // API key travels as ?key= (the backend checks it before accept()).
@@ -63,11 +72,43 @@ export default function LiveView() {
       const ws = new WebSocket(`${proto}://${location.host}/ws/engagements/${id}/stream?after=${lastIdRef.current}`
         + (k ? `&key=${encodeURIComponent(k)}` : ''));
       wsRef.current = ws;
+      ws.onopen = () => { attempt = 0; };
       ws.onmessage = (msg) => {
-        try { const ev = JSON.parse(msg.data); lastIdRef.current = Math.max(lastIdRef.current, ev.id || 0); setEvents((p) => [...p.slice(-500), ev]); } catch { /* ignore */ }
+        try {
+          const ev = JSON.parse(msg.data);
+          // Drop anything we already have: a resume replays the boundary event.
+          if (ev.id && ev.id <= lastIdRef.current) return;
+          lastIdRef.current = Math.max(lastIdRef.current, ev.id || 0);
+          setEvents((p) => [...p.slice(-500), ev]);
+        } catch { /* a malformed frame must not kill the stream */ }
       };
+      const reconnect = () => {
+        if (closed || wsRef.current !== ws) return;
+        attempt += 1;
+        retry = setTimeout(connect, Math.min(1000 * 2 ** (attempt - 1), 15000));
+      };
+      ws.onclose = reconnect;
+      ws.onerror = () => { try { ws.close(); } catch { /* onclose handles it */ } };
+    };
+
+    (async () => {
+      try {
+        const back = await api.engagements.events(id, 0);
+        if (closed) return;
+        setEvents(back.items || []);
+        lastIdRef.current = (back.items || []).reduce((m, e) => Math.max(m, e.id), 0);
+      } catch { /* backfill is best-effort; the socket still streams */ }
+      if (closed) return;          // unmounted during the backfill
+      connect();
     })();
-    return () => { closed = true; if (wsRef.current) wsRef.current.close(); };
+
+    return () => {
+      closed = true;
+      if (retry) clearTimeout(retry);
+      const ws = wsRef.current;
+      wsRef.current = null;
+      if (ws) { ws.onclose = null; ws.close(); }
+    };
   }, [id]);
 
   useEffect(() => {

@@ -34,7 +34,8 @@ async def build_report(engagement_id: str) -> Dict[str, Any]:
 
     findings = await vf_repo.list(engagement_id)
     # Report only what we stand behind.
-    reportable = [f for f in findings if f.status in ("confirmed", "likely")]
+    reportable = [f for f in findings
+                  if f.status in ("confirmed", "likely") and is_reportable(f)]
     chains = await chain_repo.list(engagement_id)
     jobs = await jobs_repo.list_by_engagement(engagement_id)
     tools_used = sorted({j.tool for j in jobs})
@@ -83,10 +84,42 @@ def _overall_risk(findings: List) -> str:
     return "Informational"
 
 
+# Classes that describe the surface rather than a weakness. They belong in the
+# recon appendix, not in section 3 next to a critical.
+_RECON_CLASSES = {"recon", "fingerprint", "content_discovery", "unknown"}
+
+
+def is_reportable(finding) -> bool:
+    """Does this finding belong in the client-facing findings section?
+
+    Without this, "Technology: nginx" and "Live host: ..." were listed as
+    findings: the heuristic branch of the validator marks every unmapped recon
+    line `likely`, and nothing downstream filtered on severity.
+    """
+    sev = norm_severity(getattr(finding, "severity", None))
+    if sev == "info":
+        return False
+    return norm_severity_class(getattr(finding, "vuln_class", None)) not in _RECON_CLASSES
+
+
+def norm_severity(value) -> str:
+    """Fold an arbitrary severity onto the five known levels.
+
+    _by_severity used to bucket an unknown severity under its own key while
+    _markdown only iterated the known five, so a finding with "Critical" or
+    "warning" was counted but never printed."""
+    sev = str(value or "info").strip().lower()
+    return sev if sev in _SEV_RANK else "info"
+
+
+def norm_severity_class(value) -> str:
+    return str(value or "unknown").strip().lower()
+
+
 def _by_severity(findings: List) -> Dict[str, List]:
     out: Dict[str, List] = {s: [] for s in _SEV_ORDER}
     for f in findings:
-        out.setdefault(f.severity or "info", []).append(f)
+        out[norm_severity(getattr(f, "severity", None))].append(f)
     return out
 
 
@@ -104,7 +137,7 @@ def _markdown(e, findings, chains, tools, hosts, tech, cov, vsum, overall) -> st
     # 1. Executive summary
     L.append("## 1. Executive Summary")
     L.append("")
-    counts = {s: len([f for f in findings if f.severity == s]) for s in _SEV_ORDER}
+    counts = {s: len(v) for s, v in _by_severity(findings).items()}
     L.append(
         f"This assessment of `{e.target_host}` identified **{len(findings)} "
         f"validated finding(s)** (overall risk: **{overall}**): "

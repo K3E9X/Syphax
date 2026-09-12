@@ -157,31 +157,39 @@ class FindingValidator:
         if not url or "://" not in url or "?" not in url:
             return None
         marker = "syphax" + secrets.token_hex(4)
-        injected = _inject_marker(url, marker)
-        if injected is None:
+        variants = marker_variants(url, marker)
+        if not variants:
             return None
-        try:
-            resp = await self.safe.fetch(injected, method="GET")
-        except ScopeError as exc:
-            return ValidationResult.unconfirmed("safe-poc", detail=str(exc))
-        if resp is None:
+
+        reached = False
+        for param, injected in variants:
+            try:
+                resp = await self.safe.fetch(injected, method="GET")
+            except ScopeError as exc:
+                return ValidationResult.unconfirmed("safe-poc", detail=str(exc))
+            if resp is None:
+                continue
+            reached = True
+            # The marker is benign: we check reflection only, we never inject a
+            # script. An encoded reflection is not exploitable as-is.
+            if marker in resp.text:
+                return ValidationResult.confirmed(
+                    method="safe-poc (reflection)",
+                    poc=f"GET {injected} -> benign marker '{marker}' reflected "
+                        f"unencoded via parameter '{param}'",
+                    confidence=0.9,
+                    detail="Parameter reflects input unencoded; XSS is plausible. "
+                           "Manual confirmation with a script payload recommended.",
+                )
+
+        if not reached:
             return ValidationResult.unconfirmed("safe-poc", detail="endpoint not reachable")
-        # Reflected unencoded? (the marker is benign; we only check reflection,
-        # we do not inject script). Encoded reflection is not exploitable as-is.
-        if marker in resp.text:
-            return ValidationResult.confirmed(
-                method="safe-poc (reflection)",
-                poc=f"GET {injected} -> benign marker '{marker}' reflected unencoded in response",
-                confidence=0.9,
-                detail="Parameter reflects input unencoded; XSS is plausible. "
-                       "Manual confirmation with a script payload recommended.",
-            )
-        if marker not in resp.text:
-            # Not reflected at all -> the XSS report is probably a false positive.
-            return ValidationResult.false_positive(
-                "safe-poc (reflection)", detail="benign marker not reflected in response"
-            )
-        return None
+        # Every parameter was probed and none reflected, so calling it a false
+        # positive is defensible - which it was not when only one was tried.
+        return ValidationResult.false_positive(
+            "safe-poc (reflection)",
+            detail=f"benign marker not reflected in any of {len(variants)} parameter(s)",
+        )
 
 
 def _signature_present(signature, body: str) -> bool:
@@ -193,13 +201,29 @@ def _signature_present(signature, body: str) -> bool:
     return signature.lower() in (body or "").lower()
 
 
-def _inject_marker(url: str, marker: str) -> Optional[str]:
+MAX_REFLECTION_PARAMS = 8
+
+
+def marker_variants(url: str, marker: str, *, limit: int = MAX_REFLECTION_PARAMS):
+    """One URL per query parameter, each with that parameter set to the marker.
+
+    Probing only the first parameter meant a real reflection in the second was
+    never seen - and the caller then recorded a FALSE POSITIVE, deleting a true
+    finding from the report. Returns [(param, url), ...].
+    """
     parsed = urlparse(url)
     qs = parse_qs(parsed.query, keep_blank_values=True)
     if not qs:
-        return None
-    # Replace the first parameter's value with the marker.
-    first_key = next(iter(qs))
-    qs[first_key] = [marker]
-    new_query = urlencode({k: v[-1] for k, v in qs.items()})
-    return urlunparse(parsed._replace(query=new_query))
+        return []
+    out = []
+    for key in list(qs)[:limit]:
+        probe = {k: v[-1] for k, v in qs.items()}
+        probe[key] = marker
+        out.append((key, urlunparse(parsed._replace(query=urlencode(probe)))))
+    return out
+
+
+def _inject_marker(url: str, marker: str) -> Optional[str]:
+    """Back-compat single-variant helper (first parameter)."""
+    variants = marker_variants(url, marker, limit=1)
+    return variants[0][1] if variants else None
