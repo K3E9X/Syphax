@@ -16,6 +16,7 @@ from app.orchestrator.state import EngagementState
 from app.reporting.mappings import CATEGORY_LABELS, for_class
 from app.scans.storage import JobRepository
 from app.validation import ChainRepository, ValidatedFindingRepository
+from app.validation.classes import SURFACE_CLASSES
 
 _SEV_ORDER = ["critical", "high", "medium", "low", "info"]
 _SEV_RANK = {s: i for i, s in enumerate(_SEV_ORDER)}
@@ -85,8 +86,9 @@ def _overall_risk(findings: List) -> str:
 
 
 # Classes that describe the surface rather than a weakness. They belong in the
-# recon appendix, not in section 3 next to a critical.
-_RECON_CLASSES = {"recon", "fingerprint", "content_discovery", "unknown"}
+# recon appendix, not in section 3 next to a critical. Owned by
+# app.validation.classes so the validator and the report agree on the set.
+_RECON_CLASSES = SURFACE_CLASSES
 
 
 def is_reportable(finding) -> bool:

@@ -25,6 +25,8 @@ from typing import Optional
 from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 
 from app.scans.models import Finding
+from app.validation.baseline import NO_BASELINE, Baseline, matches as baseline_matches
+from app.validation.classes import DISCOVERY_CLASSES, SURFACE_CLASSES
 from app.validation.models import ValidationResult, ValidationStatus
 from app.validation.safe_poc import SafePoC, ScopeError
 
@@ -68,8 +70,12 @@ _MARKER_RE_TMPL = r"{marker}"
 
 
 class FindingValidator:
-    def __init__(self, safe_poc: SafePoC) -> None:
+    def __init__(self, safe_poc: SafePoC, baseline: Optional[Baseline] = None) -> None:
         self.safe = safe_poc
+        # What the target answers for paths that do not exist. On a catch-all
+        # server every guessed path "exists"; without this, a scanner's path
+        # list came back as a page of findings.
+        self.baseline = baseline or NO_BASELINE
 
     async def validate(self, finding: Finding, tool: str, vuln_class: str) -> ValidationResult:
         # 0. traffic-driven analyzers (logic/IDOR/CSRF/BFLA, JS secrets, JWT,
@@ -112,7 +118,24 @@ class FindingValidator:
             if reflected is not None:
                 return reflected
 
-        # 3. heuristic: trust the scanner's own match as LIKELY, scaled by severity
+        # 2c. path-existence claim on a catch-all server: the answer is the
+        # same page the target returns for any nonexistent path, so the claim
+        # is disproven rather than merely unverified.
+        soft = await self._check_against_baseline(finding, vuln_class)
+        if soft is not None:
+            return soft
+
+        # 3a. surface inventory (a live host, a banner, a discovered path) is
+        # not a weakness, so it must not be reported as "likely vulnerable".
+        # It also used to sit in the false-positive denominator and drown the
+        # real findings in the open-findings count.
+        if vuln_class in SURFACE_CLASSES:
+            return ValidationResult.unconfirmed(
+                method=f"inventory ({tool})",
+                detail="Attack-surface inventory, not a weakness. Kept for context.",
+            )
+
+        # 3b. heuristic: trust the scanner's own match as LIKELY, scaled by severity
         sev = (finding.severity or "info").lower()
         conf = {"critical": 0.7, "high": 0.65, "medium": 0.6, "low": 0.5, "info": 0.4}.get(sev, 0.5)
         return ValidationResult.likely(
@@ -150,6 +173,42 @@ class FindingValidator:
             method="safe-poc (exposed-resource)",
             poc=f"GET {url} -> HTTP 200; body matches the expected {p} signature\n{snippet}",
             detail=f"Sensitive resource {p} is publicly readable.",
+        )
+
+    async def _check_against_baseline(
+        self, finding: Finding, vuln_class: str
+    ) -> Optional[ValidationResult]:
+        """Disprove a path-existence finding that matches the catch-all page.
+
+        Only runs when calibration actually found a catch-all, so a server that
+        returns a real 404 costs no extra request here. Only applies to classes
+        that claim a path exists or is readable - never to an injection or a
+        TLS finding, where the response shape means nothing.
+        """
+        if not self.baseline.catch_all:
+            return None
+        if vuln_class not in DISCOVERY_CLASSES:
+            return None
+        url = finding.target
+        if not url or "://" not in url:
+            return None
+        path = urlparse(url).path
+        if path in ("", "/"):
+            return None  # the home page is not a path-existence claim
+        try:
+            resp = await self.safe.fetch(url, method="GET")
+        except ScopeError:
+            return None
+        if resp is None:
+            return None
+        if not baseline_matches(self.baseline, resp.status_code, resp.text or "",
+                                path=path):
+            return None
+        return ValidationResult.false_positive(
+            "baseline (catch-all)",
+            detail=f"{url} answers exactly like a path that does not exist "
+                   f"({self.baseline.reason}). The resource was not found; the "
+                   "scanner matched the catch-all page.",
         )
 
     async def _check_reflection(self, finding: Finding) -> Optional[ValidationResult]:

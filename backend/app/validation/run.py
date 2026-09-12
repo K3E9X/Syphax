@@ -14,6 +14,8 @@ from typing import Dict
 from app import events
 from app.engagements import EngagementRepository
 from app.scans.storage import JobRepository
+from app.validation.baseline import calibrate
+from app.validation.classes import TOOL_VULN_CLASS, vuln_class_of
 from app.validation.models import ValidatedFinding, ValidationStatus
 from app.validation.safe_poc import SafePoC
 from app.validation.storage import ValidatedFindingRepository, new_vf_id
@@ -24,15 +26,8 @@ logger = logging.getLogger("syphax.validation.run")
 # Catalog item id -> vuln_class isn't 1:1 on findings, so we read the finding's
 # own metadata/tool. This maps tools to a coarse vuln_class when the finding
 # doesn't carry one.
-_TOOL_VULN_CLASS = {
-    "sqlmap": "sql_injection",
-    "commix": "command_injection",
-    "dalfox": "xss",
-    "nuclei": "multiple",
-    "nikto": "misconfiguration",
-    "testssl": "weak_tls",
-    "wpscan": "cms_vulnerability",
-}
+# Re-exported from app.validation.classes, which owns the taxonomy.
+_TOOL_VULN_CLASS = TOOL_VULN_CLASS
 
 
 async def validate_engagement(engagement_id: str) -> Dict[str, int]:
@@ -45,7 +40,20 @@ async def validate_engagement(engagement_id: str) -> Dict[str, int]:
         return {"error": 1}
 
     safe = SafePoC(in_scope=engagement.host_in_scope)
-    validator = FindingValidator(safe)
+
+    # One calibration per engagement, before any verdict: ask the target for a
+    # couple of paths that cannot exist. If it answers them all with the same
+    # page, every "this path exists" finding needs that page ruled out first.
+    baseline = await calibrate(safe, engagement.target_url)
+    if baseline.catch_all:
+        logger.info("[%s] catch-all target: %s", engagement_id, baseline.reason)
+        await events.emit(
+            engagement_id, events.VALIDATED,
+            f"catch-all target detected: {baseline.reason} - path-existence "
+            "findings will be re-checked against it",
+            level=events.LEVEL_INFO,
+        )
+    validator = FindingValidator(safe, baseline=baseline)
 
     jobs = await jobs_repo.list_by_engagement(engagement_id)
 
@@ -91,15 +99,13 @@ async def validate_engagement(engagement_id: str) -> Dict[str, int]:
     await vf_repo.replace_for_engagement(engagement_id, validated)
 
     stats = _stats(validated)
+    stats["catch_all_target"] = 1 if baseline.catch_all else 0
     logger.info("[%s] validated %d findings: %s", engagement_id, len(validated), stats)
     return stats
 
 
 def _vuln_class_of(finding, tool: str) -> str:
-    meta = finding.metadata or {}
-    if meta.get("vuln_class"):
-        return str(meta["vuln_class"])
-    return _TOOL_VULN_CLASS.get(tool, "unknown")
+    return vuln_class_of(finding, tool)
 
 
 def _stats(validated) -> Dict[str, int]:
