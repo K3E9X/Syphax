@@ -24,10 +24,39 @@ async function request(path, opts = {}) {
   const text = await res.text();
   const body = text ? safeJson(text) : null;
   if (!res.ok) {
-    const msg = body?.detail || body?.error || text || `HTTP ${res.status}`;
-    throw new Error(msg);
+    throw new Error(errorMessage(body, text, res.status));
   }
   return body;
+}
+
+/**
+ * Turn an error body into a sentence a human can act on.
+ *
+ * FastAPI returns `detail` as a STRING for an HTTPException but as an ARRAY OF
+ * OBJECTS for a 422 validation error. Passing that array to `new Error()`
+ * stringified it, so every validation failure reached the operator as the
+ * literal text "[object Object]" - which the pages now render prominently,
+ * making a silent bug a loud one.
+ */
+export function errorMessage(body, text, status) {
+  const detail = body?.detail ?? body?.error;
+  if (typeof detail === 'string' && detail) return detail;
+
+  if (Array.isArray(detail) && detail.length) {
+    const parts = detail.map((d) => {
+      if (typeof d === 'string') return d;
+      // loc is ["body", "field", 0]; the first element is the request part.
+      const where = Array.isArray(d?.loc) ? d.loc.slice(1).join('.') : '';
+      const what = d?.msg || d?.type || 'invalid value';
+      return where ? `${where}: ${what}` : what;
+    });
+    return parts.join('; ');
+  }
+
+  if (detail && typeof detail === 'object') {
+    try { return JSON.stringify(detail); } catch { /* fall through */ }
+  }
+  return (typeof text === 'string' && text.trim()) ? text : `HTTP ${status}`;
 }
 
 function safeJson(text) {

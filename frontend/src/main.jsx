@@ -3,17 +3,22 @@ import ReactDOM from 'react-dom/client';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import App from './App.jsx';
 import Home from './pages/Home.jsx';
-import Engagements from './pages/Engagements.jsx';
-import LiveView from './pages/LiveView.jsx';
-import Proxy from './pages/Proxy.jsx';
-import Scans from './pages/Scans.jsx';
-import Reports from './pages/Reports.jsx';
-import Findings from './pages/Findings.jsx';
-import Surface from './pages/Surface.jsx';
-import Methodology from './pages/Methodology.jsx';
-import Sandbox from './pages/Sandbox.jsx';
-import Settings from './pages/Settings.jsx';
 import { api } from './lib/api.js';
+
+// Home is eager - it is the landing screen. Every other page is split into its
+// own chunk so the first paint does not carry all eleven of them. On a local
+// install this matters little; it keeps the entry chunk from growing with each
+// page added, which is the part that compounds.
+const Engagements = React.lazy(() => import('./pages/Engagements.jsx'));
+const LiveView = React.lazy(() => import('./pages/LiveView.jsx'));
+const Proxy = React.lazy(() => import('./pages/Proxy.jsx'));
+const Scans = React.lazy(() => import('./pages/Scans.jsx'));
+const Reports = React.lazy(() => import('./pages/Reports.jsx'));
+const Findings = React.lazy(() => import('./pages/Findings.jsx'));
+const Surface = React.lazy(() => import('./pages/Surface.jsx'));
+const Methodology = React.lazy(() => import('./pages/Methodology.jsx'));
+const Sandbox = React.lazy(() => import('./pages/Sandbox.jsx'));
+const Settings = React.lazy(() => import('./pages/Settings.jsx'));
 import './styles.css';
 
 // "/live" resolves to the most-recent engagement's live view.
@@ -47,7 +52,8 @@ function LiveRedirect() {
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
     <BrowserRouter>
-      <Routes>
+      <React.Suspense fallback={<div className="page"><div className="empty empty--loading">Loading…</div></div>}>
+          <Routes>
         <Route path="/" element={<App />}>
           <Route index element={<Home />} />
           <Route path="engagements" element={<Engagements />} />
@@ -66,6 +72,7 @@ ReactDOM.createRoot(document.getElementById('root')).render(
           <Route path="*" element={<NotFound />} />
         </Route>
       </Routes>
+        </React.Suspense>
     </BrowserRouter>
   </React.StrictMode>
 );

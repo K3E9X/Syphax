@@ -395,6 +395,23 @@ POSTing a guessed form to a guessed endpoint creates orders and sends mail.
 unverified ones in section 4 as leads for manual confirmation. `meta` carries
 `proven_findings`, `unverified_findings` and the real `false_positive_rate_pct`.
 
+## Running the tests
+
+    cd backend  && pytest -q     # 1208 tests, no DB / network / LLM needed
+    cd frontend && npm test      # 67 tests (vitest + jsdom)
+
+Both run in CI on every push, alongside the frontend build, `docker compose
+config` and a hadolint pass over the Dockerfiles.
+
+The frontend suite covers the shared data layer rather than the markup: that a
+slow response cannot overwrite a newer one, that an error reaches `error`
+instead of vanishing, that polling stops while the tab is hidden and refetches
+on return, and that a panel keeps "loading", "broken" and "empty" as three
+distinguishable states. It found a real bug on its first run - FastAPI returns
+`detail` as a string for an HTTPException but as an array of objects for a 422,
+and the array was handed straight to `new Error()`, so every validation failure
+reached the operator as the literal text `[object Object]`.
+
 ## Where the tokens went
 
 The `llm_usage` table always recorded the role, the timestamp and the
