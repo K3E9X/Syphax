@@ -15,6 +15,7 @@ from fastapi.responses import JSONResponse
 
 # Importing the storage modules registers their CREATE TABLE statements with
 # app.db; init_db() then runs them all in lifespan startup.
+import app.memory  # noqa: F401  - register schema
 import app.network.shared_state  # noqa: F401  - register schema
 import app.audit  # noqa: F401
 import app.events  # noqa: F401

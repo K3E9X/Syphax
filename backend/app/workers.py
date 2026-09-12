@@ -25,6 +25,7 @@ import app.audit  # noqa: F401  - register schema
 import app.engagements.storage  # noqa: F401  - register schema
 import app.events  # noqa: F401  - register schema
 import app.llm.usage  # noqa: F401  - register schema
+import app.memory  # noqa: F401  - register schema
 import app.network.shared_state  # noqa: F401  - register schema
 import app.orchestrator.state  # noqa: F401  - register schema
 import app.orchestrator.runs  # noqa: F401  - register schema

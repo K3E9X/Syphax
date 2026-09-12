@@ -63,6 +63,17 @@ class Planner:
         # Deterministic order: phase first, then severity of the catalog item.
         candidates.sort(key=_task_sort_key)
 
+        # Cross-engagement memory: classes that held up on this stack before go
+        # first within their phase. Advisory only - it reorders, it never adds a
+        # task, drops one, or touches a gate.
+        try:
+            from app import memory
+            remembered = memory.suggested_classes(await memory.all_lessons(), tech)
+            if remembered:
+                candidates.sort(key=lambda t: _memory_rank(t, remembered))
+        except Exception:  # noqa: BLE001 - memory must never block planning
+            logger.debug("memory unavailable for prioritisation", exc_info=True)
+
         # Only advance one phase at a time: take the earliest phase that still
         # has uncovered work, so we always recon/map before we exploit.
         earliest_phase = candidates[0].phase
@@ -186,6 +197,22 @@ class Planner:
                 continue
             fresh.append(h)
         return fresh + result
+
+
+def _memory_rank(task: Task, remembered: List[str]):
+    """Stable key that lifts remembered classes without crossing phases.
+
+    Phase order is an invariant the approval checkpoint depends on (loop.py
+    gates on batch[0].phase), so memory may only reorder inside a phase.
+    """
+    item = CATALOG_BY_ID.get(task.catalog_item_id)
+    vuln_class = (item.vuln_class if item else "").lower()
+    try:
+        rank = remembered.index(vuln_class)
+    except ValueError:
+        rank = len(remembered)
+    phase_idx = PHASE_ORDER.index(task.phase) if task.phase in PHASE_ORDER else 99
+    return (phase_idx, rank) + _task_sort_key(task)[1:]
 
 
 def _task_sort_key(t: Task):

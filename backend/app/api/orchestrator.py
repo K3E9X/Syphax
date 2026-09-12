@@ -186,6 +186,22 @@ async def analyze_traffic(engagement_id: str) -> dict:
     return result
 
 
+@router.get("/{engagement_id}/memory")
+async def engagement_memory(engagement_id: str) -> dict:
+    """What past engagements suggest looking at first on this stack.
+
+    Advisory: the planner uses it to reorder within a phase. It never adds a
+    task, drops one, or touches the scope/active-exploit gates.
+    """
+    if await _engagements.get(engagement_id) is None:
+        raise HTTPException(status_code=404, detail="engagement not found")
+    from app import memory
+
+    tech = await EngagementState(engagement_id).technologies()
+    advice = await memory.advice_for(tech)
+    return {"technologies": tech, "count": len(advice), "lessons": advice}
+
+
 @router.get("/{engagement_id}/diff")
 async def engagement_diff(engagement_id: str, against: str) -> dict:
     """Compare this engagement's findings with another engagement's.
