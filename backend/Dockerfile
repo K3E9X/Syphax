@@ -231,13 +231,24 @@ RUN set -eux; \
 
 WORKDIR /app
 
-COPY requirements.txt ./
-RUN pip install -r requirements.txt
-
+# Code and entrypoints, but no Python dependencies yet: the two images below
+# need different ones. mitmproxy pins cryptography<44.1, and while it shared an
+# environment with the API that pin held the whole stack seven majors back.
+COPY requirements.txt requirements-proxy.txt ./
 COPY app ./app
-COPY entrypoint.sh /usr/local/bin/entrypoint.sh
-RUN chmod +x /usr/local/bin/entrypoint.sh
+COPY entrypoint.sh entrypoint-proxy.sh /usr/local/bin/
+RUN chmod +x /usr/local/bin/entrypoint.sh /usr/local/bin/entrypoint-proxy.sh
 
-EXPOSE 8000 8080
 
+# --- proxy image: mitmproxy only (docker build --target proxy) ---------------
+FROM base AS proxy
+RUN pip install --no-cache-dir -r requirements-proxy.txt
+EXPOSE 8080
+ENTRYPOINT ["/usr/local/bin/entrypoint-proxy.sh"]
+
+
+# --- app image: API, worker, orchestrator. LAST, so it is the default target -
+FROM base AS app
+RUN pip install --no-cache-dir -r requirements.txt
+EXPOSE 8000
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]

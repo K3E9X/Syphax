@@ -100,7 +100,14 @@ jobs:
       - name: Build backend image (both architectures)
         run: |
           docker buildx build --platform linux/amd64,linux/arm64 \
-            -t syphax-backend:nightly ./backend
+            --target app -t syphax-backend:nightly ./backend
+
+      # Separate dependency set (mitmproxy pins cryptography<44.1), so it can
+      # break on its own and must be built on its own.
+      - name: Build proxy image (both architectures)
+        run: |
+          docker buildx build --platform linux/amd64,linux/arm64 \
+            --target proxy -t syphax-proxy:nightly ./backend
 
       - name: Build sandbox runner (both architectures)
         run: |

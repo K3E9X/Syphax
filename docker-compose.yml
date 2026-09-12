@@ -3,7 +3,10 @@
 # Services:
 #   * postgres   - primary store (engagements, jobs, findings, proxy flows)
 #   * redis      - arq worker queue + transient state
-#   * backend    - FastAPI + mitmproxy addon + arq worker (single image, two roles)
+#   * backend    - FastAPI API (image target: app)
+#   * proxy      - mitmproxy addon (image target: proxy - its own dependency set)
+#   * worker     - arq scan worker        (shares backend's netns for the tunnel)
+#   * orchestrator - arq autonomous loops (shares backend's netns for the tunnel)
 #   * frontend   - React build served by nginx
 #
 # All persistent state lives in volumes; nothing important is in container fs.
@@ -49,6 +52,7 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
+      target: app
     container_name: syphax-backend
     restart: unless-stopped
     depends_on:
@@ -67,6 +71,8 @@ services:
       # Loopback only. The API has no authentication beyond the optional
       # SYPHAX_API_KEY, and 8080 is a live HTTPS-intercepting proxy holding the
       # operator's captured sessions - neither belongs on every host interface.
+      # 8080 is published here rather than on the proxy service because that
+      # service shares this container's network namespace (for the tunnel).
       # To point a phone or VM at the proxy, change 8080 deliberately and set
       # SYPHAX_API_KEY first.
       - "127.0.0.1:8000:8000"
@@ -87,10 +93,38 @@ services:
     devices:
       - /dev/net/tun:/dev/net/tun
 
+  # mitmproxy, in its own image. It pins cryptography<44.1, and while it shared
+  # an environment with the API that pin held the whole stack seven majors back.
+  # Shares the backend's network namespace so captured traffic goes through the
+  # tunnel too, and so 8080 stays published in one place.
+  proxy:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      target: proxy
+    container_name: syphax-proxy
+    restart: unless-stopped
+    network_mode: "service:backend"
+    depends_on:
+      backend:
+        condition: service_started
+      postgres:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      - DATA_DIR=/data
+      - MITM_PORT=8080
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-syphax}:${POSTGRES_PASSWORD:-syphax}@postgres:5432/${POSTGRES_DB:-syphax}
+    volumes:
+      # The mitmproxy CA lives here; users download it from /api/proxy/ca.pem.
+      - ./data:/data
+
   worker:
     build:
       context: ./backend
       dockerfile: Dockerfile
+      target: app
     container_name: syphax-worker
     restart: unless-stopped
     # Share the backend's network namespace. The backend is the only container
@@ -126,6 +160,7 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
+      target: app
     container_name: syphax-orchestrator
     restart: unless-stopped
     # Share the backend's network namespace. The backend is the only container

@@ -1,0 +1,9 @@
+# The mitmproxy addon ONLY. Kept apart from requirements.txt because mitmproxy
+# pins cryptography<44.1, and while both lived in one environment that pin held
+# the whole API stack back seven major versions. The addon needs mitmproxy to
+# run and psycopg to write captured flows - nothing else.
+mitmproxy==11.0.2
+psycopg[binary]==3.3.5
+pydantic==2.13.5
+pydantic-settings==2.6.1
+python-dotenv==1.0.1

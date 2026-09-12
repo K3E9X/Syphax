@@ -7,12 +7,10 @@ pydantic-settings==2.6.1
 # misleading "public IP unreadable".
 httpx[socks]==0.28.1
 python-dotenv==1.0.1
-mitmproxy==11.0.2
 asyncpg==0.31.0
 psycopg[binary]==3.3.5
 arq==0.28.0
 dnspython==2.7.0
-# Capped at <44.1 by mitmproxy 11.0.2, which shares this environment with the
-# API (entrypoint.sh runs mitmdump and uvicorn side by side). Moving to a
-# current cryptography means giving mitmproxy its own container first.
-cryptography==44.0.3
+# No longer capped by mitmproxy: the addon runs in its own container off
+# requirements-proxy.txt, so the API/worker stack is free to track upstream.
+cryptography==46.0.3
