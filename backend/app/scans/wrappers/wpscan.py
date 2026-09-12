@@ -11,6 +11,7 @@ import json
 import os
 from typing import List, Sequence
 
+from app.cve_refs import normalize_cve
 from app.scans.models import Finding
 from app.scans.wrappers.base import BaseWrapper, ToolResult
 
@@ -150,6 +151,16 @@ class WpscanWrapper(BaseWrapper):
         return ToolResult(findings=findings)
 
 
+def _first_cve_id(cves) -> "str | None":
+    """wpscan lists CVEs bare ("2021-24741"); normalize_cve wants the full id."""
+    for c in cves or []:
+        raw = str(c).strip()
+        got = normalize_cve(raw if raw.upper().startswith("CVE-") else f"CVE-{raw}")
+        if got:
+            return got
+    return None
+
+
 def _wp_vuln_finding(vuln: dict, target: str, component: str) -> Finding:
     title = vuln.get("title") or "WordPress vulnerability"
     refs = vuln.get("references") or {}
@@ -171,6 +182,10 @@ def _wp_vuln_finding(vuln: dict, target: str, component: str) -> Finding:
         metadata={
             "component": component,
             "cve": cves,
+            # Consumers (analysis/public_exploits.py, exploit/known.py) read
+            # "cve_id" as a normalised string, like nuclei and nmap emit. Without
+            # it every CVE wpscan finds was silently skipped for enrichment.
+            **({"cve_id": _first_cve_id(cves)} if _first_cve_id(cves) else {}),
             "fixed_in": fixed_in,
             "references": url_refs,
             "wpvulndb_id": vuln.get("id"),

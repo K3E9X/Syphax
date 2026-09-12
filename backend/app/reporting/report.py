@@ -52,9 +52,23 @@ async def build_report(engagement_id: str) -> Dict[str, Any]:
             "overall_risk": overall,
             "reportable_findings": len(reportable),
             "chains": len(chains),
-            "false_positive_rate_pct": vsum.get("false_positive_rate_pct", 0),
+            "false_positive_rate_pct": false_positive_rate(vsum),
         },
     }
+
+
+def false_positive_rate(vsum: Dict[str, Any]) -> float:
+    """False-positive rate from the status counts.
+
+    `ValidatedFindingRepository.summary()` returns only {status: count}; the rate
+    computed in validation/run.py is not persisted. Reading a key nobody sets
+    made every report claim 0%, so derive it here from what summary() does give.
+    """
+    confirmed = int(vsum.get("confirmed", 0) or 0)
+    likely = int(vsum.get("likely", 0) or 0)
+    fp = int(vsum.get("false_positive", 0) or 0)
+    denom = confirmed + likely + fp
+    return round((fp / denom) * 100, 1) if denom else 0.0
 
 
 def _overall_risk(findings: List) -> str:
@@ -102,7 +116,7 @@ def _markdown(e, findings, chains, tools, hosts, tech, cov, vsum, overall) -> st
     L.append(
         f"Validation confirmed {vsum.get('confirmed', 0)} finding(s) with a safe "
         f"proof-of-exploit and discarded {vsum.get('false_positive', 0)} false "
-        f"positive(s) (FP rate {vsum.get('false_positive_rate_pct', 0)}%)."
+        f"positive(s) (FP rate {false_positive_rate(vsum)}%)."
     )
     L.append("")
 

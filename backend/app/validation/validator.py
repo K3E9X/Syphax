@@ -39,13 +39,23 @@ _ANALYSIS_TOOLS = {"logic", "js-recon", "jwt", "access-control", "cors",
                    "params", "graphql", "exploit", "public-exploits", "cve-checks",
                    "auth-brute", "llm-recon", "payload-probe"}
 
+# A dotenv line is an uppercase KEY=VALUE; an .htaccess carries a directive.
+_ENV_LINE = re.compile(r"(?m)^\s*[A-Z][A-Z0-9_]{2,}\s*=\s*\S")
+_HTACCESS_DIRECTIVE = re.compile(
+    r"(?mi)^\s*(RewriteEngine|RewriteRule|RewriteCond|Options|AuthType|AuthName"
+    r"|Require|Deny|Allow|Order|DirectoryIndex|ErrorDocument|Header|AddType"
+    r"|php_value|SetHandler|FilesMatch)\b")
+
 # path-signature pairs: if the finding target ends with <path>, fetching it
 # should contain <signature> to confirm the exposure.
 _EXPOSED_SIGNATURES = [
     (".git/config", "[core]"),
     (".git/HEAD", "ref:"),
-    (".env", "="),
-    (".htaccess", ""),            # presence (200 + body) is enough
+    # A bare "=" matched every HTML page and a bare "" matched any 200, so both
+    # confirmed "publicly readable" on ordinary content. Require the file to
+    # actually look like what it claims to be.
+    (".env", _ENV_LINE),
+    (".htaccess", _HTACCESS_DIRECTIVE),
     ("phpinfo", "phpinfo()"),
     ("server-status", "Apache Server Status"),
     ("/.svn/entries", ""),
@@ -131,14 +141,14 @@ class FindingValidator:
             return ValidationResult.false_positive(
                 "safe-poc", detail=f"resource returned HTTP {resp.status_code}, not exposed"
             )
-        if signature and signature.lower() not in resp.text.lower():
+        if not _signature_present(signature, resp.text):
             return ValidationResult.false_positive(
                 "safe-poc", detail="200 but expected content signature absent"
             )
         snippet = resp.text[:300].replace("\n", " ")
         return ValidationResult.confirmed(
             method="safe-poc (exposed-resource)",
-            poc=f"GET {url} -> HTTP 200; body contains '{signature or '(content)'}'\n{snippet}",
+            poc=f"GET {url} -> HTTP 200; body matches the expected {p} signature\n{snippet}",
             detail=f"Sensitive resource {p} is publicly readable.",
         )
 
@@ -172,6 +182,15 @@ class FindingValidator:
                 "safe-poc (reflection)", detail="benign marker not reflected in response"
             )
         return None
+
+
+def _signature_present(signature, body: str) -> bool:
+    """Signature may be a substring or a compiled pattern; empty means any body."""
+    if not signature:
+        return bool(body)
+    if hasattr(signature, "search"):
+        return bool(signature.search(body or ""))
+    return signature.lower() in (body or "").lower()
 
 
 def _inject_marker(url: str, marker: str) -> Optional[str]:
