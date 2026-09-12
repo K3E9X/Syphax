@@ -90,6 +90,7 @@ class Asset:
             "is_https": self.is_https,
             "requires_params": self.has_params,
             "url": self.value,
+            "source": self.source or "",
             "tech": tech,
         }
 

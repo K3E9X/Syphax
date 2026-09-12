@@ -245,3 +245,22 @@ body { background: var(--bg); color: var(--text-primary); font: var(--font-body)
 .mem-strip__l { color: var(--text-faint); text-transform: uppercase; letter-spacing: .04em; font-size: 10px; }
 .mem-strip__item { padding: 2px 8px; border: 1px solid var(--border); border-radius: 999px; color: var(--text-secondary); cursor: default; }
 .mem-strip__item b { color: var(--accent); font-weight: 500; }
+
+/* Proven vs unverified, and the corroboration reasoning behind a score.
+   The two used to render identically, so the operator could not tell a
+   finding an oracle reproduced from a scanner's pattern match. Flat and
+   monochrome-with-functional-color like .vstatus and .sev above - the
+   semantic tokens carry both themes. */
+.proof {
+  font-family: var(--font-mono); font-size: 10px; text-transform: uppercase;
+  letter-spacing: .05em; line-height: 1.7; padding: 2px 8px;
+  border: 1px solid; border-radius: var(--radius-xs);
+}
+.proof--yes { color: var(--term-ok); border-color: var(--term-ok); }
+.proof--no  { color: var(--severity-medium); border-color: var(--border-strong); }
+.corr {
+  margin-top: var(--space-2, 6px); font-size: 11.5px; line-height: 1.45;
+  color: var(--text-secondary); border-left: 2px solid var(--border);
+  padding-left: var(--space-2, 8px);
+}
+.corr--down { color: var(--severity-medium); border-left-color: var(--severity-medium); }

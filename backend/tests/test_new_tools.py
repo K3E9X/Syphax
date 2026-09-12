@@ -500,3 +500,46 @@ def test_trufflehog_deduplicates_the_same_secret():
     findings = TruffleHogWrapper().parse(
         TH_VERIFIED + b"\n" + TH_VERIFIED, b"", 0, TARGET).findings
     assert len(findings) == 1
+
+
+# ==========================================================================
+# scheduling: the host-wide tools must not run once per discovered endpoint
+# ==========================================================================
+
+HOST_WIDE = ["MAP-JS-ENDPOINTS", "VULN-CLIENT-LIBS", "VULN-GIT-DUMP",
+             "VULN-VERIFIED-SECRETS"]
+
+
+@pytest.mark.parametrize("item_id", HOST_WIDE)
+def test_host_wide_tools_run_only_on_the_engagement_target(item_id):
+    """git-dumper dumps one .git; trufflehog and retire.js scan one artifact
+    directory. Fifty crawled endpoints would be fifty identical scans."""
+    from app.methodology.catalog import CATALOG_BY_ID, applies
+    item = CATALOG_BY_ID[item_id]
+    base = {"is_host": False, "source": "engagement",
+            "url": "https://t.example/", "tech": []}
+    crawled = {"is_host": False, "source": "proxy",
+               "url": "https://t.example/deep/page", "tech": []}
+    assert applies(item, base)
+    assert not applies(item, crawled)
+
+
+def test_parameter_discovery_is_still_per_endpoint():
+    """arjun's parameters differ per endpoint, so this one must fan out."""
+    from app.methodology.catalog import CATALOG_BY_ID, applies
+    item = CATALOG_BY_ID["MAP-HIDDEN-PARAMS"]
+    for source in ("engagement", "proxy", "katana"):
+        assert applies(item, {"is_host": False, "source": source,
+                              "url": "https://t.example/a", "tech": []})
+    assert not applies(item, {"is_host": True, "source": "engagement",
+                              "url": "t.example", "tech": []})
+
+
+def test_an_asset_context_carries_its_source():
+    from app.orchestrator.state import Asset
+    ctx = Asset(kind="endpoint", value="https://t.example/",
+                source="engagement").context([])
+    assert ctx["source"] == "engagement"
+    assert ctx["url"] == "https://t.example/"
+    # A source we never set must not accidentally satisfy is_base.
+    assert Asset(kind="endpoint", value="x").context([])["source"] == ""

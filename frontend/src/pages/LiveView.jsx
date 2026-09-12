@@ -401,10 +401,25 @@ export default function LiveView() {
                 <div className="finding__top">
                   <span className={'sev sev--' + (f.severity || 'info')}>{f.severity}</span>
                   <span className={'vstatus vstatus--' + f.status}>{f.status} &middot; {Math.round((f.confidence || 0) * 100)}%</span>
+                  {/* An oracle decided this, or a scanner pattern matched it.
+                      Showing both identically is the conflation the report
+                      also had. */}
+                  <span className={'proof proof--' + (f.proven ? 'yes' : 'no')}
+                        title={f.proven
+                          ? 'Reproduced against the target by an oracle'
+                          : 'Reported by a scanner; no oracle could decide it'}>
+                    {f.proven ? 'proven' : 'unverified'}
+                  </span>
                 </div>
                 <div className="finding__title">{f.title}</div>
                 <div className="finding__target">{f.target}</div>
                 <div className="finding__meta">{f.tool} &middot; {f.vuln_class}{f.method ? ' · ' + f.method : ''}</div>
+                {f.corroboration && f.corroboration.note && (
+                  <div className={'corr' + (f.corroboration.demoted ? ' corr--down' : '')}>
+                    {f.corroboration.demoted ? '↓ ' : (f.corroboration.independent > 1 ? '↑ ' : '')}
+                    {f.corroboration.note}
+                  </div>
+                )}
                 {f.poc && <pre className="finding__poc">{f.poc}</pre>}
                 {(f.metadata || {}).suggested_proof && (
                   <div className="finding__proof">

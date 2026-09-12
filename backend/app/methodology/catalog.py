@@ -14,6 +14,8 @@ is serializable, inspectable in the UI, and safe to ship to the LLM planner:
     {"tech_any": ["wordpress"]}       - only if a fingerprint matched one of these
     {"is_host": true}                 - run against a host, not a URL (nmap/naabu/dns)
     {"path_any": ["openapi"]}         - only on an asset whose URL says so
+    {"is_base": true}                 - only the engagement's own target URL,
+                                        for tools that work per host
 """
 from __future__ import annotations
 
@@ -195,7 +197,7 @@ CATALOG: List[CatalogItem] = [
         description="Extract endpoints and parameters from the captured "
                     "JavaScript with a real parser (not regex).",
         default_options=["urls"],
-        applies_when={"is_endpoint": True},
+        applies_when={"is_base": True},
     ),
     CatalogItem(
         id="MAP-TAKEOVER",
@@ -291,7 +293,7 @@ CATALOG: List[CatalogItem] = [
         description="Rate the client-side JavaScript libraries the page loads "
                     "against the known-vulnerable version database.",
         severity_default="medium",
-        applies_when={"is_endpoint": True},
+        applies_when={"is_base": True},
     ),
     CatalogItem(
         id="VULN-API-CONTRACT",
@@ -317,7 +319,7 @@ CATALOG: List[CatalogItem] = [
         description="Recover the source tree from an exposed .git directory, "
                     "turning a readable path into the actual source.",
         severity_default="high",
-        applies_when={"is_endpoint": True},
+        applies_when={"is_base": True},
     ),
     CatalogItem(
         id="VULN-VERIFIED-SECRETS",
@@ -330,7 +332,7 @@ CATALOG: List[CatalogItem] = [
                     "captured JavaScript against its own provider - a hit is a "
                     "credential that answered, not a pattern that matched.",
         severity_default="high",
-        applies_when={"is_endpoint": True},
+        applies_when={"is_base": True},
     ),
     CatalogItem(
         id="VULN-AUTH",
@@ -488,6 +490,7 @@ def applies(item: CatalogItem, context: Dict[str, Any]) -> bool:
       is_https         - target uses https
       requires_params  - target URL has query parameters
       url              - the asset's value, for path_any matching
+      source           - where the asset came from ("engagement" = the target)
       tech             - list[str] of fingerprinted technologies (lowercased)
     """
     cond = item.applies_when or {"always": True}
@@ -509,6 +512,12 @@ def applies(item: CatalogItem, context: Dict[str, Any]) -> bool:
     # for tools that need a specific document rather than any endpoint -
     # schemathesis needs the OpenAPI schema, not the home page, and running it
     # on the wrong URL just produces a load error every engagement.
+    # is_base: only the engagement's own target, not every endpoint the crawl
+    # found. For tools that work per HOST rather than per URL - git-dumper
+    # dumps one .git, trufflehog and retire.js scan one artifact directory -
+    # running them on fifty discovered endpoints is fifty identical scans.
+    if cond.get("is_base") and context.get("source") != "engagement":
+        return False
     path_any = cond.get("path_any")
     if path_any:
         url = str(context.get("url") or "").lower()
