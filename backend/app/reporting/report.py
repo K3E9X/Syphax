@@ -17,6 +17,7 @@ from app.reporting.mappings import CATEGORY_LABELS, for_class
 from app.scans.storage import JobRepository
 from app.validation import ChainRepository, ValidatedFindingRepository
 from app.validation.classes import SURFACE_CLASSES
+from app.validation.corroboration import is_oracle
 
 _SEV_ORDER = ["critical", "high", "medium", "low", "info"]
 _SEV_RANK = {s: i for i, s in enumerate(_SEV_ORDER)}
@@ -46,6 +47,7 @@ async def build_report(engagement_id: str) -> Dict[str, Any]:
     vsum = await vf_repo.summary(engagement_id)
 
     overall = _overall_risk(reportable)
+    proof = partition_by_proof(reportable)
     md = _markdown(e, reportable, chains, tools_used, hosts, tech, cov, vsum, overall)
     return {
         "markdown": md,
@@ -53,6 +55,8 @@ async def build_report(engagement_id: str) -> Dict[str, Any]:
         "meta": {
             "overall_risk": overall,
             "reportable_findings": len(reportable),
+            "proven_findings": len(proof["proven"]),
+            "unverified_findings": len(proof["unverified"]),
             "chains": len(chains),
             "false_positive_rate_pct": false_positive_rate(vsum),
         },
@@ -104,6 +108,29 @@ def is_reportable(finding) -> bool:
     return norm_severity_class(getattr(finding, "vuln_class", None)) not in _RECON_CLASSES
 
 
+def is_proven(finding) -> bool:
+    """Did an oracle decide this, or did a scanner pattern match it?
+
+    A finding an oracle confirmed (an active tool oracle, a safe re-fetch that
+    saw the expected content, a benign marker reflected, an adaptive probe with
+    a baseline, a replayed stored proof) and a finding nothing re-checked used
+    to be printed identically, side by side, in the same list. The reader had
+    no way to tell "we proved this" from "a scanner said so". They are now two
+    sections.
+    """
+    if norm_severity_class(getattr(finding, "status", None)) != "confirmed":
+        return False
+    return is_oracle(getattr(finding, "method", "") or "")
+
+
+def partition_by_proof(findings: List) -> Dict[str, List]:
+    """Split the reportable set into what we proved and what we did not."""
+    proven, unverified = [], []
+    for f in findings:
+        (proven if is_proven(f) else unverified).append(f)
+    return {"proven": proven, "unverified": unverified}
+
+
 def norm_severity(value) -> str:
     """Fold an arbitrary severity onto the five known levels.
 
@@ -148,10 +175,14 @@ def _markdown(e, findings, chains, tools, hosts, tech, cov, vsum, overall) -> st
         "No findings could be validated for this engagement."
     )
     L.append("")
+    proof = partition_by_proof(findings)
     L.append(
-        f"Validation confirmed {vsum.get('confirmed', 0)} finding(s) with a safe "
-        f"proof-of-exploit and discarded {vsum.get('false_positive', 0)} false "
-        f"positive(s) (FP rate {false_positive_rate(vsum)}%)."
+        f"**{len(proof['proven'])} finding(s) were proven** with a safe "
+        f"proof-of-exploit reproduced against the target (section 3); "
+        f"{len(proof['unverified'])} were reported by a scanner but could not be "
+        f"independently verified (section 4). Validation discarded "
+        f"{vsum.get('false_positive', 0)} false positive(s) "
+        f"(FP rate {false_positive_rate(vsum)}%)."
     )
     L.append("")
 
@@ -164,48 +195,44 @@ def _markdown(e, findings, chains, tools, hosts, tech, cov, vsum, overall) -> st
         L.append(f"- **Technologies identified:** {', '.join(tech)}")
     L.append(f"- **Tools used:** {', '.join(tools) or 'n/a'}")
     L.append(f"- **Coverage:** {cov.get('done', 0)} catalog test(s) completed.")
-    L.append("- **Methodology:** OWASP WSTG, mapped to MITRE ATT&CK; every "
-             "reported finding was validated with a safe proof-of-exploit.")
+    L.append("- **Methodology:** OWASP WSTG, mapped to MITRE ATT&CK. Every "
+             "finding is put to an oracle where one exists; findings no oracle "
+             "could decide are reported separately (section 4) rather than "
+             "presented as established.")
     L.append("")
 
-    # 3. Findings
-    L.append("## 3. Findings")
+    # 3./4. Findings, split by whether an oracle decided them. Printing a
+    # safe-PoC confirmation and an unchecked scanner pattern in the same list
+    # gave the reader no way to tell them apart.
+    split = partition_by_proof(findings)
+    L.append("## 3. Proven Findings")
     L.append("")
-    if not findings:
-        L.append("_No validated findings._")
+    if not split["proven"]:
+        L.append("_Nothing could be proven with a safe proof-of-exploit._")
         L.append("")
     else:
-        bysev = _by_severity(findings)
-        for sev in _SEV_ORDER:
-            group = bysev.get(sev) or []
-            if not group:
-                continue
-            L.append(f"### {sev.capitalize()} ({len(group)})")
-            L.append("")
-            for f in group:
-                m = for_class(f.vuln_class)
-                cat = CATEGORY_LABELS.get(m.get("category", "other"), "Other")
-                L.append(f"#### {f.title}")
-                L.append("")
-                L.append(f"- **Severity:** {f.severity}")
-                L.append(f"- **Category:** {cat}")
-                L.append(f"- **Status:** {f.status} (confidence {int(f.confidence*100)}%)")
-                L.append(f"- **Affected:** `{f.target}`")
-                L.append(f"- **Tool / method:** {f.tool} / {f.method}")
-                L.append(f"- **WSTG:** {m['wstg']} · **ATT&CK:** {', '.join(m['attack'])} · **CWE:** {m['cwe']}")
-                if f.poc:
-                    L.append("")
-                    L.append("**Proof of exploit:**")
-                    L.append("")
-                    L.append("```")
-                    L.append(f.poc.strip()[:1500])
-                    L.append("```")
-                L.append("")
-                L.append(f"**Remediation:** {m['remediation']}")
-                L.append("")
+        L.append(f"{len(split['proven'])} finding(s) reproduced against the target: "
+                 "an active tool oracle, a safe re-fetch that returned the expected "
+                 "content, a benign marker reflected back, or an adaptive probe "
+                 "measured against a baseline. Each carries its proof below.")
+        L.append("")
+        _render_findings(L, split["proven"])
 
-    # 4. Kill-chains
-    L.append("## 4. Attack Chains")
+    L.append("## 4. Unverified Findings")
+    L.append("")
+    if not split["unverified"]:
+        L.append("_Every reported finding was proven._")
+        L.append("")
+    else:
+        L.append(f"{len(split['unverified'])} finding(s) reported by a scanner that "
+                 "no oracle could decide. They are real patterns, but nothing "
+                 "re-checked them against the target: treat them as leads for "
+                 "manual confirmation, not as established issues.")
+        L.append("")
+        _render_findings(L, split["unverified"])
+
+    # 5. Kill-chains
+    L.append("## 5. Attack Chains")
     L.append("")
     if not chains:
         L.append("_No multi-step attack chains identified._")
@@ -222,10 +249,14 @@ def _markdown(e, findings, chains, tools, hosts, tech, cov, vsum, overall) -> st
                 L.append(f"{i}. **{step.get('action','')}**{reason}")
             L.append("")
 
-    # 5. Remediation priority
-    L.append("## 5. Remediation Priority")
+    # 6. Remediation priority
+    L.append("## 6. Remediation Priority")
     L.append("")
-    ordered = sorted(findings, key=lambda f: (_SEV_RANK.get(f.severity, 9), -f.confidence))
+    # Proven before unproven at equal severity: a reproduced medium is more
+    # actionable than a scanner's unchecked high.
+    ordered = sorted(findings, key=lambda f: (_SEV_RANK.get(f.severity, 9),
+                                              0 if is_proven(f) else 1,
+                                              -f.confidence))
     if ordered:
         for i, f in enumerate(ordered[:15], 1):
             L.append(f"{i}. [{f.severity}] {f.title} — `{f.target}`")
@@ -233,8 +264,8 @@ def _markdown(e, findings, chains, tools, hosts, tech, cov, vsum, overall) -> st
         L.append("_Nothing to remediate._")
     L.append("")
 
-    # 6. Appendix
-    L.append("## 6. Appendix")
+    # 7. Appendix
+    L.append("## 7. Appendix")
     L.append("")
     L.append(f"- Tools: {', '.join(tools) or 'n/a'}")
     L.append("- Limitations: automated assessment with human-validated findings; "
@@ -243,6 +274,41 @@ def _markdown(e, findings, chains, tools, hosts, tech, cov, vsum, overall) -> st
              "markers / out-of-band); no destructive actions were performed.")
     L.append("")
     return "\n".join(L)
+
+
+def _render_findings(L: List[str], findings: List) -> None:
+    """One findings block, grouped by severity. Used by both sections."""
+    bysev = _by_severity(findings)
+    for sev in _SEV_ORDER:
+        group = bysev.get(sev) or []
+        if not group:
+            continue
+        L.append(f"### {sev.capitalize()} ({len(group)})")
+        L.append("")
+        for f in group:
+            m = for_class(f.vuln_class)
+            cat = CATEGORY_LABELS.get(m.get("category", "other"), "Other")
+            L.append(f"#### {f.title}")
+            L.append("")
+            L.append(f"- **Severity:** {f.severity}")
+            L.append(f"- **Category:** {cat}")
+            L.append(f"- **Status:** {f.status} (confidence {int(f.confidence*100)}%)")
+            L.append(f"- **Affected:** `{f.target}`")
+            L.append(f"- **Tool / method:** {f.tool} / {f.method}")
+            L.append(f"- **WSTG:** {m['wstg']} · **ATT&CK:** {', '.join(m['attack'])} · **CWE:** {m['cwe']}")
+            corr = (getattr(f, "metadata", None) or {}).get("corroboration") or {}
+            if corr.get("note"):
+                L.append(f"- **Corroboration:** {corr['note']}")
+            if f.poc:
+                L.append("")
+                L.append("**Proof of exploit:**" if is_proven(f) else "**Evidence:**")
+                L.append("")
+                L.append("```")
+                L.append(f.poc.strip()[:1500])
+                L.append("```")
+            L.append("")
+            L.append(f"**Remediation:** {m['remediation']}")
+            L.append("")
 
 
 def _html(markdown: str) -> str:

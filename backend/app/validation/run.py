@@ -14,6 +14,7 @@ from typing import Dict
 from app import events
 from app.engagements import EngagementRepository
 from app.scans.storage import JobRepository
+from app.validation import corroboration
 from app.validation.baseline import calibrate
 from app.validation.classes import TOOL_VULN_CLASS, vuln_class_of
 from app.validation.models import ValidatedFinding, ValidationStatus
@@ -96,9 +97,19 @@ async def validate_engagement(engagement_id: str) -> Dict[str, int]:
                 status=result.status.value, severity=f.severity, tool=job.tool,
             )
 
+    # Findings were judged one at a time above. Now arbitrate them against
+    # each other: independent agreement raises confidence, an oracle that
+    # disproved the same class at the same target demotes the guesses that
+    # claimed it, and a lone unchecked pattern match loses ground.
+    adjusted = corroboration.apply(validated)
+    if adjusted:
+        logger.info("[%s] corroboration adjusted %d finding(s)",
+                    engagement_id, adjusted)
+
     await vf_repo.replace_for_engagement(engagement_id, validated)
 
     stats = _stats(validated)
+    stats["corroborated"] = adjusted
     stats["catch_all_target"] = 1 if baseline.catch_all else 0
     logger.info("[%s] validated %d findings: %s", engagement_id, len(validated), stats)
     return stats

@@ -122,6 +122,7 @@ async def engagement_state(engagement_id: str) -> dict:
     llm = await llm_usage.summary(engagement_id)
 
     from app.reporting.mappings import category_for_class
+    from app.reporting.report import is_proven
 
     def _vf_public(v) -> dict:
         d = v.to_public()
@@ -131,6 +132,10 @@ async def engagement_state(engagement_id: str) -> dict:
         md = v.metadata or {}
         d["req"] = md.get("req") or ""
         d["resp"] = md.get("resp") or ""
+        # Did an oracle decide this, or did a scanner pattern match it? The UI
+        # showed both identically, which is the same conflation the report had.
+        d["proven"] = is_proven(v)
+        d["corroboration"] = md.get("corroboration") or None
         return d
 
     return {
