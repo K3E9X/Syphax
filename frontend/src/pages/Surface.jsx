@@ -4,6 +4,7 @@ import { useEngagements } from '../lib/useApi.js';
 import { Notice } from '../components/ui.jsx';
 
 export default function Surface() {
+  const [loadError, setLoadError] = useState(null);
   // One shared picker: five pages each rebuilt this and each swallowed
   // its failure, so a dead backend looked exactly like an empty install.
   const { engagements, engId, setEngId, error: engError, reload: reloadEngagements } = useEngagements();
@@ -17,7 +18,7 @@ export default function Surface() {
       const hs = r.hosts || [];
       setHosts(hs);
       setSel(hs.length ? hs[0].host : null);
-    }).catch(() => setHosts([]));
+    }).catch((e) => { setHosts([]); setLoadError(e.message); });
   }, [engId]);
 
   const openPorts = (h) => (h.ports || []).filter((p) => p.state === 'open').length;
@@ -30,6 +31,7 @@ export default function Surface() {
 
   return (
     <div className="page">
+      <Notice kind="error" message={loadError} />
       <Notice kind="error" title="Could not load engagements"
               message={engError} onRetry={reloadEngagements} />
       <div className="lv-head">

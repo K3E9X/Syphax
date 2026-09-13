@@ -7,7 +7,8 @@
 .meth-seg button.on { background: var(--surface); color: var(--text-primary); }
 
 .cat { margin-bottom: 12px; }
-.cat__head { display: grid; grid-template-columns: 1fr 200px 90px 24px; gap: 16px; align-items: center; padding: 13px 16px; cursor: pointer; }
+.cat__head { display: grid; grid-template-columns: minmax(0, 1fr) 200px 90px 24px; gap: 16px; align-items: center; padding: 13px 16px; cursor: pointer; }
+.cat__head > * { min-width: 0; }
 .cat__name { font-size: 14px; font-weight: 500; color: var(--text-primary); }
 .cat__wstg { font-family: var(--font-mono); font-size: 10px; color: var(--text-faint); margin-top: 2px; }
 .cat__bar { height: 6px; border-radius: 2px; background: var(--neutral-800); overflow: hidden; display: flex; }
@@ -21,12 +22,19 @@
 .cat__chev.open { transform: rotate(-135deg); }
 
 .items { border-top: 1px solid var(--border); }
-.item { display: grid; grid-template-columns: 1fr 150px 130px 90px; gap: 16px; align-items: center; padding: 9px 16px; border-bottom: 1px solid var(--border); font-size: 12px; }
+.item { display: grid; grid-template-columns: minmax(0, 1fr) 150px minmax(0, 160px) 70px; gap: 16px; align-items: center; padding: 9px 16px; border-bottom: 1px solid var(--border); font-size: 12px; }
+/* A grid child defaults to min-width:auto, so it refuses to shrink below its
+   content and overflows the track instead. Without this, a long asset URL
+   spilled out of its 130px cell and rendered on top of the status column -
+   the "hit" printed over the middle of the URL. */
+.item > * { min-width: 0; }
 .item:last-child { border-bottom: none; }
 .item:hover { background: var(--hover); }
 .item__name { color: var(--text-primary); }
 .item__id { font-family: var(--font-mono); font-size: 10px; color: var(--text-faint); }
 .item__attack { font-family: var(--font-mono); font-size: 11px; color: var(--text-secondary); }
+/* Truncate rather than overlap; the full value is on the title attribute. */
+.item__attack, .item__asset { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .item__asset { font-family: var(--font-mono); font-size: 11px; color: var(--text-faint); }
 .item__status { font-family: var(--font-mono); font-size: 11px; text-align: right; }
 .st-done { color: var(--term-ok); }

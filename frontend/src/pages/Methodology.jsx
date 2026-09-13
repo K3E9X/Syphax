@@ -6,6 +6,7 @@ import { Notice } from '../components/ui.jsx';
 const FILTERS = ['all', 'done', 'running', 'queued', 'skipped'];
 
 export default function Methodology() {
+  const [loadError, setLoadError] = useState(null);
   // One shared picker: five pages each rebuilt this and each swallowed
   // its failure, so a dead backend looked exactly like an empty install.
   const { engagements, engId, setEngId, error: engError, reload: reloadEngagements } = useEngagements();
@@ -24,7 +25,7 @@ export default function Methodology() {
         const c = (r.categories || []).filter((g) => (g.items || []).length);
         setCats(c);
         setOpen(c.map((x) => x.cat));
-      }).catch(() => setCats([]));
+      }).catch((e) => { setCats([]); setLoadError(e.message); });
       return;
     }
     setStandalone(true);
@@ -44,7 +45,7 @@ export default function Methodology() {
       const c = Object.values(groups);
       setCats(c);
       setOpen(c.map((x) => x.cat));
-    }).catch(() => setCats([]));
+    }).catch((e) => { setCats([]); setLoadError(e.message); });
   }, [engId]);
 
   const toggle = (cat) => setOpen((o) => o.includes(cat) ? o.filter((x) => x !== cat) : [...o, cat]);
@@ -55,6 +56,7 @@ export default function Methodology() {
 
   return (
     <div className="page">
+      <Notice kind="error" message={loadError} />
       <Notice kind="error" title="Could not load engagements"
               message={engError} onRetry={reloadEngagements} />
       <div className="lv-head">
@@ -111,8 +113,8 @@ export default function Methodology() {
                 {items.map((it) => (
                   <div key={it.id} className="item">
                     <div><span className="item__name">{it.name}</span> <span className="item__id">{it.id}</span></div>
-                    <div className="item__attack">ATT&amp;CK {(it.attack || []).join(', ')}</div>
-                    <div className="item__asset">{it.asset}</div>
+                    <div className="item__attack" title={(it.attack || []).join(', ')}>ATT&amp;CK {(it.attack || []).join(', ')}</div>
+                    <div className="item__asset" title={it.asset}>{it.asset}</div>
                     <div className={'item__status st-' + it.status}>{it.hit ? <span className="st-hit">hit</span> : it.status}</div>
                   </div>
                 ))}

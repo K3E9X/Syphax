@@ -8,6 +8,7 @@ const SEV_HEX = { critical: '#ef4444', high: '#f97316', medium: '#eab308', low: 
 const SEV_ORDER = { critical: 0, high: 1, medium: 2, low: 3, info: 4 };
 
 export default function Reports() {
+  const [loadError, setLoadError] = useState(null);
   // One shared picker: five pages each rebuilt this and each swallowed
   // its failure, so a dead backend looked exactly like an empty install.
   const { engagements, engId, setEngId, error: engError, reload: reloadEngagements } = useEngagements();
@@ -24,7 +25,8 @@ export default function Reports() {
 
   useEffect(() => {
     if (!engId) return;
-    api.engagements.state(engId).then(setState).catch(() => setState(null));
+    api.engagements.state(engId).then(setState)
+      .catch((e) => { setState(null); setLoadError(e.message); });
   }, [engId]);
 
   const eng = state?.engagement;
@@ -83,6 +85,7 @@ export default function Reports() {
 
   return (
     <div className="page">
+      <Notice kind="error" message={loadError} />
       <Notice kind="error" title="Could not load engagements"
               message={engError} onRetry={reloadEngagements} />
       <div className="rep-bar">

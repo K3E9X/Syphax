@@ -14,13 +14,17 @@ const ROLES = ['planner', 'executor', 'validator'];
 const PROVIDERS = [['zai', 'Z.ai (GLM)'], ['moonshot', 'Moonshot (Kimi)'], ['openrouter', 'OpenRouter']];
 
 export default function Settings() {
+  const [loadError, setLoadError] = useState(null);
   const [s, setS] = useState(null);
   const [keyInput, setKeyInput] = useState({ zai: '', moonshot: '', openrouter: '' });
   const [saved, setSaved] = useState(null);
   const [apiKeyInput, setApiKeyInput] = useState(getApiKey());
   const apiKey = apiKeyInput;
 
-  useEffect(() => { api.settings.get().then(setS).catch(() => setS(null)); }, []);
+  useEffect(() => {
+    // A blank Settings page and a dead backend looked identical.
+    api.settings.get().then(setS).catch((e) => { setS(null); setLoadError(e.message); });
+  }, []);
 
   if (!s) return <div className="page"><div className="card"><div className="card__body"><div className="empty">Loading settings...</div></div></div></div>;
 
@@ -50,6 +54,7 @@ export default function Settings() {
 
   return (
     <div className="page">
+      <Notice kind="error" message={loadError} />
       <div className="set-grid">
         <div className="card set-full">
           <div className="card__head"><span className="card__title">API key</span><span className="card__meta">this browser only &middot; never sent to the server settings</span></div>

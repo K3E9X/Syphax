@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { api } from '../lib/api.js';
 
 /**
@@ -38,7 +38,17 @@ export default function PocReview({ engagementId }) {
   };
 
   useEffect(() => { load(); setOpen(null); setResult(null); }, [engagementId]);
-  useEffect(() => { api.poc.runnerHealth().then(setRunner).catch(() => setRunner(null)); }, []);
+  // Swallowing this left the panel saying "runner unavailable" with no way to
+  // tell a container that was never started from one that crashed or is
+  // unreachable - the operator had two words and nothing to act on.
+  const [runnerError, setRunnerError] = useState(null);
+  const loadRunner = useCallback(() => {
+    setRunnerError(null);
+    return api.poc.runnerHealth()
+      .then((r) => { setRunner(r); return r; })
+      .catch((e) => { setRunner(null); setRunnerError(e.message); });
+  }, []);
+  useEffect(() => { loadRunner(); }, [loadRunner]);
 
   async function stage() {
     setBusy(true); setError(null);
@@ -94,6 +104,18 @@ export default function PocReview({ engagementId }) {
           </span>
         </div>
         <div className="card__body">
+          {runnerError && (
+            <div className="notice notice--error" role="alert">
+              <div className="notice__body">
+                <strong className="notice__t">Sandbox runner unreachable</strong>
+                <span className="notice__m">{runnerError}</span>
+                <span className="notice__m">
+                  Check the container is up: <code>docker compose ps sandbox-runner</code>
+                </span>
+              </div>
+              <button type="button" className="btn btn--muted btn--sm" onClick={loadRunner}>Retry</button>
+            </div>
+          )}
           {runner?.status === 'ok' && !egressLocked && (
             <p className="ping-result ping-result--err">
               The sandbox started without an egress policy. Running untrusted code now
