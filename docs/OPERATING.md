@@ -446,6 +446,22 @@ distinguishable states. It found a real bug on its first run - FastAPI returns
 and the array was handed straight to `new Error()`, so every validation failure
 reached the operator as the literal text `[object Object]`.
 
+## When the planner cannot answer
+
+Reordering by LLM is advisory: the planner may re-rank tasks within a phase,
+never add or drop one. So a planner that fails must not stop a run - the batch
+keeps its deterministic catalog order and the engagement proceeds.
+
+That fallback used to be silent. With no key for the planner role the code
+returned early without logging anything, and a provider error only reached the
+container's stderr. The run looked normal and the only trace was a zero next to
+`planner` in the token panel, which is how it was actually noticed.
+
+The live console now says it once per run, at info level, with the reason and
+an explicit note that the run continues. If you see it and did not expect it,
+check `PLANNER_API_KEY` - the default `.env` points the planner at Kimi
+(`api.moonshot.ai`, `kimi-k3`) and ships the key empty.
+
 ## Where the tokens went
 
 The `llm_usage` table always recorded the role, the timestamp and the

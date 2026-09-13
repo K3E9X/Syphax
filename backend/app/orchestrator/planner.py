@@ -15,6 +15,7 @@ import logging
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
+from app import events
 from app.llm import ROLE_PLANNER, LLMError, get_router
 from app.methodology import CATALOG, CATALOG_BY_ID, PHASE_ORDER, applies
 from app.orchestrator.state import Asset, EngagementState
@@ -50,6 +51,33 @@ class Task:
 class Planner:
     def __init__(self, state: EngagementState) -> None:
         self.state = state
+        # Said once per run, not once per iteration: the loop re-plans every
+        # cycle and a per-iteration notice would bury the console.
+        self._degradation_reported = False
+
+    async def _report_degraded(self, reason: str) -> None:
+        """Say out loud that planning fell back to the deterministic order.
+
+        The fallback is deliberate - a planner that cannot answer must not stop
+        a run - but it used to be invisible: `if not client.configured: return`
+        with no log at all, and a logger.warning that only reached the
+        container's stderr. The operator saw a normal-looking run and had no
+        way to know the LLM never participated, short of noticing a zero in the
+        token panel.
+        """
+        if self._degradation_reported:
+            return
+        self._degradation_reported = True
+        logger.info("[%s] planner degraded: %s", self.state.engagement_id, reason)
+        try:
+            await events.emit(
+                self.state.engagement_id, events.THOUGHT,
+                f"Planner LLM not used ({reason}). Tests run in catalog order - "
+                "the run continues, it is just not being prioritised.",
+                level=events.LEVEL_INFO,
+            )
+        except Exception:  # noqa: BLE001 - telling the operator must never break planning
+            logger.debug("could not emit the planner degradation notice", exc_info=True)
 
     async def plan(self, *, max_tasks: int = 12, use_llm: bool = True) -> List[Task]:
         """Return the next batch of uncovered, applicable tasks."""
@@ -119,6 +147,8 @@ class Planner:
             return batch
         client = get_router().get(ROLE_PLANNER)
         if not client.configured:
+            await self._report_degraded("no API key or model configured for the "
+                                        "planner role")
             return batch
 
         by_key = {t.key: t for t in batch}
@@ -162,10 +192,10 @@ class Planner:
                 max_tokens=900,
             )
         except LLMError as exc:
-            logger.warning("planner LLM unavailable, keeping deterministic order: %s", exc)
+            await self._report_degraded(f"provider unavailable: {exc}")
             return batch
         except Exception as exc:  # noqa: BLE001 - never let reordering break planning
-            logger.warning("planner LLM error, keeping deterministic order: %s", exc)
+            await self._report_degraded(f"planner error: {exc}")
             return batch
 
         from app.llm.grounding import extract_json
