@@ -46,6 +46,7 @@ export default function Engagements() {
   const [form, setForm] = useState(BLANK);
   const [items, setItems] = useState([]);
   const [selectedId, setSelectedId] = useState(null);
+  const [toast, setToast] = useState(null);
   const [error, setError] = useState(null);
   const set = (patch) => setForm((f) => ({ ...f, ...patch }));
 
@@ -79,8 +80,39 @@ export default function Engagements() {
     } catch (err) { setError(err.message); }
   }
 
+  useEffect(() => {
+    if (!toast) return undefined;
+    const t = setTimeout(() => setToast(null), 6000);
+    return () => clearTimeout(t);
+  }, [toast]);
+
   async function closeEng(id) {
     try { await api.engagements.close(id); await load(); } catch (e) { setError(e.message); }
+  }
+
+  // Close only flips a status: the findings stay and every aggregate view
+  // keeps mixing them with the next target's. Delete removes them. Confirmed
+  // by typing the host, because it cannot be undone - the audit trail and the
+  // cross-engagement memory are what survive.
+  const [deleting, setDeleting] = useState(null);   // engagement pending confirmation
+  const [confirmText, setConfirmText] = useState('');
+
+  async function deleteEng(e) {
+    try {
+      const r = await api.engagements.remove(e.id);
+      const rows = Object.entries(r.rows || {})
+        .filter(([, n]) => n > 0)
+        .map(([t, n]) => `${n} ${t}`)
+        .join(', ');
+      setDeleting(null);
+      setConfirmText('');
+      if (selectedId === e.id) setSelectedId(null);
+      await load();
+      setError(null);
+      setToast(`Deleted ${e.target_host || e.id}${rows ? ` - removed ${rows}` : ''}`);
+    } catch (err) {
+      setError(err.message);
+    }
   }
 
   const selected = items.find((x) => x.id === selectedId);
@@ -185,7 +217,11 @@ export default function Engagements() {
             <span className="card__title">Engagement {selected.id}</span>
             <div style={{ display: 'flex', gap: 8 }}>
               {selected.status === 'authorized' && <button className="btn" onClick={() => nav(`/engagements/${selected.id}/live`)}>Open live view</button>}
-              <button className="btn btn--danger" onClick={() => closeEng(selected.id)}>Close</button>
+              <button className="btn" onClick={() => closeEng(selected.id)}>Close</button>
+              <button className="btn btn--danger"
+                      onClick={() => { setDeleting(selected); setConfirmText(''); }}>
+                Delete
+              </button>
             </div>
           </div>
           <div className="card__body">
@@ -225,6 +261,44 @@ export default function Engagements() {
           </div>
         </div>
       )}
+
+      {deleting && (
+        <div className="card cfm">
+          <div className="card__head">
+            <span className="card__title">Delete {deleting.target_host || deleting.id}?</span>
+          </div>
+          <div className="card__body">
+            <p className="intro">
+              Removes this engagement and everything it produced - findings, chains,
+              coverage, assets, jobs, events, approvals and its token accounting.
+              Recovered source and cached JavaScript on disk go too, unless another
+              engagement still targets the same host.
+            </p>
+            <p className="intro">
+              The <b>audit trail</b> and the <b>cross-engagement memory</b> are kept
+              on purpose: the first records what was authorised and what ran, the
+              second is what makes the next run smarter. This cannot be undone.
+            </p>
+            <label className="rfind__lbl" htmlFor="cfm-host">
+              Type <code>{deleting.target_host || deleting.id}</code> to confirm
+            </label>
+            <div style={{ display: 'flex', gap: 8, marginTop: 6, flexWrap: 'wrap' }}>
+              <input id="cfm-host" className="input" value={confirmText} autoFocus
+                     onChange={(ev) => setConfirmText(ev.target.value)} />
+              <button className="btn btn--danger"
+                      disabled={confirmText !== (deleting.target_host || deleting.id)}
+                      onClick={() => deleteEng(deleting)}>
+                Delete permanently
+              </button>
+              <button className="btn btn--muted"
+                      onClick={() => { setDeleting(null); setConfirmText(''); }}>
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {toast && <div className="toast">{toast}</div>}
     </div>
   );
 }

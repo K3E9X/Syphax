@@ -1,5 +1,10 @@
 import { useCallback, useEffect, useState } from 'react';
 import { api } from '../lib/api.js';
+import { useEngagements } from '../lib/useApi.js';
+
+// Sentinel for the opt-in cross-engagement view; '' would be indistinguishable
+// from "nothing selected yet", which is what made aggregating the default.
+const ALL_ENGAGEMENTS = '__all__';
 import { Notice } from '../components/ui.jsx';
 
 const SEVS = ['critical', 'high', 'medium', 'low'];
@@ -22,24 +27,20 @@ export default function Findings() {
   const [q, setQ] = useState('');
   const [sel, setSel] = useState(null);
   const [toast, setToast] = useState(null);
-  const [engagements, setEngagements] = useState([]);
   const [loadError, setLoadError] = useState(null);
-  const [engId, setEngId] = useState('');
+  const { engagements, engId, setEngId } = useEngagements();
   const [chains, setChains] = useState([]);
   const flash = (m) => { setToast(m); setTimeout(() => setToast(null), 2000); };
 
-  useEffect(() => {
-    api.engagements.list().then((r) => setEngagements(r.items || []))
-      .catch((e) => setLoadError(e.message));
-  }, []);
 
-  // The default list is deduped across engagements, which is right for triage
-  // but wrong when writing up one client: it merges their findings with
-  // everyone else's. Picking an engagement switches to its own set, with the
-  // kill-chains that belong to it.
+  // Segmented by default. Aggregating across engagements is useful for triage
+  // but wrong when reading one target: it merged a second engagement's
+  // findings into the first, so a stale exposed .git from yesterday sat next
+  // to today's scan. ALL is now an explicit choice, not the landing state.
+  const aggregate = engId === ALL_ENGAGEMENTS;
   const load = useCallback(async () => {
     try {
-      if (engId) {
+      if (engId && !aggregate) {
         const [f, c] = await Promise.all([
           api.engagements.findings(engId), api.engagements.chains(engId),
         ]);
@@ -55,6 +56,7 @@ export default function Findings() {
         setChains(c.items || []);
         return;
       }
+      // Aggregate view: no kill-chain belongs to "all engagements".
       setChains([]);
       const r = await api.findings.list({
         severity: sevFilter !== 'all' ? sevFilter : undefined,
@@ -63,7 +65,7 @@ export default function Findings() {
       });
       setRows(r.items || []);
     } catch (e) { console.error('findings load failed', e); }
-  }, [sevFilter, statusFilter, q, engId]);
+  }, [sevFilter, statusFilter, q, engId, aggregate]);
   useEffect(() => { load(); }, [load]);
 
   const counts = SEVS.reduce((o, s) => (o[s] = rows.filter((f) => f.severity === s).length, o), {});
@@ -98,7 +100,7 @@ export default function Findings() {
         </div>
         <div className="select-box">
           <select className="select" value={engId} onChange={(e) => setEngId(e.target.value)}>
-            <option value="">All engagements (deduped)</option>
+            <option value="__all__">All engagements (deduped)</option>
             {engagements.map((e) => (
               <option key={e.id} value={e.id}>{e.target_host || e.target_url}</option>
             ))}
@@ -127,7 +129,7 @@ export default function Findings() {
 
       <div className="layout">
         <div className="card">
-          <div className="card__head"><span className="card__title">Findings <span style={{ color: 'var(--text-faint)' }}>({rows.length})</span></span><span className="card__meta">{engId ? 'this engagement' : 'deduped across engagements'}</span></div>
+          <div className="card__head"><span className="card__title">Findings <span style={{ color: 'var(--text-faint)' }}>({rows.length})</span></span><span className="card__meta">{aggregate ? 'deduped across engagements' : 'this engagement only'}</span></div>
           <div className="tbl-scroll">
             <table className="tbl">
               <thead><tr><th>Sev</th><th>CVSS</th><th>Title</th><th>Target</th><th>Status</th><th>Eng.</th><th></th></tr></thead>

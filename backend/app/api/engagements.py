@@ -230,6 +230,40 @@ async def verify_engagement(engagement_id: str) -> dict:
     }
 
 
+@router.delete("/{engagement_id}")
+async def delete_engagement(engagement_id: str) -> dict:
+    """Delete the engagement and everything it produced.
+
+    `close` only flips a status - the findings stay, and every aggregate view
+    keeps mixing them with the next target's. This removes them.
+
+    The audit trail and the cross-engagement memory survive on purpose: the
+    first is the record of what was authorised and what ran, the second is
+    learning about a kind of stack rather than this engagement's data. The
+    deletion is itself audited.
+    """
+    e = await _repo.get(engagement_id)
+    if e is None:
+        raise HTTPException(status_code=404, detail="engagement not found")
+
+    from app.orchestrator.runs import RunRepository
+
+    latest = await RunRepository().latest_for_engagement(engagement_id)
+    if latest is not None and latest.status in ("queued", "running"):
+        raise HTTPException(
+            status_code=409,
+            detail=f"run {latest.id} is still {latest.status}; stop it first")
+
+    from app.engagements.purge import purge_engagement
+
+    hosts = sorted({e.target_host, *(e.scope_hosts or [])} - {None, ""})
+    # Audited BEFORE the rows go, so the trail records what was removed.
+    await audit("engagement.deleted", engagement_id=e.id, target=e.target_url,
+                hosts=hosts)
+    deleted = await purge_engagement(engagement_id, hosts=hosts)
+    return {"deleted": True, "engagement_id": engagement_id, "rows": deleted}
+
+
 @router.post("/{engagement_id}/close")
 async def close_engagement(engagement_id: str) -> dict:
     e = await _repo.get(engagement_id)

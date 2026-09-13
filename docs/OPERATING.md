@@ -395,6 +395,40 @@ POSTing a guessed form to a guessed endpoint creates orders and sends mail.
 unverified ones in section 4 as leads for manual confirmation. `meta` carries
 `proven_findings`, `unverified_findings` and the real `false_positive_rate_pct`.
 
+## One engagement at a time
+
+Every screen is scoped to a single active engagement, remembered across reloads
+and shared between pages: picking one on Findings picks it on Surface,
+Methodology and Reports too. Findings used to default to "all engagements
+(deduped)", which merged a second target's results into the first - a stale
+exposed `.git` from yesterday read as part of today's scan. Aggregating is
+still there, as a deliberate choice rather than the landing state.
+
+### Deleting an engagement
+
+`Close` only flips a status; the findings stay. **Delete** (on the engagement
+inspector, confirmed by typing the target host) removes the engagement and
+everything it produced: findings, chains, coverage, assets, fingerprints, jobs,
+events, approvals, staged PoCs, runs and its token accounting. Recovered source
+and cached JavaScript under `{DATA_DIR}/artifacts/{host}/` go with it - unless
+another engagement still targets that host, in which case they stay.
+
+Two things survive on purpose:
+
+- **the audit trail** — the record of what was authorised and what ran. For an
+  offensive tool that record is the point, so the deletion is itself audited;
+- **the cross-engagement memory** — lessons are learning about a *kind of
+  stack*, not this engagement's data, and they make the next run smarter.
+
+Proxy capture is global rather than per-engagement and has its own control:
+`DELETE /api/proxy/flows`.
+
+The risk in a purge is not the DELETE, it is missing a table: rows that survive
+keep surfacing in aggregate views and nothing fails loudly. So the covered
+tables are checked against the registered schemas - a table added later with an
+`engagement_id` column fails the test until it is either purged or listed as a
+deliberate survivor.
+
 ## Running the tests
 
     cd backend  && pytest -q     # 1208 tests, no DB / network / LLM needed

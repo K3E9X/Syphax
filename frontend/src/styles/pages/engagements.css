@@ -87,3 +87,9 @@
    the severity chips only count confirmed, so the pending tail says so. */
 .eng-pending { color: var(--sev-medium); font-size: 11px; margin-left: 6px; }
 .eng-usage-sub { color: var(--text-faint); font-size: 11px; }
+
+/* Delete confirmation. Deliberately a panel rather than a window.confirm():
+   the operator needs to read what survives before typing the host name. */
+.cfm { border-color: rgba(239, 68, 68, .45); margin-top: 16px; }
+.cfm .card__title { color: var(--sev-critical); }
+.cfm code { font-family: var(--font-mono); color: var(--text-primary); }

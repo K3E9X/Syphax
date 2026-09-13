@@ -82,6 +82,7 @@ export const api = {
       body: JSON.stringify(payload),
     }),
     close: (id) => request(`/api/engagements/${id}/close`, { method: 'POST' }),
+    remove: (id) => request(`/api/engagements/${id}`, { method: 'DELETE' }),
     run: (id) => request(`/api/engagements/${id}/run`, { method: 'POST' }),
     stop: (id) => request(`/api/engagements/${id}/stop`, { method: 'POST' }),
     state: (id) => request(`/api/engagements/${id}/state`),

@@ -151,19 +151,50 @@ export function useAction(fn) {
  * `autoSelect` picks the first engagement when the page needs one to show
  * anything (Findings does not: it defaults to a cross-engagement view).
  */
+/* One active engagement, shared by every page and remembered across reloads.
+ *
+ * Each page used to hold its own selection and Findings defaulted to "all
+ * engagements (deduped)", so a second target's findings were read as the
+ * first's - a stale exposed .git from yesterday sitting next to today's scan.
+ * Aggregating is still available, but it is now a deliberate choice rather
+ * than the default, and picking an engagement anywhere picks it everywhere. */
+const ACTIVE_KEY = 'syphax_engagement';
+
+function storedEngagement() {
+  try { return localStorage.getItem(ACTIVE_KEY) || ''; } catch { return ''; }
+}
+
+function rememberEngagement(id) {
+  try {
+    if (id) localStorage.setItem(ACTIVE_KEY, id);
+    else localStorage.removeItem(ACTIVE_KEY);
+  } catch { /* private mode: the choice just will not persist */ }
+}
+
 export function useEngagements({ autoSelect = true } = {}) {
-  const [engId, setEngId] = useState('');
+  const [engId, setEngIdState] = useState(storedEngagement);
   const picked = useRef(false);
   const { data, error, loading, reload } = useApi(
     () => api.engagements.list(), [], { initial: null });
 
   const engagements = data?.items || [];
 
+  const setEngId = useCallback((id) => {
+    rememberEngagement(id);
+    setEngIdState(id);
+  }, []);
+
   useEffect(() => {
-    if (!autoSelect || picked.current || !engagements.length) return;
+    if (picked.current || !engagements.length) return;
     picked.current = true;
-    setEngId(engagements[0].id);
-  }, [autoSelect, engagements]);
+    // A remembered engagement that has since been deleted must not leave the
+    // app pinned to an id the backend will 404 on.
+    const exists = engagements.some((e) => e.id === engId);
+    if (engId && exists) return;
+    if (engId && !exists) rememberEngagement('');
+    if (autoSelect) setEngId(engagements[0].id);
+    else setEngIdState('');
+  }, [autoSelect, engagements, engId, setEngId]);
 
   return { engagements, engId, setEngId, error, loading, reload };
 }
