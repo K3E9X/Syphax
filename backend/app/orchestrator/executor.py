@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import logging
 from typing import List, Optional
+import re
 from urllib.parse import urlparse
 
 from app import events
@@ -216,8 +217,35 @@ class Executor:
             )
 
 
+# Characters RFC 3986 excludes from a URL. A backslash is the one that matters
+# in practice: katana parses JavaScript, and a regex literal like
+# `\/index\.html` is not a path - but it has a scheme once joined to the base,
+# so a scheme-only check let it through. Every later phase then tested
+# `http://target/\/index\.html`, which is a 404, and the run found nothing.
+_NOT_IN_A_URL = set('\\ "<>{}|^`') | {chr(c) for c in range(0x21)} | {chr(0x7f)}
+
+# A path that is really a regex: escaped separators or metacharacters.
+_REGEX_PATH = re.compile(r"\\[./]|\(\?|\[\^|\)\$|\.\*")
+
+
 def _looks_like_http_url(value: str) -> bool:
+    """Is this a URL we should scan, or debris a parser mistook for one?
+
+    Scheme alone is not enough. Crawlers that read JavaScript emit regex
+    literals, template placeholders and fragments of code; each carries the
+    base URL's scheme and used to become a scanned asset, spending the whole
+    run on paths that cannot exist.
+    """
     if not value or "://" not in value:
         return False
-    scheme = urlparse(value).scheme
-    return scheme in ("http", "https")
+    parsed = urlparse(value)
+    if parsed.scheme not in ("http", "https") or not parsed.hostname:
+        return False
+    if any(ch in _NOT_IN_A_URL for ch in value):
+        return False
+    if _REGEX_PATH.search(parsed.path or ""):
+        return False
+    # Unresolved templating: ${...}, {{...}}, :param placeholders from a router.
+    if "${" in value or "{{" in value:
+        return False
+    return True
