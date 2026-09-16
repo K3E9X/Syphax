@@ -1,0 +1,232 @@
+# The API, the proxy, the scan worker and the orchestrator - in ONE pod.
+#
+# That is not packaging convenience, it is the compose design carried over.
+# docker-compose puts worker, orchestrator and proxy on
+# `network_mode: "service:backend"` because only the backend holds NET_ADMIN
+# and /dev/net/tun, so it is the only network namespace `wg-quick` can route.
+# Without that sharing, the scanners egress directly while the UI reports a
+# healthy tunnel - the "VPN connected" badge measures the backend, not the
+# tools that are actually sending the traffic.
+#
+# Containers in a Kubernetes pod share a network namespace natively, so one pod
+# is the exact translation. Splitting these into separate Deployments would
+# reintroduce that bug silently: everything would keep working, and the tunnel
+# would cover nothing.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: syphax-data
+  namespace: syphax
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: 20Gi
+---
+# Named `backend` on purpose: frontend/nginx.conf proxies to
+# http://backend:8000/ and ws://backend:8000/ws/. Renaming this Service means
+# editing that file and rebuilding the frontend image.
+apiVersion: v1
+kind: Service
+metadata:
+  name: backend
+  namespace: syphax
+spec:
+  selector:
+    app: syphax
+  ports:
+    - name: api
+      port: 8000
+      targetPort: 8000
+---
+# The mitmproxy port, as its own Service so it is never exposed by accident
+# alongside the API.
+#
+# It has NO authentication of its own, it relays for anyone who can reach it,
+# and it holds a CA the devices you configured trust. There is deliberately no
+# Ingress for it in 07-ingress.yaml. To use it from your laptop, port-forward:
+#
+#     kubectl -n syphax port-forward svc/mitmproxy 8080:8080
+apiVersion: v1
+kind: Service
+metadata:
+  name: mitmproxy
+  namespace: syphax
+spec:
+  selector:
+    app: syphax
+  ports:
+    - name: mitm
+      port: 8080
+      targetPort: 8080
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: syphax
+  namespace: syphax
+spec:
+  replicas: 1
+  # One replica, and never two at once. A second orchestrator would pick up the
+  # same run off the queue, and the data volume is ReadWriteOnce anyway.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: syphax
+  template:
+    metadata:
+      labels:
+        app: syphax
+    spec:
+      # The backend records its real exit IP at boot so the kill switch has
+      # something to compare against. Give it time to reach Postgres first.
+      initContainers:
+        - name: wait-for-postgres
+          image: postgres:16-alpine
+          command:
+            - sh
+            - -c
+            - |
+              until pg_isready -h postgres -U "$POSTGRES_USER" -d "$POSTGRES_DB"; do
+                echo "waiting for postgres"; sleep 2
+              done
+          envFrom:
+            - secretRef:
+                name: syphax-secrets
+
+      containers:
+        # ---- the API ------------------------------------------------------
+        - name: backend
+          image: syphax-backend:latest
+          imagePullPolicy: IfNotPresent
+          envFrom:
+            - configMapRef:
+                name: syphax-config
+            - secretRef:
+                name: syphax-secrets
+          env:
+            - name: DATABASE_URL
+              value: "postgresql://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@postgres:5432/$(POSTGRES_DB)"
+            - name: SANDBOX_RUNNER_URL
+              value: "http://sandbox-runner:8090"
+          ports:
+            - name: api
+              containerPort: 8000
+            - name: mitm
+              containerPort: 8080
+          securityContext:
+            capabilities:
+              add: ["NET_ADMIN"]
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            # WireGuard and OpenVPN both need this to create the tunnel
+            # interface. Without it wg-quick fails with "Cannot find device",
+            # which reads like a missing binary rather than a missing device.
+            # Load it on the node first: modprobe tun.
+            - name: tun
+              mountPath: /dev/net/tun
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: 8000
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /api/health
+              port: 8000
+            initialDelaySeconds: 60
+            periodSeconds: 30
+          resources:
+            requests:
+              cpu: 200m
+              memory: 512Mi
+            limits:
+              memory: 2Gi
+
+        # ---- mitmproxy ----------------------------------------------------
+        # Its own image (--target proxy): mitmproxy pins cryptography<44.1, and
+        # while it shared an environment with the API that pin held the whole
+        # stack seven majors back.
+        - name: proxy
+          image: syphax-proxy:latest
+          imagePullPolicy: IfNotPresent
+          envFrom:
+            - configMapRef:
+                name: syphax-config
+            - secretRef:
+                name: syphax-secrets
+          env:
+            - name: DATABASE_URL
+              value: "postgresql://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@postgres:5432/$(POSTGRES_DB)"
+          volumeMounts:
+            - name: data
+              mountPath: /data
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              memory: 1Gi
+
+        # ---- scan worker --------------------------------------------------
+        - name: worker
+          image: syphax-backend:latest
+          imagePullPolicy: IfNotPresent
+          command: ["arq", "app.workers.WorkerSettings"]
+          envFrom:
+            - configMapRef:
+                name: syphax-config
+            - secretRef:
+                name: syphax-secrets
+          env:
+            - name: DATABASE_URL
+              value: "postgresql://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@postgres:5432/$(POSTGRES_DB)"
+          volumeMounts:
+            - name: data
+              mountPath: /data
+          resources:
+            requests:
+              cpu: 500m
+              memory: 1Gi
+            limits:
+              # The scanners are the hungry part: sqlmap, nuclei and ffuf all
+              # run concurrently under one job.
+              memory: 4Gi
+
+        # ---- orchestrator -------------------------------------------------
+        # Its own arq queue. A long autonomous run holds a worker slot for its
+        # whole life, so sharing one pool let a run starve the scans it was
+        # itself waiting on - a deadlock, not a slowdown.
+        - name: orchestrator
+          image: syphax-backend:latest
+          imagePullPolicy: IfNotPresent
+          command: ["arq", "app.workers.OrchestratorWorkerSettings"]
+          envFrom:
+            - configMapRef:
+                name: syphax-config
+            - secretRef:
+                name: syphax-secrets
+          env:
+            - name: DATABASE_URL
+              value: "postgresql://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@postgres:5432/$(POSTGRES_DB)"
+          volumeMounts:
+            - name: data
+              mountPath: /data
+          resources:
+            requests:
+              cpu: 200m
+              memory: 512Mi
+            limits:
+              memory: 2Gi
+
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: syphax-data
+        - name: tun
+          hostPath:
+            path: /dev/net/tun
+            type: CharDevice

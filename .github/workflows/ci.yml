@@ -114,7 +114,8 @@ jobs:
         run: |
           sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck
           shellcheck --severity=warning \
-            install.sh start.sh wipe.sh sandbox-runner/entrypoint.sh
+            install.sh start.sh wipe.sh sandbox-runner/entrypoint.sh \
+            deploy/k3s/make-secret.sh deploy/k3s/build-and-import.sh
 
   deps:
     name: Dependencies (audit + pins)

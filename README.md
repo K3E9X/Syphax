@@ -58,6 +58,11 @@ loopback: it is an unauthenticated intercepting proxy with a trusted CA behind
 it, and publishing it as a side effect of wanting the UI reachable would be an
 open relay.
 
+Already running k3s on that server? `deploy/k3s/` has manifests, and
+[their README](deploy/k3s/README.md) explains the one property that genuinely
+weakens in Kubernetes — the sandbox runner goes from unaddressable to filtered.
+Installing Docker alongside k3s and running compose is also fine, and simpler.
+
 Fully unattended, from a provisioning script:
 
 ```bash

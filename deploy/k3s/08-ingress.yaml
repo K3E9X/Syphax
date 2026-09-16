@@ -1,0 +1,41 @@
+# The UI and the API, through Traefik (which k3s ships and enables by default).
+#
+# One host for both, because they ARE one origin: the frontend's nginx proxies
+# /api and /ws to the backend Service, and the session cookie is SameSite=Lax
+# on that origin. Splitting them across two hostnames breaks the login.
+#
+# TLS is not optional here, and not because of a policy: the session cookie
+# sets its Secure flag from X-Forwarded-Proto, so over plain HTTP the cookie is
+# issued without it and the password that created it crossed the network in
+# clear. Traefik sets that header for you.
+#
+# There is deliberately no Ingress for port 8080. The mitmproxy port has no
+# authentication of its own and relays for anyone who can reach it. Use
+# `kubectl -n syphax port-forward svc/mitmproxy 8080:8080`.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: syphax
+  namespace: syphax
+  annotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: websecure
+    # cert-manager, if you run it. Remove these two lines and supply your own
+    # certificate in the Secret named below if you do not.
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+spec:
+  ingressClassName: traefik
+  tls:
+    - hosts:
+        - syphax.example.com
+      secretName: syphax-tls
+  rules:
+    - host: syphax.example.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: frontend
+                port:
+                  number: 80

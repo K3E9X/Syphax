@@ -410,6 +410,24 @@ which you should.
 `--skip-build` writes `.env` and `./data` without needing Docker installed yet,
 for the usual provisioning order of "lay down the config, then the runtime".
 
+### On a k3s cluster
+
+If the server is already a k3s node, `deploy/k3s/` has manifests — see
+[deploy/k3s/README.md](../deploy/k3s/README.md). Read the trade-off before you
+use them: in compose the sandbox runner is on a network Postgres is not on, so
+it is **unaddressable**; in Kubernetes every pod can address every Service, so
+the same property is produced by NetworkPolicy instead. Filtered, not absent.
+k3s enforces NetworkPolicies by default; a cluster started with
+`--disable-network-policy` makes them inert with no symptom.
+
+The other translation worth knowing: the API, the proxy, the worker and the
+orchestrator are **one pod**, not four Deployments. Compose shares their network
+namespace so the VPN covers the scanners; splitting them in Kubernetes would
+leave the tunnel covering nothing, with everything still apparently working.
+
+Installing Docker alongside k3s and running the compose stack is also perfectly
+reasonable, and it is the path with fewer moving parts.
+
 ### Sizing
 
 The backend image carries around twenty scanner binaries. Budget **12 GB of

@@ -1,0 +1,116 @@
+# The sandbox runner's isolation.
+#
+# In docker-compose this needs no rules: the runner is on a network that
+# Postgres, Redis and the backend are not on, so there is no route. Kubernetes
+# gives every pod a route to every Service, so the same property has to be
+# written down. These two policies are that.
+#
+# k3s enforces NetworkPolicies by default (kube-router). On a cluster started
+# with --disable-network-policy, or with a CNI that ignores them, they are
+# inert and this pod can reach the database. Nothing here detects that.
+---
+# 1. Nothing may talk TO the runner except the API, and only on 8090.
+#
+# Without this, any pod in the namespace - and any pod in any other namespace,
+# since the default is allow-all - could POST code to /v1/run and have it
+# executed. The approval flow lives in the API; this is what makes the API the
+# only way in.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: sandbox-runner-ingress
+  namespace: syphax
+spec:
+  podSelector:
+    matchLabels:
+      app: sandbox-runner
+  policyTypes: ["Ingress"]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: syphax
+      ports:
+        - protocol: TCP
+          port: 8090
+---
+# 2. The runner may reach the internet - that is the point, it runs a PoC
+# against the engagement's target - but nothing inside the cluster.
+#
+# Expressed as "everywhere except the cluster's own ranges" rather than as an
+# allowlist of targets, because the target is chosen per engagement and the
+# runner's own entrypoint.sh already pins egress to it with iptables. This
+# policy handles the part iptables cannot see: Service IPs, other pods, and
+# the API server.
+#
+# The CIDRs are the k3s defaults. Check yours before trusting them:
+#   kubectl -n kube-system get cm kube-router-cfg -o yaml    # or
+#   ps -ef | grep -o 'cluster-cidr=[^ ]*'
+# and the API server's address, which is usually the first IP of the service
+# range (10.43.0.1) and is covered by the service CIDR below.
+#
+# Note what this does NOT do: a target on a private network (10/8, 172.16/12,
+# 192.168/16) that does not overlap these two ranges stays reachable, which is
+# intentional - internal engagements are a normal thing to run. If your pod or
+# service CIDR overlaps a target you intend to test, you have a bigger problem
+# than this file.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: sandbox-runner-egress
+  namespace: syphax
+spec:
+  podSelector:
+    matchLabels:
+      app: sandbox-runner
+  policyTypes: ["Egress"]
+  egress:
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.42.0.0/16   # k3s pod CIDR   - every other pod
+              - 10.43.0.0/16   # k3s service CIDR - Postgres, Redis, the API server
+---
+# 3. Postgres accepts connections from the API pod and from nothing else.
+#
+# Belt and braces with policy 2: that one stops the runner leaving, this one
+# stops the database listening. Either alone would do; both means a mistake in
+# one of them is not the whole story.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: postgres-ingress
+  namespace: syphax
+spec:
+  podSelector:
+    matchLabels:
+      app: postgres
+  policyTypes: ["Ingress"]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: syphax
+      ports:
+        - protocol: TCP
+          port: 5432
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: redis-ingress
+  namespace: syphax
+spec:
+  podSelector:
+    matchLabels:
+      app: redis
+  policyTypes: ["Ingress"]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: syphax
+      ports:
+        - protocol: TCP
+          port: 6379

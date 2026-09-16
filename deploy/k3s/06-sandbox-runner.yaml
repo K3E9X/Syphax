@@ -1,0 +1,114 @@
+# Runs untrusted third-party PoCs.
+#
+# READ THIS BEFORE CHANGING IT. In docker-compose the isolation is structural:
+# the runner is attached to a network that Postgres, Redis and the backend's
+# secrets are not on, so there is no route to them and nothing to firewall.
+# Kubernetes has no equivalent - every pod gets a network and can address every
+# Service - so here the same property is produced by the NetworkPolicy in
+# 07-networkpolicy.yaml.
+#
+# That is a real change in kind: "unaddressable" became "filtered". If this
+# cluster runs with --disable-network-policy, or with a CNI that does not
+# enforce them, the policy is silently inert and this pod can reach the
+# database. k3s enforces NetworkPolicies by default (kube-router); nothing here
+# checks that it still does.
+#
+# What is deliberately absent, and each absence is the point:
+#   envFrom secret  - no provider keys, no database password.
+#   the data volume - no mitmproxy CA, no at-rest settings key.
+#   cluster DNS     - dnsPolicy: None below. It has no business resolving a
+#                     Service name, and resolving one is the first step of
+#                     reaching it.
+apiVersion: v1
+kind: Service
+metadata:
+  name: sandbox-runner
+  namespace: syphax
+spec:
+  selector:
+    app: sandbox-runner
+  ports:
+    - name: http
+      port: 8090
+      targetPort: 8090
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sandbox-runner
+  namespace: syphax
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: sandbox-runner
+  template:
+    metadata:
+      labels:
+        app: sandbox-runner
+    spec:
+      # Public resolvers, not the cluster's. entrypoint.sh resolves
+      # SANDBOX_ALLOWED_HOSTS at boot - before it appends the REJECT rule - so
+      # this has to work; afterwards its own iptables rules stop DNS entirely,
+      # which closes it as a covert channel.
+      dnsPolicy: None
+      dnsConfig:
+        nameservers:
+          - "1.1.1.1"
+          - "9.9.9.9"
+      # It never talks to the API server, so do not hand it a token.
+      automountServiceAccountToken: false
+      containers:
+        - name: runner
+          image: syphax-sandbox-runner:latest
+          imagePullPolicy: IfNotPresent
+          env:
+            # Comma-separated engagement scope. EMPTY MEANS DENY ALL OUTBOUND -
+            # a sandbox that silently allows the whole internet is worse than
+            # one that fails visibly. Set it per engagement before running a
+            # PoC:
+            #   kubectl -n syphax set env deploy/sandbox-runner \
+            #       SANDBOX_ALLOWED_HOSTS=app.example.com
+            - name: SANDBOX_ALLOWED_HOSTS
+              value: ""
+            - name: SANDBOX_MAX_TIMEOUT
+              value: "120"
+          ports:
+            - containerPort: 8090
+          securityContext:
+            # NET_ADMIN is held only long enough for entrypoint.sh to pin the
+            # egress rules; it then drops to an unprivileged user, so the PoC
+            # itself never holds it.
+            capabilities:
+              drop: ["ALL"]
+              add: ["NET_ADMIN"]
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+          volumeMounts:
+            # Staged code never touches a disk that survives the pod.
+            - name: work
+              mountPath: /work
+            - name: run
+              mountPath: /run
+            - name: tmp
+              mountPath: /tmp
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: "1"
+              memory: 512Mi
+      volumes:
+        - name: work
+          emptyDir:
+            medium: Memory
+            sizeLimit: 64Mi
+        - name: run
+          emptyDir:
+            medium: Memory
+            sizeLimit: 1Mi
+        - name: tmp
+          emptyDir:
+            medium: Memory
+            sizeLimit: 16Mi

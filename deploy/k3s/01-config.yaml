@@ -1,0 +1,33 @@
+# Non-secret configuration. The secret half lives in secret.yaml, which is not
+# committed - see make-secret.sh.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: syphax-config
+  namespace: syphax
+data:
+  DATA_DIR: "/data"
+  MITM_PORT: "8080"
+  REDIS_URL: "redis://redis:6379/0"
+
+  # The UI and the API are the same origin behind the Ingress, so this only
+  # matters if you point a separate frontend at this API. Set it to the origin
+  # you actually serve from before you expose anything.
+  CORS_ORIGINS: "http://localhost:3000"
+
+  # Truncate scan artefacts on every backend start. The operator account and
+  # the audit log are NOT transient and survive this - see
+  # backend/app/maintenance.py.
+  RESET_ON_START: "false"
+
+  # Cost accounting. Without it the dashboard shows real token counts against
+  # $0.00, because an unlisted model is costed at zero.
+  LLM_PRICING: ""
+
+  # How the tools identify themselves by default. Each engagement can override
+  # it in its own form.
+  USER_AGENT_MODE: "rotate"
+
+  # Set to a value and every request carries X-Pentest-ID, so the client's SOC
+  # can tell an authorised test from an intrusion. Empty means blend in.
+  PENTEST_ID: ""

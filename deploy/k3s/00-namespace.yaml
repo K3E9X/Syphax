@@ -1,0 +1,9 @@
+# Everything lives in one namespace. The NetworkPolicies in 06- are written
+# against labels inside it, so moving a workload out of it removes it from
+# their reach - which is exactly the kind of change that looks harmless.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: syphax
+  labels:
+    name: syphax
