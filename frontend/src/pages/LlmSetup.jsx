@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom';
 import ModelRouter from '../components/ModelRouter.jsx';
 import { useAuth } from '../lib/auth.jsx';
 import logoMark from '../assets/logo-mark.svg';
@@ -36,6 +37,12 @@ export default function LlmSetup({ onReady }) {
         </p>
 
         <ModelRouter compact onSaved={onReady} />
+
+        <p className="auth__foot">
+          Not ready to pick one yet? <Link to="/recon">Recon</Link> works without
+          a model — it reads DNS, the registries, the certificate and one HTTP
+          response, and none of that needs one. Everything else does.
+        </p>
       </div>
     </div>
   );

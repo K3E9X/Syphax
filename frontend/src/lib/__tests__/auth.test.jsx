@@ -12,6 +12,7 @@
  */
 import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { AuthProvider, useAuth } from '../auth.jsx';
 import Gate from '../../components/Gate.jsx';
@@ -30,10 +31,15 @@ async function mount(ui) {
   return r;
 }
 
+/* Gate decides per route (one page works without a model), so it needs a
+   router around it. These tests are about the session half of the gate, so the
+   route does not matter - any non-exempt one does. */
 const shell = (
-  <AuthProvider>
-    <Gate><Secret /></Gate>
-  </AuthProvider>
+  <MemoryRouter initialEntries={['/']}>
+    <AuthProvider>
+      <Gate><Secret /></Gate>
+    </AuthProvider>
+  </MemoryRouter>
 );
 
 beforeEach(() => {
@@ -178,7 +184,7 @@ describe('losing the session', () => {
       const { logout, user } = useAuth();
       return <button onClick={logout}>{user ? 'sign out' : 'gone'}</button>;
     }
-    await mount(<AuthProvider><SignOut /></AuthProvider>);
+    await mount(<MemoryRouter><AuthProvider><SignOut /></AuthProvider></MemoryRouter>);
     await waitFor(() => screen.getByRole('button', { name: 'sign out' }));
     await userEvent.click(screen.getByRole('button'));
     await waitFor(() => expect(screen.getByRole('button', { name: 'gone' })).toBeTruthy());

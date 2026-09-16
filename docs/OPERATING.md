@@ -37,7 +37,8 @@ docker compose exec postgres psql -U syphax -d syphax \
 
 ## Connecting a model
 
-The tool will not run without one. Three roles need a provider:
+The tool will not run without one, and there is no variable that disables the
+requirement. Three roles need a provider:
 
 | Role | What it does | What to put there |
 | --- | --- | --- |
@@ -55,6 +56,14 @@ per-role **Test** button in Settings shows you exactly what it said.
 
 Keys are encrypted with `SYPHAX_SECRET_KEY` before they are written and are
 never returned to the browser — the UI can only ask whether one is stored.
+
+**Recon is the one exception, and it is not a loophole.** That page reads DNS,
+the registries, a certificate and one HTTP response, and every conclusion it
+draws is a pure function over those — it never calls a model, so holding it
+behind one would be the tool refusing to do something it is perfectly capable
+of. It stays reachable before a provider is configured, with a banner saying the
+rest is not. Everything else — engagements, runs, validation, reports — is
+blocked, and the API refuses a run with a 409 regardless of what the UI allows.
 
 ## Recon, before the engagement
 

@@ -6,8 +6,9 @@
  * emitted one "degraded" event - and the run looked like a tool that found
  * nothing rather than a tool that was never configured.
  */
-import { act, render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { AuthProvider } from '../../lib/auth.jsx';
 import Gate from '../Gate.jsx';
@@ -64,9 +65,12 @@ beforeEach(() => {
 });
 
 describe('the gate in front of the app', () => {
-  const shell = (
-    <AuthProvider><Gate><div>engagement data</div></Gate></AuthProvider>
+  const shellAt = (path) => (
+    <MemoryRouter initialEntries={[path]}>
+      <AuthProvider><Gate><div>engagement data</div></Gate></AuthProvider>
+    </MemoryRouter>
   );
+  const shell = shellAt('/');
 
   beforeEach(() => {
     vi.spyOn(api.auth, 'status').mockResolvedValue({ authenticated: true, user: USER });
@@ -85,6 +89,49 @@ describe('the gate in front of the app', () => {
     vi.spyOn(api.llm, 'readiness').mockResolvedValue({ ready: true, missing: [] });
     await mount(shell);
     await waitFor(() => expect(screen.getByText('engagement data')).toBeTruthy());
+  });
+
+  it('lets Recon through with no model, because Recon does not use one', async () => {
+    /* The page reads DNS, the registries, a certificate and one HTTP response,
+       and every conclusion it draws is a pure function over those. Holding it
+       behind a model would be the tool refusing to do something it is
+       perfectly capable of - and it is the page someone evaluating this
+       reaches for before they go and buy an API key. */
+    vi.spyOn(api.llm, 'readiness').mockResolvedValue({ ready: false, missing: ['planner'] });
+    vi.spyOn(api.settings, 'get').mockResolvedValue(UNCONFIGURED);
+    await mount(shellAt('/recon'));
+    await waitFor(() => expect(screen.getByText('engagement data')).toBeTruthy());
+    expect(screen.queryByRole('heading', { name: /connect a model/i })).toBeNull();
+  });
+
+  it('says on that page that the rest of the tool is still blocked', async () => {
+    /* Otherwise the operator finishes a recon, presses Create an engagement,
+       and lands on a setup screen with no idea why. */
+    vi.spyOn(api.llm, 'readiness').mockResolvedValue({ ready: false, missing: ['planner'] });
+    vi.spyOn(api.settings, 'get').mockResolvedValue(UNCONFIGURED);
+    await mount(shellAt('/recon'));
+    await waitFor(() => screen.getByText('engagement data'));
+    const banner = screen.getByRole('status');
+    expect(banner.textContent).toMatch(/no model is connected/i);
+    expect(within(banner).getByRole('link', { name: /connect a model/i })).toBeTruthy();
+  });
+
+  it('still blocks every other route', async () => {
+    vi.spyOn(api.llm, 'readiness').mockResolvedValue({ ready: false, missing: ['planner'] });
+    vi.spyOn(api.settings, 'get').mockResolvedValue(UNCONFIGURED);
+    for (const path of ['/', '/engagements', '/findings', '/reconstruction']) {
+      const { unmount } = await mount(shellAt(path));
+      await waitFor(() =>
+        expect(screen.getByRole('heading', { name: /connect a model/i })).toBeTruthy());
+      unmount();
+    }
+  });
+
+  it('shows no such banner once a model is connected', async () => {
+    vi.spyOn(api.llm, 'readiness').mockResolvedValue({ ready: true, missing: [] });
+    await mount(shellAt('/recon'));
+    await waitFor(() => screen.getByText('engagement data'));
+    expect(screen.queryByText(/no model is connected/i)).toBeNull();
   });
 
   it('does not lock the operator out when the check itself fails', async () => {

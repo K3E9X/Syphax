@@ -123,6 +123,9 @@ one TLS handshake, one `GET /`, and `robots.txt` / `sitemap.xml` /
 button. Active testing needs an engagement — that is where the authorization
 lives.
 
+It is also the one page that works before you connect a model, because it is the
+one page that never calls one.
+
 ### First engagement
 
 1. **Engagements** → enter the target, tick the authorization attestation,
