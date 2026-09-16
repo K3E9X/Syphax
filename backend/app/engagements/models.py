@@ -42,6 +42,13 @@ def new_engagement_id() -> str:
     return f"eng_{int(time.time() * 1000)}_{secrets.token_hex(3)}"
 
 
+def _normalise_capabilities(values) -> List[str]:
+    # Imported here rather than at module scope: app.exploit imports the
+    # engagement models, and a top-level import would close the cycle.
+    from app.exploit.capabilities import normalise
+    return normalise(values or [])
+
+
 @dataclass
 class Engagement:
     id: str
@@ -79,6 +86,12 @@ class Engagement:
     # Authenticated scanning: HTTP headers of the PRIMARY identity, injected
     # into every active scanner so it tests behind the login. Never returned.
     primary_auth: List[Dict[str, str]] = field(default_factory=list)
+    # Beyond read-only proof. Same shape as allow_active_exploit and its
+    # sub-flags: dangerous, off by default, turned on by the operator who holds
+    # the written authorization. See app/exploit/capabilities.py - empty means
+    # read-only proof only, which is what every engagement created before this
+    # field existed has.
+    exploit_capabilities: List[str] = field(default_factory=list)
     # How the tools present themselves on the wire for THIS engagement. Empty
     # means "use the environment" (USER_AGENT_MODE), which is what every
     # existing engagement has. See app/scans/identity.py for the choices; it is
@@ -112,6 +125,7 @@ class Engagement:
         allow_active_exploit: bool = False,
         allow_sql_os_cmd: bool = False,
         allow_data_proof: bool = False,
+        exploit_capabilities: Optional[List[str]] = None,
         user_agent_mode: str = "",
         user_agent: str = "",
         secondary_auth: Optional[List[Dict[str, str]]] = None,
@@ -147,6 +161,7 @@ class Engagement:
             allow_active_exploit=allow_active_exploit,
             allow_sql_os_cmd=allow_sql_os_cmd,
             allow_data_proof=allow_data_proof,
+            exploit_capabilities=_normalise_capabilities(exploit_capabilities),
             user_agent_mode=(user_agent_mode or "").strip().lower(),
             user_agent=(user_agent or "").strip(),
             secondary_auth=list(secondary_auth or []),

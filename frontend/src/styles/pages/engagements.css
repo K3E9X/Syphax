@@ -93,3 +93,9 @@
 .cfm { border-color: rgba(239, 68, 68, .45); margin-top: 16px; }
 .cfm .card__title { color: var(--sev-critical); }
 .cfm code { font-family: var(--font-mono); color: var(--text-primary); }
+
+/* The consequence of each authorization, next to its checkbox. A box labelled
+   "destructive" with nothing written beside it is a box that gets ticked. */
+.cap-cost, .cap-proves { display: block; font-size: 11px; line-height: 1.5; margin-top: 3px; }
+.cap-cost { color: var(--sev-high, #f59e0b); }
+.cap-proves { color: var(--text-faint); }

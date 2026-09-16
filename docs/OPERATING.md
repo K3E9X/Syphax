@@ -245,39 +245,46 @@ deciding whether to turn that on should be able to see what it would unlock.
 Executing a staged PoC is where the gate bites, and `/api/poc/{id}/run`
 re-checks every gate rather than trusting the approval it was given.
 
-### What is refused, and it is a short list
+### The engagement declares what the client authorized
 
-Three things, and none of them are refused because the code looks malicious —
-they are refused because an engagement cannot defend them
-(`backend/app/exploit/vetting.py`):
+Most exploitation needs no declaration at all. POST, PUT, writing a file on the
+target, uploading a webshell, executing a command, reading data out of a
+database — allowed, flagged for the reviewer, never blocked. An exploitation
+tool that refuses to POST is a scanner with extra steps.
 
-* **destructive** — `rm -rf`, `DROP TABLE`, `DELETE` with no `WHERE`, `mkfs`,
-  `shutdown`. An engagement proves impact; it does not cause it. A client who
-  loses a table learns nothing they could not have learned from a `SELECT`.
-* **persistent** — cron, systemd units, `authorized_keys`, registry Run keys,
-  reverse shells. What the operator forgets to remove becomes the client's
-  problem after the report is signed.
-* **denial** — fork bombs, unbounded request loops, credential sprays from a
-  wordlist. Availability damage is the one thing a scope document almost never
-  covers. (There *is* a credential module — `app/exploit/auth_brute.py` — and
-  the engagement gates it separately, rate-limited.)
+Four things go further than proof, and the **engagement** decides them — not the
+platform. Same shape as `allow_active_exploit` and its sub-flags: off by
+default, ticked by the operator who holds the written authorization, recorded in
+the audit log at creation and printed in the report's Scope section.
 
-Plus anything that leaves the engagement's scope.
+| Capability | Unlocks | What it makes provable |
+| --- | --- | --- |
+| Destructive actions | delete files, drop/truncate tables, overwrite data | arbitrary file deletion, destructive mass-assignment |
+| Persistence | cron, systemd units, SSH keys, Run keys, interactive channels | that an attacker who got here could stay |
+| Availability impact | unbounded loops, resource exhaustion, complexity attacks | ReDoS, zip bombs, unbounded pagination |
+| Credential spraying | authentication attempts from a wordlist, at volume | weak/reused credentials, missing lockout |
 
-**Everything an exploit actually needs is allowed** and always was: POST, PUT,
-writing a file on the target, uploading a webshell, executing a command,
-reading data out of a database. Those are flagged for the reviewer, not
-blocked. An exploitation tool that refuses to POST is a scanner with extra
-steps.
+That third column is the reason this is a declaration and not a warning. A
+blanket refusal does not make a test safer — it makes those classes
+**unprovable**, and quietly absent from the report. Arbitrary file deletion is
+proved by deleting a file. A persistence weakness is proved by persisting. ReDoS
+is proved by hanging the endpoint.
 
-A refusal names the line, so the code can be fixed and re-staged — and when the
-model wrote it, the refusal goes back to the model, which usually rewrites it
-correctly. One retry: a model that writes `rm -rf` twice is not going to write
-something good on the third attempt.
+The declaration travels with everything. The model's instructions are built from
+it — a capability you granted is one it is told to use, with an instruction to
+print what it changed so you can undo it; one you did not is a constraint it is
+told about explicitly. The vetting is checked against it. `/api/poc/{id}/run`
+re-reads it at execution time, so a grant removed after approval takes effect.
+The audit log records which capabilities were in force on every run.
 
-This is the one thing a human approval does not override. `/api/poc/{id}/run`
-re-vets before executing, and the UI disables the Run button rather than letting
-you find out at the click.
+A refusal names the **capability**, not just the line — so it is a checkbox on
+the engagement, not a wall. The UI shows `needs destructive` in the queue rather
+than `refused`.
+
+**Scope is the exception and no grant unlocks it.** It is not a capability, it
+is the authorization itself — the thing the attestation attests to. The
+sandbox's egress rules stop an out-of-scope call independently, so refusing here
+only means you see why instead of watching a connection time out.
 
 ### Read the code
 

@@ -67,6 +67,9 @@ class CreateEngagementRequest(BaseModel):
     allow_sql_os_cmd: bool = False
     # Sub-flag: prove a data breach with a small bounded SQLi dump (<=3 rows).
     allow_data_proof: bool = False
+    # Beyond read-only proof. See GET /api/engagements/capabilities. Empty is
+    # the default and means read-only proof only.
+    exploit_capabilities: Optional[List[str]] = None
     # How the tools present themselves on the wire for this engagement.
     # Empty = follow USER_AGENT_MODE from the environment. See
     # GET /api/scans/identities for the list.
@@ -74,11 +77,43 @@ class CreateEngagementRequest(BaseModel):
     user_agent: str = ""
 
 
+@router.get("/capabilities")
+async def capabilities() -> dict:
+    """What an engagement can additionally authorize, beyond read-only proof.
+
+    Served rather than hardcoded in the frontend so the checkbox and the check
+    that reads it cannot drift - a UI offering a capability the backend does not
+    know would grant nothing and say nothing.
+    """
+    from app.exploit.capabilities import describe
+    return {
+        "items": describe(),
+        "note": ("These are declarations about what the client signed for, not "
+                 "settings. Each one is recorded in the audit log at creation "
+                 "and printed in the report. Leaving them all off means "
+                 "read-only proof, which is right for most engagements."),
+        "never_grantable": ("Leaving the engagement's scope. That is the "
+                            "authorization itself, not a capability within it."),
+    }
+
+
 @router.post("", status_code=201)
 async def create_engagement(req: CreateEngagementRequest) -> dict:
     if not req.target_url:
         raise HTTPException(status_code=400, detail="target_url is required")
+    from app.exploit.capabilities import summary as capability_summary
+    from app.exploit.capabilities import unknown as unknown_capabilities
     from app.scans.identity import MODE_CUSTOM, is_valid_choice
+
+    bad = unknown_capabilities(req.exploit_capabilities or [])
+    if bad:
+        # Refused rather than dropped: a typo in a provisioning script would
+        # otherwise grant nothing and say nothing, and the operator would find
+        # out when a PoC they authorized was refused.
+        raise HTTPException(
+            status_code=400,
+            detail=f"unknown exploit capability: {', '.join(bad)}. "
+                   f"See GET /api/engagements/capabilities.")
     if not is_valid_choice(req.user_agent_mode):
         raise HTTPException(
             status_code=400,
@@ -111,6 +146,7 @@ async def create_engagement(req: CreateEngagementRequest) -> dict:
         allow_data_proof=req.allow_data_proof,
         secondary_auth=_parse_headers_blob(req.secondary_auth_headers),
         primary_auth=_parse_headers_blob(req.auth_headers),
+        exploit_capabilities=req.exploit_capabilities or [],
         user_agent_mode=req.user_agent_mode,
         user_agent=req.user_agent,
     )
@@ -121,6 +157,10 @@ async def create_engagement(req: CreateEngagementRequest) -> dict:
         target=e.target_url,
         scope=e.scope_hosts,
         status=e.status.value,
+        # The grant is the operator's declaration about what the client signed
+        # for. It belongs in the legal trail, not only in a row they can edit.
+        exploit_capabilities=e.exploit_capabilities,
+        authorization=capability_summary(e.exploit_capabilities),
     )
     out = {"engagement": e.to_public()}
     # Only surface the ownership-proof challenge when authorization is still

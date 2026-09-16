@@ -16,7 +16,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from app.audit import audit
-from app.exploit import vetting
+from app.exploit import capabilities, vetting
 from app.engagements import EngagementRepository, EngagementStatus
 from app.sandbox import runner_client
 from app.sandbox.inspect import inspect_code
@@ -167,24 +167,30 @@ async def run(poc_id: str, req: RunRequest) -> Dict[str, Any]:
     if not eng.scope_hosts:
         raise HTTPException(status_code=409, detail="engagement has no scope")
 
-    # Re-vetted here, against the scope as it stands now. The approval said "I
-    # have read this code"; it did not say "and it may destroy a database".
+    # Re-vetted here against the engagement AS IT STANDS NOW, not as it stood
+    # at approval. The approval said "I have read this code"; the engagement
+    # says what the client authorized, and both the code and the grant can
+    # change between the two.
     #
-    # This is the one thing a human approval does not unlock, and the line is
-    # narrow on purpose: destructive, persistent, denial-of-service or
-    # out-of-scope. Everything an exploit actually needs - POST, PUT, writing a
-    # file, uploading a shell, executing a command, reading data - is allowed
-    # and always was. What is refused is damage the operator cannot undo and a
-    # report they cannot defend, and the refusal names the line so the code can
-    # be fixed and re-staged.
-    verdict = vetting.vet(poc.code, scope_hosts=eng.scope_hosts)
+    # Nothing here is this module's opinion. Destructive, persistent,
+    # availability-affecting and credential-spraying actions all run if the
+    # engagement declares them - see app/exploit/capabilities.py. What is
+    # refused is a capability the operator did not declare, and the refusal
+    # names the capability so they can declare it deliberately.
+    #
+    # Scope is the exception and is not grantable: it is the authorization
+    # itself. The sandbox's egress rules stop an out-of-scope call anyway.
+    granted = capabilities.granted(eng)
+    verdict = vetting.vet(poc.code, scope_hosts=eng.scope_hosts,
+                          allowed_capabilities=granted)
     if not verdict.allowed:
         offending = "; ".join(
             f"line {s.line_no}: {s.detail}" if s.line_no else s.detail
             for s in verdict.blocking[:5])
         await audit("poc.refused", engagement_id=eng.id, poc_id=poc_id,
                     repo=poc.repo, path=poc.path,
-                    reasons=[s.category for s in verdict.blocking])
+                    requires=verdict.requires, granted=sorted(granted),
+                    missing=verdict.missing)
         raise HTTPException(status_code=409, detail=f"{verdict.summary} {offending}")
 
     try:
@@ -199,7 +205,11 @@ async def run(poc_id: str, req: RunRequest) -> Dict[str, Any]:
     await _repo.set_status(poc_id, STATUS_EXECUTED, decided_by=poc.decided_by)
     await audit("poc.executed", engagement_id=eng.id, poc_id=poc_id,
                 repo=poc.repo, path=poc.path, exit_code=result.exit_code,
-                scope=eng.scope_hosts)
+                scope=eng.scope_hosts,
+                # Which capabilities were in force when it ran. Six months
+                # later this is the line that answers "were we allowed to?".
+                capabilities_in_force=sorted(granted),
+                capabilities_used=verdict.requires)
     return {"id": poc_id, "status": STATUS_EXECUTED, "result": result.to_dict()}
 
 

@@ -92,6 +92,10 @@ export const api = {
   tools: () => request('/api/tools'),
 
   engagements: {
+    // What an engagement can additionally authorize beyond read-only proof.
+    // Served, not hardcoded: a checkbox offering something the backend does not
+    // know would grant nothing and say nothing.
+    capabilities: () => request('/api/engagements/capabilities'),
     // `get` and `verify` used to live here with no caller: state() returns a
     // superset of get(), and the DNS-TXT / .well-known ownership proof is a
     // deliberate API-only feature with no UI. The endpoints remain; the dead

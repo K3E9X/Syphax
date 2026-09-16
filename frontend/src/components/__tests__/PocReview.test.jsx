@@ -20,7 +20,8 @@ const AUTHORED = {
   status: 'staged',
   inspection: { verdict: 'review', summary: 'nothing obviously hostile', origin: 'authored',
                 attempts: 2, signals: [],
-                vetting: { allowed: true, summary: 'Allowed.', blocking: [], warnings: [] } },
+                vetting: { allowed: true, summary: 'Allowed.', blocking: [],
+                           warnings: [], requires: [], missing: [] } },
 };
 
 const PUBLIC_BAD = {
@@ -29,7 +30,8 @@ const PUBLIC_BAD = {
   inspection: { verdict: 'suspicious', summary: 'reads files outside the workdir',
                 origin: 'public', signals: [],
                 vetting: { allowed: false,
-                           summary: 'Refused: destructive. An engagement proves impact; it does not cause it.',
+                           summary: 'Refused: this needs Destructive actions, which this engagement does not authorize.',
+                           requires: ['destructive'], missing: ['destructive'],
                            blocking: [{ category: 'destructive', line_no: 12,
                                         line: "shutil.rmtree('/var/www')",
                                         detail: 'deletes files' }],
@@ -60,7 +62,9 @@ describe('the queue', () => {
     vi.spyOn(api.poc, 'list').mockResolvedValue({ items: [AUTHORED, PUBLIC_BAD] });
     await mount();
     await waitFor(() => screen.getByText('exploit.py'));
-    expect(within(screen.getByText('exploit.py').closest('tr')).getByText('refused')).toBeTruthy();
+    // Naming the capability turns "refused" into something to act on.
+    expect(within(screen.getByText('exploit.py').closest('tr'))
+      .getByText(/needs destructive/i)).toBeTruthy();
     expect(within(screen.getByText('idor.py').closest('tr')).getByText('ok')).toBeTruthy();
   });
 });
@@ -77,6 +81,7 @@ describe('opening one', () => {
     expect(screen.getByText('deletes files')).toBeTruthy();
     expect(screen.getByText('L12')).toBeTruthy();
     expect(screen.getByText(/approving does not override this/i)).toBeTruthy();
+    expect(screen.getByText(/authorize the capability on the engagement/i)).toBeTruthy();
   });
 
   it('tells the reviewer an authored PoC has never run', async () => {

@@ -42,6 +42,9 @@ const BLANK = {
   // Empty means "follow USER_AGENT_MODE from the environment", which is what
   // every engagement created before this field existed does.
   user_agent_mode: '', user_agent: '',
+  // Beyond read-only proof. Empty is the default and is right for most
+  // engagements.
+  exploit_capabilities: [],
 };
 
 export default function Engagements() {
@@ -59,6 +62,7 @@ export default function Engagements() {
   const [toast, setToast] = useState(null);
   const [error, setError] = useState(null);
   const [identities, setIdentities] = useState(null);
+  const [caps, setCaps] = useState(null);
   const set = (patch) => setForm((f) => ({ ...f, ...patch }));
 
   useEffect(() => {
@@ -68,6 +72,11 @@ export default function Engagements() {
     api.scans.identities()
       .then(setIdentities)
       .catch((e) => setError((prev) => prev || `Could not load the identity list: ${e.message}`));
+    // Without this the capability section renders empty and the operator
+    // silently gets read-only proof while believing they authorized more.
+    api.engagements.capabilities()
+      .then(setCaps)
+      .catch((e) => setError((prev) => prev || `Could not load the capability list: ${e.message}`));
   }, []);
 
   const load = useCallback(async () => {
@@ -86,6 +95,8 @@ export default function Engagements() {
       const res = await api.engagements.create({
         target_url: form.target_url,
         scope_hosts: scope.length ? scope : undefined,
+        exploit_capabilities: form.exploit_capabilities.length
+          ? form.exploit_capabilities : undefined,
         user_agent_mode: form.user_agent_mode || undefined,
         user_agent: form.user_agent_mode === 'custom' ? form.user_agent : undefined,
         attest_authorized: true,
@@ -178,6 +189,39 @@ export default function Engagements() {
               <textarea className="textarea" placeholder="Cookie: session=BBBBB..." value={form.secondary_auth} onChange={(e) => set({ secondary_auth: e.target.value })}></textarea>
               <span className="field__hint">A second identity's headers. Enables true IDOR/BOLA proof by replaying a captured request as another user.</span>
             </div>
+
+            <div className="form-sub">What the client authorized</div>
+            <p className="field__hint" style={{ marginTop: -4, marginBottom: 10 }}>
+              {caps?.note
+                || 'Leaving these off means read-only proof, which is right for most engagements.'}
+            </p>
+            <div className="checks">
+              {(caps?.items || []).map((c) => {
+                const on = form.exploit_capabilities.includes(c.id);
+                return (
+                  <Check
+                    key={c.id}
+                    checked={on}
+                    onChange={(v) => set({
+                      exploit_capabilities: v
+                        ? [...form.exploit_capabilities, c.id]
+                        : form.exploit_capabilities.filter((x) => x !== c.id),
+                    })}
+                  >
+                    <b>{c.label}:</b> {c.unlocks}.
+                    {/* The cost is next to the checkbox on purpose. A box
+                        labelled "destructive" with no consequences written
+                        beside it is a box that gets ticked. */}
+                    <small className="cap-cost">Cost if the client did not sign for it: {c.cost}.</small>
+                    <small className="cap-proves">Makes provable: {c.proves}.</small>
+                  </Check>
+                );
+              })}
+              {!caps && <span className="field__hint">Loading…</span>}
+            </div>
+            {caps?.never_grantable && (
+              <p className="field__hint">Never grantable: {caps.never_grantable}</p>
+            )}
 
             <div className="form-sub">Scan identity</div>
             <div className="field">

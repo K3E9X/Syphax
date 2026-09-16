@@ -211,6 +211,16 @@ def _markdown(e, findings, chains, tools, hosts, tech, cov, vsum, overall,
     if tech:
         L.append(f"- **Technologies identified:** {', '.join(tech)}")
     L.append(f"- **Tools used:** {', '.join(tools) or 'n/a'}")
+    # The operator's declaration about what the client authorized beyond
+    # read-only proof. It belongs in the report for the same reason it is in
+    # the audit log: six months later this is the line that answers "were you
+    # allowed to do that?", and the absence of the line answers it too.
+    try:
+        from app.exploit.capabilities import summary as _capability_summary
+        L.append(f"- **Authorization:** "
+                 f"{_capability_summary(getattr(e, 'exploit_capabilities', []) or [])}")
+    except Exception:  # noqa: BLE001 - a report must still render
+        pass
     L.append(f"- **Coverage:** {cov.get('done', 0)} catalog test(s) completed.")
     L.append("- **Methodology:** OWASP WSTG, mapped to MITRE ATT&CK. Every "
              "finding is put to an oracle where one exists; findings no oracle "

@@ -49,9 +49,19 @@ function Origin({ origin }) {
  */
 function Fitness({ vetting }) {
   if (!vetting) return <span className="poc-fit">—</span>;
-  return vetting.allowed
-    ? <span className="poc-fit poc-fit--ok">ok</span>
-    : <span className="poc-fit poc-fit--no" title={vetting.summary}>refused</span>;
+  if (vetting.allowed) {
+    return vetting.requires?.length
+      ? <span className="poc-fit poc-fit--ok" title={vetting.summary}>ok · authorized</span>
+      : <span className="poc-fit poc-fit--ok">ok</span>;
+  }
+  // Naming the capability turns "refused" into something the operator can act
+  // on: it is a checkbox on the engagement, not a wall.
+  const missing = (vetting.missing || []).join(', ');
+  return (
+    <span className="poc-fit poc-fit--no" title={vetting.summary}>
+      {missing ? `needs ${missing}` : 'out of scope'}
+    </span>
+  );
 }
 
 export default function PocReview({ engagementId }) {
@@ -240,8 +250,12 @@ export default function PocReview({ engagementId }) {
                   ))}
                 </ul>
                 <span className="poc-note">
-                  Approving does not override this — the run endpoint re-checks it.
-                  Fix the line and re-stage, or reject it.
+                  {(open.inspection.vetting.missing || []).length
+                    ? 'Approving does not override this. Either authorize the '
+                      + 'capability on the engagement — if the client signed for '
+                      + 'it — or rewrite the line and re-stage.'
+                    : 'Scope is the authorization itself, so no setting unlocks '
+                      + 'this. Rewrite the line and re-stage, or reject it.'}
                 </span>
               </div>
             )}

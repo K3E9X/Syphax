@@ -36,6 +36,7 @@ beforeEach(() => {
   vi.restoreAllMocks();
   vi.spyOn(api.engagements, 'list').mockResolvedValue({ items: [] });
   vi.spyOn(api.scans, 'identities').mockResolvedValue(IDENTITIES);
+  vi.spyOn(api.engagements, 'capabilities').mockResolvedValue({ items: [] });
 });
 
 describe('choosing how the tools identify themselves', () => {
@@ -100,6 +101,97 @@ describe('choosing how the tools identify themselves', () => {
 
   it('a failed identity lookup is reported, not swallowed into an empty select', async () => {
     vi.spyOn(api.scans, 'identities').mockRejectedValue(new Error('backend restarting'));
+    await mount();
+    await waitFor(() => expect(screen.getByText(/backend restarting/i)).toBeTruthy());
+  });
+});
+
+const CAPS = {
+  items: [
+    { id: 'destructive', label: 'Destructive actions',
+      unlocks: 'delete files, drop or truncate tables',
+      cost: 'the client loses data, and a restore is their problem',
+      proves: 'arbitrary file deletion, destructive mass-assignment' },
+    { id: 'denial_of_service', label: 'Availability impact',
+      unlocks: 'unbounded request loops, resource exhaustion',
+      cost: 'the target goes down, during business hours',
+      proves: 'ReDoS, zip bombs, unbounded pagination' },
+  ],
+  note: 'These are declarations about what the client signed for, not settings.',
+  never_grantable: 'Leaving the scope. That is the authorization itself.',
+};
+
+describe('declaring what the client authorized', () => {
+  beforeEach(() => {
+    vi.spyOn(api.engagements, 'capabilities').mockResolvedValue(CAPS);
+  });
+
+  it('is off by default, which is read-only proof', async () => {
+    vi.spyOn(api.engagements, 'create').mockResolvedValue({ engagement: { id: 'e1' } });
+    await mount();
+    await waitFor(() => screen.getByText(/destructive actions/i));
+    for (const box of screen.getAllByRole('checkbox')) {
+      if (box.closest('label')?.textContent?.match(/destructive|availability/i)) {
+        expect(box.checked).toBe(false);
+      }
+    }
+  });
+
+  it('puts the cost next to the box, not in a tooltip', async () => {
+    /* A box labelled "destructive" with no consequences written beside it is a
+       box that gets ticked. */
+    await mount();
+    await waitFor(() => screen.getByText(/destructive actions/i));
+    expect(screen.getByText(/the client loses data/i)).toBeTruthy();
+    expect(screen.getByText(/the target goes down/i)).toBeTruthy();
+  });
+
+  it('says what each one makes provable, so it is a trade and not a warning', async () => {
+    await mount();
+    await waitFor(() => screen.getByText(/arbitrary file deletion/i));
+    expect(screen.getByText(/redos, zip bombs/i)).toBeTruthy();
+  });
+
+  it('says that scope is never grantable', async () => {
+    await mount();
+    await waitFor(() => expect(screen.getByText(/that is the authorization itself/i))
+      .toBeTruthy());
+  });
+
+  it('sends only what was ticked', async () => {
+    const create = vi.spyOn(api.engagements, 'create')
+      .mockResolvedValue({ engagement: { id: 'e1' } });
+    await mount();
+    await waitFor(() => screen.getByText(/destructive actions/i));
+
+    await userEvent.type(screen.getByPlaceholderText('https://app.example.com'),
+                         'https://app.example.com');
+    await userEvent.click(screen.getByText(/destructive actions/i));
+    await userEvent.click(screen.getByRole('checkbox', { name: /authorized/i }));
+    await userEvent.click(screen.getByRole('button', { name: /create engagement/i }));
+
+    await waitFor(() => expect(create).toHaveBeenCalled());
+    expect(create.mock.calls[0][0].exploit_capabilities).toEqual(['destructive']);
+  });
+
+  it('sends nothing when nothing was ticked', async () => {
+    const create = vi.spyOn(api.engagements, 'create')
+      .mockResolvedValue({ engagement: { id: 'e1' } });
+    await mount();
+    await waitFor(() => screen.getByText(/destructive actions/i));
+
+    await userEvent.type(screen.getByPlaceholderText('https://app.example.com'),
+                         'https://app.example.com');
+    await userEvent.click(screen.getByRole('checkbox', { name: /authorized/i }));
+    await userEvent.click(screen.getByRole('button', { name: /create engagement/i }));
+
+    await waitFor(() => expect(create).toHaveBeenCalled());
+    expect(create.mock.calls[0][0].exploit_capabilities).toBeUndefined();
+  });
+
+  it('a failed capability lookup is reported, not an empty section', async () => {
+    vi.spyOn(api.engagements, 'capabilities')
+      .mockRejectedValue(new Error('backend restarting'));
     await mount();
     await waitFor(() => expect(screen.getByText(/backend restarting/i)).toBeTruthy());
   });

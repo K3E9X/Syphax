@@ -243,8 +243,12 @@ after a human has read them.
 Nothing a model produces reaches a target unfiltered: proposals are matched
 against assets that already exist, tool flags against per-tool allowlists, and
 proofs against a read-only policy. Exploit code the model writes may POST, write
-files, upload a shell and execute commands — it may not destroy, persist, flood
-or leave scope, and a human reads it before it runs.
+files, upload a shell and execute commands with no declaration at all. Going
+further — destroying, persisting, affecting availability, spraying credentials —
+is declared **per engagement** by the operator who holds the authorization,
+because a blanket refusal does not make a test safer, it makes those findings
+unprovable. Scope is the one thing no declaration unlocks. A human reads the code
+before it runs.
 
 ## Tests
 
