@@ -30,7 +30,9 @@ for arg in "$@"; do
 done
 
 echo "This deletes:"
-echo "  - the postgres volume (engagements, findings, jobs, audit log)"
+echo "  - the postgres volume (engagements, findings, jobs, audit log,"
+echo "    AND THE OPERATOR ACCOUNT - the next start will ask you to create"
+echo "    one again, which is the setup page, not a broken install)"
 echo "  - the redis volume (queued jobs)"
 if [ "$KEEP_CA" -eq 1 ]; then
   echo "  - ./data EXCEPT the mitmproxy CA and the settings key"
@@ -61,5 +63,7 @@ if [ -d data ]; then
 fi
 
 echo
+echo
 echo "Done. Nothing from the previous runs remains."
 echo "Bring it back up with: docker compose up -d --build"
+echo "Then create the operator account again, and reconnect a model."

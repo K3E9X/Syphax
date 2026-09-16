@@ -146,17 +146,19 @@ included) and wiping state: **[docs/OPERATING.md](docs/OPERATING.md)**.
 ```
       Frontend (React, nginx)                    :3000
               │  REST + WebSocket
+      Auth gate (session cookie | X-API-Key)     every /api and /ws route
+              │
       API (FastAPI)                              :8000
-       │        │              │
-  Engagements  Orchestrator   Proxy capture      :8080
-  + authz gate  (the brain)   (own image: mitmproxy → Postgres)
-                    │
-      Planner ──> Executor ──> Validator
-      (catalog)   (arq worker)  (safe-PoC)
-                    │
-      Postgres  +  Redis (arq queue)
-                    │
-      Tool arsenal (worker image)
+       │         │            │             │
+   Recon     Engagements  Orchestrator   Proxy capture   :8080
+  (passive)  + authz gate  (the brain)   (own image: mitmproxy → Postgres)
+                                │
+              Planner ──> Executor ──> Validator
+              (catalog)   (arq worker)  (safe-PoC)
+                                │
+              Postgres  +  Redis (arq queue)
+                                │
+              Tool arsenal (worker image)
 
       sandbox-runner  ── isolated network, no secrets, pinned egress
 ```
@@ -182,10 +184,24 @@ after a human has read them.
 
 ## How it works
 
+- **Authentication** — mandatory, with no variable that disables it. A password
+  (PBKDF2-HMAC-SHA256, 600k iterations), an 8-hour sliding session in an
+  httpOnly cookie of which only the SHA-256 is stored, and a login form
+  throttled per username *and* source address together. The gate sits in front
+  of the router, so no page can forget it, and in the middleware, so no browser
+  can skip it.
 - **Authorization gate** — every scan is tied to an authorized engagement whose
   scope covers the host. Enforced in `Runner.submit()`, the single chokepoint
   every caller passes through, so the autonomous and manual paths are covered
   by the same check.
+- **Recon is outside that gate, and therefore bounded by a list.** It runs
+  before an engagement exists, so there is no scope to check against. What may
+  leave the machine is a constant in `app/recon/budget.py` — four paths, GET and
+  HEAD, six requests — not a judgement call, and every run is audited.
+- **A model is required** — the planner decides the next move, the executor
+  reads what the tools said, the validator confirms or kills each finding. A run
+  with no provider configured is refused with a 409 that names the fix, rather
+  than degrading into a scanner printing raw output.
 - **Methodology engine** — a declarative catalog maps each OWASP WSTG test to
   its MITRE ATT&CK technique and the tool that runs it, gated by what has been
   discovered so far.
@@ -211,13 +227,21 @@ proofs against a read-only policy.
 ## Tests
 
 ```bash
-cd backend && pytest -q          # no network, no database needed
-cd frontend && npm run build
+cd backend  && pytest -q && ruff check .     # no network, no database needed
+cd frontend && npm test && npm run lint && npm run build
 ```
 
-CI runs on every push. A nightly additionally builds every image for `amd64`
-and `arm64`, re-runs the suite against the latest dependency releases, and
-checks that each test module still imports with only the CI dependency set.
+Five CI jobs on every push: backend (compile, lint, unit tests), frontend (lint,
+tests, build), compose + hadolint on all three Dockerfiles + shellcheck on the
+shell scripts, a dependency audit (`pip-audit`, `npm audit`), and a pre-flight
+that every pinned tool download still exists on both architectures.
+
+The nightly, on `main` only, additionally builds every image for `amd64` and
+`arm64`, re-runs the suite against the latest dependency releases, checks that
+each test module still imports with only the CI dependency set, and runs a
+**smoke test**: a fresh install, booted, exercised from outside — nothing
+reachable before setup, setup closing after the first account, a wrong password
+refused, a run refused with no model, logout ending the session.
 
 ## License
 

@@ -122,3 +122,26 @@ def test_every_status_is_handled():
 
     handled = {"confirmed", "likely", "unconfirmed", "false_positive"}
     assert {s.value for s in ValidationStatus} == handled
+
+
+def test_the_operator_account_is_not_a_scan_artefact():
+    """RESET_ON_START truncates on every boot. If `users` or `user_sessions`
+    ever joined that list, the operator account would be deleted on every
+    restart and the symptom - the setup page coming back, forever - looks
+    nothing like its cause.
+    """
+    from app.maintenance import TRANSIENT_TABLES
+
+    assert "users" not in TRANSIENT_TABLES
+    assert "user_sessions" not in TRANSIENT_TABLES
+
+
+def test_deleting_an_engagement_does_not_touch_accounts():
+    """The per-engagement purge reads which tables carry an engagement_id.
+    Accounts do not, so they are outside it by construction - this pins that
+    nobody adds them by hand."""
+    from app.engagements.purge import ENGAGEMENT_TABLES, KEPT_ON_PURPOSE
+
+    for table in ("users", "user_sessions", "settings"):
+        assert table not in ENGAGEMENT_TABLES
+        assert table not in KEPT_ON_PURPOSE

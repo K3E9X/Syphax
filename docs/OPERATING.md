@@ -483,20 +483,30 @@ stored provider API keys become undecryptable — `--keep-ca` avoids both.
 ```
 backend/         FastAPI app + arq worker (one image, two roles)
   app/
-    api/         REST + WebSocket routers
-    engagements/ authorization gate + scope
-    methodology/ WSTG x ATT&CK test catalog
+    api/          REST + WebSocket routers
+    auth/         accounts, sessions, login throttle, the gate (pure policy)
+    recon/        pre-engagement passive recon; budget.py bounds what it sends
+    engagements/  authorization gate + scope + per-engagement purge
+    methodology/  WSTG x ATT&CK test catalog
     orchestrator/ planner, executor, run loop, state, approvals
-    scans/       wrappers + queue runner + job storage
-    validation/  safe-PoC validators + kill-chaining
-    reporting/   client report (Markdown / HTML)
-    proxy/       mitmproxy addon + flow storage
-    events.py    live event stream
-    db.py        Postgres pool
-  Dockerfile     multi-arch, bundles all CLI tools
-frontend/        React + plain CSS, served by nginx
-docker-compose.yml   postgres, redis, backend, worker, frontend
-install.sh / start.sh
+    llm/          per-role router, provider catalog, readiness, usage/cost
+    scans/        wrappers (23 tools) + queue runner + job storage
+    exploit/      payload generation with an oracle, safe probe client
+    analysis/     JS/secret mining, JWT, access control, GraphQL, correlation
+    validation/   safe-PoC validators, corroboration, kill-chaining
+    reporting/    client report (Markdown / HTML / JSON / SARIF)
+    proxy/        mitmproxy addon + flow storage
+    sandbox/      staging + client for the isolated PoC runner
+    network/      VPN/proxy control and the exit-IP kill switch
+    events.py     live event stream
+    db.py         Postgres pool
+  ruff.toml       lint rules, and why the noisy ones are off
+  Dockerfile      multi-arch, bundles all CLI tools
+frontend/         React + plain CSS, served by nginx
+sandbox-runner/   the isolated image untrusted PoCs run in
+docker-compose.yml   postgres, redis, backend, proxy, worker, orchestrator,
+                     frontend, sandbox-runner
+install.sh / start.sh / wipe.sh
 ```
 
 ## Architecture notes
