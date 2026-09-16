@@ -32,7 +32,7 @@ export default function Home() {
 
   useEffect(() => {
     refreshIdentity();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, []);
 
   // Ping every role, not just the planner: they can sit on different

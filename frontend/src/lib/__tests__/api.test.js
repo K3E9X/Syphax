@@ -61,7 +61,7 @@ describe('request()', () => {
     ];
     for (const body of shapes) {
       mockFetch(400, body);
-      // eslint-disable-next-line no-await-in-loop
+       
       const err = await api.dashboard().catch((e) => e);
       expect(err.message).not.toContain('[object Object]');
       expect(err.message.length).toBeGreaterThan(0);

@@ -18,7 +18,6 @@ from app.scans.models import Finding
 from app.validation.baseline import (
     CATCH_ALL_STATUSES,
     NO_BASELINE,
-    Baseline,
     calibrate,
     derive,
     matches,

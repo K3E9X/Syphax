@@ -21,7 +21,6 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Sequence
-from urllib.parse import urlparse
 
 SEV_CRITICAL = "critical"
 SEV_HIGH = "high"

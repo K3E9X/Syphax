@@ -20,7 +20,7 @@ is serializable, inspectable in the UI, and safe to ship to the LLM planner:
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 
 # PTES-aligned phases the planner walks in order.

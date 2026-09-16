@@ -3,7 +3,6 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { api, getApiKey } from '../lib/api.js';
 import { useApi, usePoll } from '../lib/useApi.js';
 import TokenPanel from '../components/TokenPanel.jsx';
-import { Notice } from '../components/ui.jsx';
 import { AuditTrail, ChainList, CoverageMatrix } from '../components/live/Panels.jsx';
 
 const PHASES = ['recon', 'mapping', 'vuln_analysis', 'exploitation', 'validation'];
@@ -153,7 +152,7 @@ export default function LiveView() {
 
   async function run() { setBusy(true); try { await api.engagements.run(id); await loadState(); } catch (e) { flash(e.message); } finally { setBusy(false); } }
   async function stop() { setBusy(true); try { await api.engagements.stop(id); await loadState(); } catch (e) { flash(e.message); } finally { setBusy(false); } }
-  async function analyze() { setBusy(true); try { const r = await api.engagements.analyzeTraffic(id); await loadState(); flash('Deep analysis complete'); } catch (e) { flash(e.message); } finally { setBusy(false); } }
+  async function analyze() { setBusy(true); try { await api.engagements.analyzeTraffic(id); await loadState(); flash('Deep analysis complete'); } catch (e) { flash(e.message); } finally { setBusy(false); } }
   // Validation runs at the end of an autonomous run. This re-runs it on
   // demand, which is what you want after adding findings by hand from the
   // Scans page - otherwise they sit unvalidated until the next full run.

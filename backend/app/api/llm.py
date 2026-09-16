@@ -13,7 +13,6 @@ from typing import List, Optional
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from app.config import settings
 from app.llm import LLMError, get_analyzer, get_llm
 from app.proxy import FlowRepository
 from app.scans.storage import JobRepository

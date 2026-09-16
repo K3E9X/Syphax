@@ -6,7 +6,7 @@
  * answer. The planner is re-invoked on every loop iteration, which is the
  * usual reason a run costs more than expected; now that is visible.
  */
-import { Async, Bar, Card, Empty, Stat, UsageRow, fmtTokens, fmtUsd } from './ui.jsx';
+import { Async, Card, Empty, Stat, UsageRow, fmtTokens, fmtUsd } from './ui.jsx';
 
 const ROLE_LABEL = { planner: 'Planner', executor: 'Executor', validator: 'Validator' };
 

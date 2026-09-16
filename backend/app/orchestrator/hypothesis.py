@@ -12,7 +12,7 @@ deterministic candidates remain the floor; hunts are added on top.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, List, Optional
+from typing import Any, List
 
 from app.llm.grounding import safe_tokens
 

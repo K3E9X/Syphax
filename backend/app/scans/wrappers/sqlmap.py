@@ -7,7 +7,6 @@ session file to extract confirmed findings.
 from __future__ import annotations
 
 import re
-from pathlib import Path
 from typing import List, Sequence
 
 from app.scans.models import Finding

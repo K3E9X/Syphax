@@ -6,7 +6,7 @@ import time
 from typing import List, Optional
 
 from app import db
-from app.scans.models import Finding, Job, JobStatus, findings_from_json, findings_to_json
+from app.scans.models import Job, JobStatus, findings_from_json, findings_to_json
 
 SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS jobs (

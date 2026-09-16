@@ -6,7 +6,6 @@ Finding per discovered endpoint.
 """
 from __future__ import annotations
 
-import json
 from typing import List, Sequence
 
 from app.scans.models import Finding

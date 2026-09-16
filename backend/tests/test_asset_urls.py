@@ -1,4 +1,4 @@
-"""Which crawler output becomes a scanned asset.
+r"""Which crawler output becomes a scanned asset.
 
 katana parses JavaScript, so it emits regex literals, router templates and
 fragments of code alongside real links. The gate only checked the scheme - and

@@ -12,7 +12,7 @@ import asyncio
 
 import pytest
 
-from app.orchestrator.planner import Planner, Task
+from app.orchestrator.planner import Planner
 
 
 class FakeState:

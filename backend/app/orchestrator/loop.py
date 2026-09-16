@@ -379,7 +379,6 @@ async def _run_correlation(engagement, run: Run, executor: Executor,
         from app.analysis.correlation import correlate
         from app.orchestrator.planner import Task
         from app.proxy.storage import FlowRepository
-        from app.scans.storage import JobRepository as _Jobs
         from app.validation import ValidatedFindingRepository
 
         state = executor.state

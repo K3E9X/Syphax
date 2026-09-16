@@ -4,7 +4,6 @@ Runs with `-jsonl` so each finding is a single JSON object per line on stdout.
 """
 from __future__ import annotations
 
-import json
 import os
 from typing import List, Sequence
 

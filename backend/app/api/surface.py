@@ -1,7 +1,7 @@
 """Attack surface + methodology coverage for a single engagement."""
 from __future__ import annotations
 
-from typing import Any, Dict, List
+from typing import Any, Dict
 from urllib.parse import urlparse
 
 from fastapi import APIRouter, HTTPException

@@ -167,7 +167,7 @@ def encrypt(plain: str) -> str:
     key = _xor_key()
     data = plain.encode()
     nonce = os.urandom(16)
-    ct = bytes(a ^ b for a, b in zip(data, _keystream(nonce, len(data), key)))
+    ct = bytes(a ^ b for a, b in zip(data, _keystream(nonce, len(data), key), strict=True))
     tag = hmac.new(key, nonce + ct, hashlib.sha256).digest()
     return "x1:" + base64.urlsafe_b64encode(nonce + tag + ct).decode()
 
@@ -183,7 +183,7 @@ def decrypt(token: str) -> str:
             key = _xor_key()
             if not hmac.compare_digest(tag, hmac.new(key, nonce + ct, hashlib.sha256).digest()):
                 return ""
-            return bytes(a ^ b for a, b in zip(ct, _keystream(nonce, len(ct), key))).decode()
+            return bytes(a ^ b for a, b in zip(ct, _keystream(nonce, len(ct), key), strict=True)).decode()
         return ""
     except Exception:  # noqa: BLE001
         return ""

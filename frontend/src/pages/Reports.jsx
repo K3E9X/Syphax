@@ -79,7 +79,7 @@ export default function Reports() {
       a.click();
       URL.revokeObjectURL(url);
     } catch (e) {
-      setNarrative(`JSON export failed: ${e.message}`);
+      flash(`JSON export failed: ${e.message}`);
     }
   }
 

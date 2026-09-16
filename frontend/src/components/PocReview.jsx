@@ -32,12 +32,20 @@ export default function PocReview({ engagementId }) {
   const [error, setError] = useState(null);
   const [result, setResult] = useState(null);
 
-  const load = async () => {
+  const [listError, setListError] = useState(null);
+  const load = useCallback(async () => {
     if (!engagementId) return;
-    try { setItems((await api.poc.list(engagementId)).items || []); } catch { /* empty */ }
-  };
+    try {
+      setItems((await api.poc.list(engagementId)).items || []);
+      setListError(null);
+    } catch (e) {
+      // This was an empty catch. A failed list rendered as "no staged PoCs",
+      // which is the same thing the panel shows when there genuinely are none.
+      setListError(e.message);
+    }
+  }, [engagementId]);
 
-  useEffect(() => { load(); setOpen(null); setResult(null); }, [engagementId]);
+  useEffect(() => { load(); setOpen(null); setResult(null); }, [load]);
   // Swallowing this left the panel saying "runner unavailable" with no way to
   // tell a container that was never started from one that crashed or is
   // unreachable - the operator had two words and nothing to act on.
@@ -114,6 +122,15 @@ export default function PocReview({ engagementId }) {
                 </span>
               </div>
               <button type="button" className="btn btn--muted btn--sm" onClick={loadRunner}>Retry</button>
+            </div>
+          )}
+          {listError && (
+            <div className="notice notice--error" role="alert">
+              <div className="notice__body">
+                <strong className="notice__t">Could not list staged PoCs</strong>
+                <span className="notice__m">{listError}</span>
+              </div>
+              <button type="button" className="btn btn--muted btn--sm" onClick={load}>Retry</button>
             </div>
           )}
           {runner?.status === 'ok' && !egressLocked && (

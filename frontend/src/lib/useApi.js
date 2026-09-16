@@ -12,7 +12,7 @@
  *   2. Polling never stopped. Nothing checked document.visibilityState, so a
  *      forgotten background tab hammered the API forever.
  */
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api } from './api.js';
 
 /** Is the tab currently on screen? Treated as visible when the API is absent. */
@@ -58,7 +58,7 @@ export function useApi(fn, deps = [], { immediate = true, initial = null } = {})
     } finally {
       if (alive.current && mine === seq.current) setLoading(false);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, []);
 
   useEffect(() => {
@@ -102,7 +102,7 @@ export function usePoll(fn, intervalMs, { active = true, deps = [], initial = nu
       stop();
       document.removeEventListener('visibilitychange', onVisibility);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [active, intervalMs, reload]);
 
   return state;
@@ -132,7 +132,7 @@ export function useAction(fn) {
     } finally {
       if (alive.current) setBusy(false);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [fn]);
 
   return [run, { busy, error, clearError: () => setError(null) }];
@@ -177,7 +177,10 @@ export function useEngagements({ autoSelect = true } = {}) {
   const { data, error, loading, reload } = useApi(
     () => api.engagements.list(), [], { initial: null });
 
-  const engagements = data?.items || [];
+  // A new [] on every render made the effect below re-run on every render.
+  // It is guarded by a ref so it did no damage, but the guard was carrying the
+  // weight of an identity bug.
+  const engagements = useMemo(() => data?.items || [], [data]);
 
   const setEngId = useCallback((id) => {
     rememberEngagement(id);

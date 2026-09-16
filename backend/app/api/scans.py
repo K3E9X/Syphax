@@ -48,8 +48,9 @@ async def list_tools() -> list:
 async def submit_scan(req: ScanRequest) -> dict:
     try:
         wrapper = get_wrapper(req.tool)
-    except KeyError:
-        raise HTTPException(status_code=400, detail=f"unknown tool: {req.tool}")
+    except KeyError as exc:
+        raise HTTPException(status_code=400,
+                            detail=f"unknown tool: {req.tool}") from exc
 
     if not wrapper.is_available():
         raise HTTPException(

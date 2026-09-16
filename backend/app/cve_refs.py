@@ -11,7 +11,7 @@ Pure (no network/deps) so it is unit-testable.
 from __future__ import annotations
 
 import re
-from typing import Dict, List, Optional
+from typing import Dict, Optional
 from urllib.parse import quote
 
 _CVE_RE = re.compile(r"CVE-\d{4}-\d{4,7}", re.IGNORECASE)

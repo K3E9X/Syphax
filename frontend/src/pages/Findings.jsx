@@ -64,7 +64,7 @@ export default function Findings() {
         q: q || undefined,
       });
       setRows(r.items || []);
-    } catch (e) { console.error('findings load failed', e); }
+    } catch (e) { setLoadError(e.message); }
   }, [sevFilter, statusFilter, q, engId, aggregate]);
   useEffect(() => { load(); }, [load]);
 

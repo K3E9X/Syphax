@@ -83,9 +83,10 @@ async def auth_status(request: Request) -> Dict[str, Any]:
     nothing an anonymous caller could not learn by trying to sign in."""
     try:
         configured = await storage.has_users()
-    except Exception:  # noqa: BLE001 - a database that is still starting
-        raise HTTPException(status_code=503,
-                            detail="database unavailable; the backend is still starting")
+    except Exception as exc:  # noqa: BLE001 - a database that is still starting
+        raise HTTPException(
+            status_code=503,
+            detail="database unavailable; the backend is still starting") from exc
     user = _current(request)
     return {
         "auth_required": True,

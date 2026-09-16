@@ -20,7 +20,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Sequence
 
-from app.scans.artifacts import js_dir, listdir
+from app.scans.artifacts import js_dir
 from app.scans.models import Finding
 from app.scans.wrappers.base import BaseWrapper, ToolResult, iter_json_lines
 

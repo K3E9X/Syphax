@@ -6,7 +6,7 @@ so the runner can replay it through the safe, in-scope, read-only channel.
 from __future__ import annotations
 
 import shlex
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, Optional, Tuple
 
 
 def parse_curl(code: str) -> Tuple[str, Optional[str], Dict[str, str]]:

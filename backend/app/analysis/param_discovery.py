@@ -19,7 +19,7 @@ from __future__ import annotations
 
 import logging
 import secrets
-from typing import Dict, List, Optional, Set
+from typing import Dict, List, Set
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
 from app.analysis._store import save_analysis_job

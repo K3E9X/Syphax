@@ -59,7 +59,7 @@ async def analyze_jwt(engagement_id: str) -> Dict[str, int]:
     in_scope = [f for f in summaries
                 if eng.host_in_scope((urlparse(f.url).hostname or "").lower())]
 
-    from app.validation.safe_poc import SafePoC, ScopeError
+    from app.validation.safe_poc import SafePoC
     safe = SafePoC(in_scope=eng.host_in_scope)
     findings: List[Finding] = []
     seen: set[str] = set()
@@ -119,6 +119,10 @@ async def _forge_replay(safe, url, token, *, allow_elevate):
     replay it read-only. Confirmed only if the forged token is accepted (200)
     while a control token with an invalid signature is rejected."""
     from app.jwt_forge import decode_parts, elevate, forge_hs, forge_none
+    # ScopeError was caught below without ever being imported: an out-of-scope
+    # URL raised NameError out of this function instead of returning None, so
+    # the whole JWT proof pass died on the first host outside the engagement.
+    from app.validation.safe_poc import ScopeError
 
     head, payload = decode_parts(token)
     if head is None:

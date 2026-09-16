@@ -24,7 +24,7 @@ confirmed band no matter how many tools agree.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Dict, Iterable, List, Optional, Sequence, Tuple
+from typing import Dict, Iterable, List, Sequence, Tuple
 from urllib.parse import urlparse
 
 from app.validation.models import ValidationStatus

@@ -17,7 +17,7 @@ Guardrails:
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, Optional, Tuple
 from urllib.parse import urlparse
 
 from app.llm import ROLE_VALIDATOR, LLMError, get_router

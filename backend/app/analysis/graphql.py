@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Dict, List, Optional, Set
+from typing import Dict, List, Set
 from urllib.parse import urlencode, urlparse, urlunparse
 
 from app.analysis._store import save_analysis_job

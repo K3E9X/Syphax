@@ -16,8 +16,8 @@ router = APIRouter(prefix="/api/engagements", tags=["reports"])
 async def report_markdown(engagement_id: str) -> PlainTextResponse:
     try:
         report = await build_report(engagement_id)
-    except KeyError:
-        raise HTTPException(status_code=404, detail="engagement not found")
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="engagement not found") from exc
     return PlainTextResponse(
         report["markdown"],
         headers={"Content-Disposition": f'attachment; filename="report-{engagement_id}.md"'},
@@ -28,8 +28,8 @@ async def report_markdown(engagement_id: str) -> PlainTextResponse:
 async def report_html(engagement_id: str) -> HTMLResponse:
     try:
         report = await build_report(engagement_id)
-    except KeyError:
-        raise HTTPException(status_code=404, detail="engagement not found")
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="engagement not found") from exc
     return HTMLResponse(report["html"])
 
 
@@ -37,8 +37,8 @@ async def report_html(engagement_id: str) -> HTMLResponse:
 async def report_json(engagement_id: str) -> dict:
     try:
         report = await build_report(engagement_id)
-    except KeyError:
-        raise HTTPException(status_code=404, detail="engagement not found")
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="engagement not found") from exc
     return {"meta": report["meta"], "markdown": report["markdown"]}
 
 

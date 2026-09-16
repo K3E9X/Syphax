@@ -1,7 +1,6 @@
 """subfinder: passive subdomain enumeration (ProjectDiscovery)."""
 from __future__ import annotations
 
-import json
 from typing import List, Sequence
 from urllib.parse import urlparse
 

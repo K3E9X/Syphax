@@ -23,7 +23,7 @@ from __future__ import annotations
 
 import logging
 import re
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Tuple
 from urllib.parse import urljoin, urlparse
 
 from app.analysis._store import save_analysis_job

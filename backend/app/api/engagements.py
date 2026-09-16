@@ -6,7 +6,6 @@ unless an AUTHORIZED engagement covers it (enforced in app/api/scans.py).
 from __future__ import annotations
 
 import time
-from typing import Dict
 
 
 def _parse_headers_blob(blob):

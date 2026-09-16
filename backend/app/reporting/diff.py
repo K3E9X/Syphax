@@ -12,7 +12,7 @@ query string changes between runs) and its title.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, Iterable, List, Optional, Tuple
+from typing import Any, Dict, Iterable, List, Tuple
 from urllib.parse import urlparse
 
 # Statuses that mean "this is a live issue". A false positive or an unconfirmed
