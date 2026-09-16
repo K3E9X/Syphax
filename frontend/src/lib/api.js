@@ -166,6 +166,8 @@ export const api = {
   },
 
   llm: {
+    providers: () => request('/api/llm/providers'),
+    readiness: () => request('/api/llm/readiness'),
     suggestForFlow: (flowId) => request(`/api/llm/flows/${flowId}/suggest`, { method: 'POST' }),
     explainJob: (jobId) => request(`/api/llm/jobs/${jobId}/explain`, { method: 'POST' }),
     report: (payload) => request('/api/llm/report', {

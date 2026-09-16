@@ -38,6 +38,9 @@ const shell = (
 
 beforeEach(() => {
   vi.restoreAllMocks();
+  // The gate checks the model configuration after the session. These tests are
+  // about the session half; the other half has its own file.
+  vi.spyOn(api.llm, 'readiness').mockResolvedValue({ ready: true });
 });
 
 describe('the gate', () => {

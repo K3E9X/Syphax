@@ -21,6 +21,8 @@ from typing import Any, Dict, Optional
 
 from app import db
 from app.config import settings as app_settings
+from app.llm.providers import provider_for_base_url as _provider_for_base_url
+from app.llm.providers import provider_ids as _provider_ids
 
 logger = logging.getLogger("syphax.settings")
 
@@ -34,7 +36,10 @@ CREATE TABLE IF NOT EXISTS settings (
 db.register_schema(SCHEMA_SQL)
 
 _ROW_ID = "global"
-PROVIDERS = ("zai", "moonshot", "openrouter")
+# One entry per provider a key can be stored under. Sourced from the catalog so
+# adding a provider is a one-line change there rather than a change here that
+# someone forgets to make.
+PROVIDERS = _provider_ids()
 
 DEFAULTS: Dict[str, Any] = {
     "model_router": {
@@ -216,6 +221,7 @@ async def get_public() -> Dict[str, Any]:
     data["provider_keys"] = {
         p: ("set" if row["secrets"].get(p) else "unset") for p in PROVIDERS
     }
+    data["llm"] = readiness_for(data, row["secrets"]).to_public()
     # Touch the key path once so KEY_IS_EPHEMERAL is computed, then warn the UI.
     _xor_key()
     if KEY_IS_EPHEMERAL:
@@ -224,6 +230,39 @@ async def get_public() -> Dict[str, Any]:
     return data
 
 
+
+
+def readiness_for(data: Dict[str, Any], secrets: Dict[str, str]):
+    """Whether the saved model router actually resolves to three working roles.
+
+    Computed from the SAVED settings rather than from the live router, so the
+    answer is the same before and after a restart - the router is rebuilt
+    lazily and would report "not configured" for a role nobody has called yet.
+    """
+    from app.llm import readiness as _readiness
+    mr = data.get("model_router") or {}
+    configs = {}
+    for role in ("planner", "executor", "validator"):
+        cfg = mr.get(role) or {}
+        base_url = cfg.get("base_url") or ""
+        configs[role] = {
+            "base_url": base_url,
+            "model": cfg.get("model") or "",
+            "api_key": secrets.get(provider_for_base_url(base_url), "") if base_url else "",
+        }
+    return _readiness.evaluate(
+        configs,
+        fallback_key=(secrets.get("openrouter", "") or app_settings.openrouter_api_key),
+        fallback_base_url=app_settings.openrouter_base_url,
+        fallback_model=app_settings.openrouter_model,
+    )
+
+
+async def llm_readiness():
+    """Readiness computed from what is persisted, for callers that only have a
+    database connection - the run gate and the /api/llm/readiness endpoint."""
+    row = await _read_row()
+    return readiness_for(row["data"], row["secrets"])
 
 
 async def save(patch: Dict[str, Any]) -> Dict[str, Any]:
@@ -261,12 +300,14 @@ async def save(patch: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def provider_for_base_url(base_url: str) -> str:
-    b = (base_url or "").lower()
-    if "z.ai" in b or "zhipu" in b or "bigmodel" in b:
-        return "zai"
-    if "moonshot" in b:
-        return "moonshot"
-    return "openrouter"
+    """Which stored key a role pointed at this URL should use.
+
+    Delegates to the catalog. The previous version returned "openrouter" for
+    anything it did not recognise, which meant an operator who pointed a role at
+    DeepSeek had their OpenRouter key sent to DeepSeek's server - a credential
+    leak dressed up as a default.
+    """
+    return _provider_for_base_url(base_url)
 
 
 async def apply_to_router(data: Dict[str, Any], secrets: Dict[str, str]) -> None:

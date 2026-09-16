@@ -145,11 +145,15 @@ async def health() -> dict:
 @app.get("/api/config")
 async def config() -> dict:
     llm = get_llm()
+    from app import settings_store
     return {
         "llm_configured": llm.configured,
         "llm_model": llm.model,
         "llm_fallback_models": llm.fallback_models,
         "llm_roles": get_router().status(),
+        # The verdict the run gate uses, so the UI warns from the same source
+        # rather than deriving its own opinion from llm_roles.
+        "llm": (await settings_store.llm_readiness()).to_public(),
         "mitm_port": settings.mitm_port,
         "data_dir": str(settings.data_dir),
     }

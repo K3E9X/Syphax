@@ -21,3 +21,22 @@
 /* Signed-in identity in the top nav, next to the health badge. */
 .topnav__who { display: flex; align-items: center; gap: 10px; font-family: var(--font-mono); font-size: 11px; color: var(--text-faint); }
 .topnav__user { color: var(--text-secondary); }
+
+.auth__card--wide { max-width: 620px; }
+.auth__signout { margin-left: auto; }
+
+/* Model router: shared by the first-run screen and the Settings card. */
+.mr__same { display: flex; gap: 10px; align-items: flex-start; margin: 16px 0 20px; cursor: pointer; font-size: 13px; color: var(--text-primary); }
+.mr__same small { display: block; color: var(--text-secondary); font-size: 11px; line-height: 1.5; margin-top: 3px; }
+.mr__same input { margin-top: 3px; flex: none; }
+
+.mr__role { border-top: 1px solid var(--border); padding-top: 16px; margin-top: 16px; }
+.mr__role:first-of-type { border-top: none; padding-top: 0; margin-top: 0; }
+.mr__head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 12px; }
+.mr__name { font-family: var(--font-mono); font-size: 12px; text-transform: uppercase; letter-spacing: .05em; color: var(--text-primary); }
+.mr__note { font-size: 11px; color: var(--text-faint); line-height: 1.4; }
+.mr__ping { display: flex; align-items: center; gap: 10px; margin-top: 10px; }
+.mr a { color: var(--accent, var(--text-secondary)); }
+
+.card__meta--warn { color: var(--sev-high, var(--severity-high, #f59e0b)); }
+.page--flush { padding-bottom: 0; }

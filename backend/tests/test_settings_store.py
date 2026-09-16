@@ -18,7 +18,21 @@ def test_provider_for_base_url():
     assert ss.provider_for_base_url("https://api.z.ai/api/paas/v4") == "zai"
     assert ss.provider_for_base_url("https://api.moonshot.cn/v1") == "moonshot"
     assert ss.provider_for_base_url("https://openrouter.ai/api/v1") == "openrouter"
-    assert ss.provider_for_base_url("") == "openrouter"
+    assert ss.provider_for_base_url("https://api.deepseek.com/v1") == "deepseek"
+    assert ss.provider_for_base_url(
+        "https://dashscope-intl.aliyuncs.com/compatible-mode/v1") == "qwen"
+
+
+def test_an_unrecognised_endpoint_does_not_borrow_another_providers_key():
+    """This used to return "openrouter" for anything it did not recognise.
+
+    An operator who pointed a role at their own gateway therefore had their
+    OpenRouter key sent to that gateway: a credential leak wearing the costume
+    of a sensible default. Unrecognised is now its own bucket, and an empty URL
+    maps to no provider at all.
+    """
+    assert ss.provider_for_base_url("https://llm.internal.example/v1") == "custom"
+    assert ss.provider_for_base_url("") == ""
 
 
 def test_defaults_shape():

@@ -60,6 +60,18 @@ async def start_run(engagement_id: str) -> dict:
     if latest and latest.status in ("queued", "running"):
         raise HTTPException(status_code=409, detail=f"run {latest.id} already active")
 
+    # Refuse to start a run this install cannot drive.
+    #
+    # Without this the run started, the planner fell back to a client with no
+    # key, every call raised, the loop caught it and emitted one "degraded"
+    # event - and the operator sat through a run that could only ever produce
+    # a scanner's raw output. Say it before the run, not during it.
+    from app import settings_store
+    from app.llm.readiness import blocking_message
+    blocked = blocking_message(await settings_store.llm_readiness())
+    if blocked:
+        raise HTTPException(status_code=409, detail=blocked)
+
     run = Run(
         id=new_run_id(),
         engagement_id=engagement_id,

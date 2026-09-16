@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { api, getApiKey, setApiKey } from '../lib/api.js';
 import { Notice } from '../components/ui.jsx';
 import AccountCard from '../components/AccountCard.jsx';
+import ModelRouter from '../components/ModelRouter.jsx';
 
 function Toggle({ on, onChange }) {
   return (
@@ -12,13 +13,9 @@ function Toggle({ on, onChange }) {
   );
 }
 
-const ROLES = ['planner', 'executor', 'validator'];
-const PROVIDERS = [['zai', 'Z.ai (GLM)'], ['moonshot', 'Moonshot (Kimi)'], ['openrouter', 'OpenRouter']];
-
 export default function Settings() {
   const [loadError, setLoadError] = useState(null);
   const [s, setS] = useState(null);
-  const [keyInput, setKeyInput] = useState({ zai: '', moonshot: '', openrouter: '' });
   const [saved, setSaved] = useState(null);
   const [apiKeyInput, setApiKeyInput] = useState(getApiKey());
   const apiKey = apiKeyInput;
@@ -30,26 +27,22 @@ export default function Settings() {
 
   if (!s) return <div className="page"><div className="card"><div className="card__body"><div className="empty">Loading settings...</div></div></div></div>;
 
-  const mr = s.model_router || {};
   const safety = s.safety || {};
   const scope = s.scope || {};
-  const pk = s.provider_keys || {};
   const budget = s.budget || {};
   const setBudget = (k, v) => setS((x) => ({ ...x, budget: { ...(x.budget || {}), [k]: v } }));
-  const setRole = (role, patch) => setS((x) => ({ ...x, model_router: { ...x.model_router, [role]: { ...(x.model_router?.[role] || {}), ...patch } } }));
   const setSafety = (k, v) => setS((x) => ({ ...x, safety: { ...(x.safety || {}), [k]: v } }));
   const setScope = (k, v) => setS((x) => ({ ...x, scope: { ...(x.scope || {}), [k]: v } }));
 
+  // The model router and the provider keys are saved by <ModelRouter/>, which
+  // owns them on both screens. This button saves everything else.
   async function save() {
-    const provider_keys = {};
-    for (const [p] of PROVIDERS) if (keyInput[p].trim()) provider_keys[p] = keyInput[p].trim();
     try {
       const res = await api.settings.save({
-        model_router: s.model_router, safety: s.safety, scope: s.scope,
+        safety: s.safety, scope: s.scope,
         oob_server: s.oob_server || '', budget: s.budget,
-        provider_keys: Object.keys(provider_keys).length ? provider_keys : undefined,
       });
-      setS(res); setKeyInput({ zai: '', moonshot: '', openrouter: '' }); setSaved('Saved');
+      setS(res); setSaved('Saved');
     } catch (e) { setSaved('Error: ' + e.message); }
     setTimeout(() => setSaved(null), 2500);
   }
@@ -61,45 +54,35 @@ export default function Settings() {
         <AccountCard />
 
         <div className="card set-full">
-          <div className="card__head"><span className="card__title">API key</span><span className="card__meta">this browser only &middot; never sent to the server settings</span></div>
+          <div className="card__head"><span className="card__title">Machine credential</span><span className="card__meta">this browser only &middot; never sent to the server settings</span></div>
           <div className="card__body">
             <div className="field">
               <label className="field__label">X-API-Key sent with every request</label>
-              <input className="input" type="password" placeholder="leave empty if the backend runs unauthenticated"
+              <input className="input" type="password" placeholder="leave empty — you are signed in with an account"
                      value={apiKey} onChange={(e) => setApiKeyInput(e.target.value)} />
             </div>
             <div className="scan-note">
-              Required only when the backend sets SYPHAX_API_KEY. Stored in this
-              browser&apos;s localStorage, not in the server settings.
+              You are already authenticated by your session; this is only needed
+              when driving the API from a script or CI, and it must match the
+              backend&apos;s SYPHAX_API_KEY. Stored in this browser&apos;s
+              localStorage, not in the server settings.
             </div>
             <button className="btn btn--muted" onClick={() => { setApiKey(apiKeyInput); setSaved('API key saved in this browser'); setTimeout(() => setSaved(null), 2500); }}>Save API key</button>
           </div>
         </div>
 
         <div className="card set-full">
-          <div className="card__head"><span className="card__title">Model router</span><span className="card__meta">per-role endpoint + model</span></div>
-          <div className="card__body">
-            {ROLES.map((role) => (
-              <div key={role} className="router-row">
-                <div className="router-row__role">{role}<small>role</small></div>
-                <input className="input" placeholder="base URL (e.g. https://api.z.ai/api/paas/v4)" value={mr[role]?.base_url || ''} onChange={(e) => setRole(role, { base_url: e.target.value })} />
-                <input className="input" placeholder="model (e.g. glm-4.6)" value={mr[role]?.model || ''} onChange={(e) => setRole(role, { model: e.target.value })} />
-              </div>
-            ))}
+          <div className="card__head">
+            <span className="card__title">Model router</span>
+            <span className={'card__meta ' + (s.llm?.ready ? '' : 'card__meta--warn')}>
+              {s.llm?.ready ? 'all three roles configured' : (s.llm?.summary || 'not configured')}
+            </span>
           </div>
-        </div>
-
-        <div className="card">
-          <div className="card__head"><span className="card__title">Provider keys</span><span className="card__meta">write-only &middot; never returned</span></div>
           <div className="card__body">
-            {PROVIDERS.map(([p, label]) => (
-              <div key={p} className="field">
-                <label className="field__label">{label} <span className={'key-status ' + (pk[p] === 'set' ? 'ok' : 'unset')}>{pk[p] === 'set' ? 'set' : 'unset'}</span></label>
-                <div className="key-row">
-                  <input className="input" type="password" placeholder={pk[p] === 'set' ? '•••••••• (leave blank to keep)' : 'paste key to set'} value={keyInput[p]} onChange={(e) => setKeyInput((k) => ({ ...k, [p]: e.target.value }))} />
-                </div>
-              </div>
-            ))}
+            {/* Same component as the first-run screen. Two copies of this form
+                would drift, and the one that drifted would be the one an
+                operator used to fix a broken install. */}
+            <ModelRouter />
           </div>
         </div>
 

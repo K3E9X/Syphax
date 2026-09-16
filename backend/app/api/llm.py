@@ -1,5 +1,7 @@
 """LLM copilot endpoints:
 
+  GET  /api/llm/providers                 - the provider catalog the UI offers
+  GET  /api/llm/readiness                 - do all three roles resolve to a model?
   POST /api/llm/flows/{flow_id}/suggest   - analyse one captured flow
   POST /api/llm/jobs/{job_id}/explain     - explain scan findings
   POST /api/llm/report                    - generate a markdown pentest report
@@ -20,6 +22,30 @@ router = APIRouter(prefix="/api/llm", tags=["llm"])
 
 _flows = FlowRepository()
 _jobs = JobRepository()
+
+
+@router.get("/providers")
+async def providers() -> dict:
+    """What the Settings page and the setup wizard offer.
+
+    Served rather than hardcoded in the frontend so the two cannot drift, and so
+    the base URL a role gets is the same string the backend matches its stored
+    key against.
+    """
+    from app.llm import providers as catalog
+    return {
+        "items": catalog.to_public(),
+        "roles": [{"role": r, "note": catalog.ROLE_NOTES[r],
+                   "default_provider": catalog.DEFAULT_ASSIGNMENT.get(r, "")}
+                  for r in catalog.ROLES],
+    }
+
+
+@router.get("/readiness")
+async def readiness() -> dict:
+    """Whether this install can actually think, and what is missing if not."""
+    from app import settings_store
+    return (await settings_store.llm_readiness()).to_public()
 
 
 def _require_llm() -> None:
