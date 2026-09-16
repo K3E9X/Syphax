@@ -11,7 +11,7 @@ import { api } from './lib/api.js';
 // own chunk so the first paint does not carry all eleven of them. On a local
 // install this matters little; it keeps the entry chunk from growing with each
 // page added, which is the part that compounds.
-const Recon = React.lazy(() => import('./pages/Recon.jsx'));
+const PreRecon = React.lazy(() => import('./pages/PreRecon.jsx'));
 const Engagements = React.lazy(() => import('./pages/Engagements.jsx'));
 const LiveView = React.lazy(() => import('./pages/LiveView.jsx'));
 const Proxy = React.lazy(() => import('./pages/Proxy.jsx'));
@@ -61,7 +61,7 @@ ReactDOM.createRoot(document.getElementById('root')).render(
           <Routes>
         <Route path="/" element={<App />}>
           <Route index element={<Home />} />
-          <Route path="recon" element={<Recon />} />
+          <Route path="pre-recon" element={<PreRecon />} />
           <Route path="engagements" element={<Engagements />} />
           <Route path="engagements/:id/live" element={<LiveView />} />
           <Route path="live" element={<LiveRedirect />} />

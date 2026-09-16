@@ -91,7 +91,7 @@ describe('the gate in front of the app', () => {
     await waitFor(() => expect(screen.getByText('engagement data')).toBeTruthy());
   });
 
-  it('lets Recon through with no model, because Recon does not use one', async () => {
+  it('lets Pre-recon through with no model, because it does not use one', async () => {
     /* The page reads DNS, the registries, a certificate and one HTTP response,
        and every conclusion it draws is a pure function over those. Holding it
        behind a model would be the tool refusing to do something it is
@@ -99,7 +99,7 @@ describe('the gate in front of the app', () => {
        reaches for before they go and buy an API key. */
     vi.spyOn(api.llm, 'readiness').mockResolvedValue({ ready: false, missing: ['planner'] });
     vi.spyOn(api.settings, 'get').mockResolvedValue(UNCONFIGURED);
-    await mount(shellAt('/recon'));
+    await mount(shellAt('/pre-recon'));
     await waitFor(() => expect(screen.getByText('engagement data')).toBeTruthy());
     expect(screen.queryByRole('heading', { name: /connect a model/i })).toBeNull();
   });
@@ -109,7 +109,7 @@ describe('the gate in front of the app', () => {
        and lands on a setup screen with no idea why. */
     vi.spyOn(api.llm, 'readiness').mockResolvedValue({ ready: false, missing: ['planner'] });
     vi.spyOn(api.settings, 'get').mockResolvedValue(UNCONFIGURED);
-    await mount(shellAt('/recon'));
+    await mount(shellAt('/pre-recon'));
     await waitFor(() => screen.getByText('engagement data'));
     const banner = screen.getByRole('status');
     expect(banner.textContent).toMatch(/no model is connected/i);
@@ -129,7 +129,7 @@ describe('the gate in front of the app', () => {
 
   it('shows no such banner once a model is connected', async () => {
     vi.spyOn(api.llm, 'readiness').mockResolvedValue({ ready: true, missing: [] });
-    await mount(shellAt('/recon'));
+    await mount(shellAt('/pre-recon'));
     await waitFor(() => screen.getByText('engagement data'));
     expect(screen.queryByText(/no model is connected/i)).toBeNull();
   });

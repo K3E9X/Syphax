@@ -57,7 +57,7 @@ per-role **Test** button in Settings shows you exactly what it said.
 Keys are encrypted with `SYPHAX_SECRET_KEY` before they are written and are
 never returned to the browser — the UI can only ask whether one is stored.
 
-**Recon is the one exception, and it is not a loophole.** That page reads DNS,
+**Pre-recon is the one exception, and it is not a loophole.** That page reads DNS,
 the registries, a certificate and one HTTP response, and every conclusion it
 draws is a pure function over those — it never calls a model, so holding it
 behind one would be the tool refusing to do something it is perfectly capable
@@ -65,10 +65,24 @@ of. It stays reachable before a provider is configured, with a banner saying the
 rest is not. Everything else — engagements, runs, validation, reports — is
 blocked, and the API refuses a run with a 409 regardless of what the UI allows.
 
-## Recon, before the engagement
+## Pre-recon, before the engagement
 
-**Recon** sits between Home and Engagements because that is where the step
+**Pre-recon** sits between Home and Engagements because that is where the step
 belongs: you arrive with a URL on a scoping document and four questions.
+
+It is **not** the engagement's recon phase, and the distinction matters enough
+to put first:
+
+| | Pre-recon | The recon phase |
+| --- | --- | --- |
+| when | before any engagement exists | inside an authorized run |
+| authorized by | nothing — hence the budget below | the engagement's attestation |
+| touches the target | 4 paths, GET/HEAD, 6 requests | whatever the catalog calls for |
+| tools | none: DNS, RDAP, CT, one GET | subfinder, dnsx, httpx, gau, naabu, nmap |
+| result | a page you read | assets and fingerprints the planner acts on |
+
+The recon phase is where the real enumeration happens, it is unchanged, and it
+still runs where it always did — as the first phase of a run.
 
     where does this actually live      addresses, reverse DNS, the redirect chain
     whose network is that              ASN via Team Cymru, the netblock via RDAP
@@ -78,13 +92,13 @@ belongs: you arrive with a URL on a scoping document and four questions.
 Paste a hostname, a URL or an IP and press Run. It takes about a second without
 CT logs, a few with.
 
-### What it sends, and why that list is short
+### What pre-recon sends, and why that list is short
 
 An engagement is what authorizes testing: the operator attests, the scope gate
-enforces, the audit log records. Recon runs *before* one exists — it is how you
-decide whether to open one — so it has no scope to check against and cannot be
-given one. The line is therefore a list, not a judgement call
-(`backend/app/recon/budget.py`):
+enforces, the audit log records. Pre-recon runs *before* one exists — it is how
+you decide whether to open one — so it has no scope to check against and cannot
+be given one. The line is therefore a list, not a judgement call
+(`backend/app/prerecon/budget.py`):
 
 * **Asks public infrastructure about the target.** DNS, RDAP, Certificate
   Transparency. None of this reaches the target at all.
@@ -94,7 +108,8 @@ given one. The line is therefore a list, not a judgement call
 
 That is the whole list. No port scan, no directory or subdomain brute force, no
 vulnerability templates, no authentication attempts, GET and HEAD only, at most
-six requests. The UI shows the same list next to the button — served from the
+six requests — all of which the recon and mapping phases do properly, once an
+engagement authorizes them. The UI shows the same list next to the button — served from the
 backend, so the page cannot promise less than the backend enforces.
 
 Every run is written to the audit log with the operator's name on it. That
@@ -134,7 +149,8 @@ different facts and conflating them would quietly shrink the scope.
 ### Carrying it into an engagement
 
 **Create an engagement with this target** prefills the target URL and suggests a
-scope list built from the certificate's names and the CT names. They are
+scope list built from the certificate's names and the CT names. From there the
+engagement's own recon phase takes over with the real tools. They are
 suggestions. Keep only what you are authorized to test — the engagement form is
 where the attestation is, and it is still yours to make.
 
@@ -544,7 +560,7 @@ backend/         FastAPI app + arq worker (one image, two roles)
   app/
     api/          REST + WebSocket routers
     auth/         accounts, sessions, login throttle, the gate (pure policy)
-    recon/        pre-engagement passive recon; budget.py bounds what it sends
+    prerecon/     the passive look before an engagement; budget.py bounds it
     engagements/  authorization gate + scope + per-engagement purge
     methodology/  WSTG x ATT&CK test catalog
     orchestrator/ planner, executor, run loop, state, approvals

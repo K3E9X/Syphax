@@ -1,0 +1,77 @@
+/* Syphax — pre-recon (the look before an engagement; not the recon phase). Dense on purpose: the whole point is to read
+   eight sources at a glance without scrolling to compare them. */
+
+.pre-bar { display: flex; gap: 10px; align-items: center; margin-bottom: 12px; }
+.pre-bar__input { flex: 1; font-family: var(--font-mono); }
+.pre-bar__ct { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-secondary); white-space: nowrap; cursor: pointer; }
+
+.pre-scope { margin-bottom: 14px; }
+.pre-scope__toggle { background: none; border: none; padding: 0; cursor: pointer; font: var(--font-ui); font-size: 11px; color: var(--text-faint); letter-spacing: .03em; }
+.pre-scope__toggle:hover { color: var(--text-secondary); }
+.pre-scope__body { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 16px; margin-top: 10px; padding: 14px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); }
+.pre-scope__body strong { display: block; font-size: 10px; text-transform: uppercase; letter-spacing: .06em; color: var(--text-secondary); margin-bottom: 6px; }
+.pre-scope__body ul { margin: 0; padding-left: 16px; }
+.pre-scope__body li { font-size: 11px; line-height: 1.6; color: var(--text-faint); }
+.pre-scope__body li.mono, .pre-scope__body .mono { font-family: var(--font-mono); }
+
+.pre-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin: 4px 0 14px; }
+.pre-head__target { min-width: 0; }
+.pre-head__host { display: block; font-size: 17px; color: var(--text-primary); }
+.pre-head__meta { display: block; font-size: 11px; color: var(--text-faint); margin-top: 3px; overflow: hidden; text-overflow: ellipsis; }
+
+.pre-hl { padding: 9px 0 9px 11px; border-left: 2px solid var(--border-strong); margin-bottom: 8px; }
+.pre-hl:last-child { margin-bottom: 0; }
+.pre-hl--warn { border-left-color: var(--sev-high, #f59e0b); }
+.pre-hl--info { border-left-color: var(--border-strong); }
+.pre-hl__t { display: block; font-size: 13px; color: var(--text-primary); }
+.pre-hl__w { display: block; font-size: 11px; line-height: 1.55; color: var(--text-secondary); margin-top: 3px; }
+
+/* Key/value rows that wrap instead of overflowing — a TXT record or a SAN list
+   is long, and truncating it here would hide the interesting half. */
+.pre-row { display: grid; grid-template-columns: minmax(0, 150px) minmax(0, 1fr); gap: 12px; padding: 5px 0; border-bottom: 1px solid var(--border); }
+.pre-row:last-child { border-bottom: none; }
+.pre-row > * { min-width: 0; }
+.pre-row dt { font-size: 11px; color: var(--text-secondary); }
+.pre-row dd { margin: 0; font-size: 12px; color: var(--text-primary); overflow-wrap: anywhere; }
+
+.pre-names { list-style: none; margin: 8px 0; padding: 0; columns: 2; column-gap: 20px; }
+.pre-names li { font-size: 11px; color: var(--text-secondary); padding: 1px 0; break-inside: avoid; overflow-wrap: anywhere; }
+
+.pre-tech { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; }
+.pre-tech > * { min-width: 0; }
+.pre-tech__h { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--text-primary); padding-bottom: 7px; border-bottom: 1px solid var(--border); margin-bottom: 10px; }
+.pre-tech__h small { display: block; text-transform: none; letter-spacing: 0; color: var(--text-faint); font-size: 10px; margin-top: 2px; }
+.pre-tech__item { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px; padding: 5px 0; border-bottom: 1px solid var(--border); }
+.pre-tech__item:last-child { border-bottom: none; }
+.pre-tech__name { font-size: 12px; color: var(--text-primary); }
+.pre-tech__v { font-family: var(--font-mono); color: var(--text-secondary); }
+.pre-tech__c { font-family: var(--font-mono); font-size: 9px; text-transform: uppercase; letter-spacing: .05em; padding: 1px 5px; border-radius: 3px; border: 1px solid var(--border-strong); color: var(--text-faint); }
+.pre-tech__c--certain { color: var(--term-ok, #22c55e); border-color: rgba(34,197,94,.35); }
+.pre-tech__cat { font-size: 10px; color: var(--text-faint); }
+.pre-tech__note { flex-basis: 100%; font-size: 10px; line-height: 1.5; color: var(--text-faint); }
+
+.pre-hdr { display: grid; grid-template-columns: minmax(0, 190px) minmax(0, 1fr); gap: 12px; padding: 5px 0; border-bottom: 1px solid var(--border); }
+.pre-hdr:last-child { border-bottom: none; }
+.pre-hdr > * { min-width: 0; }
+.pre-hdr__n { font-size: 11px; color: var(--text-primary); overflow-wrap: anywhere; }
+.pre-hdr__v { font-size: 11px; color: var(--text-secondary); overflow-wrap: anywhere; }
+.pre-hdr__why { font-size: 11px; line-height: 1.5; color: var(--text-faint); }
+.pre-hdr--missing .pre-hdr__n { color: var(--text-secondary); }
+
+.pre-redirects { margin: 6px 0 0; padding-left: 20px; }
+.pre-redirects li { font-size: 11px; color: var(--text-secondary); padding: 2px 0; overflow-wrap: anywhere; }
+
+.pre-file { margin-bottom: 12px; }
+.pre-file:last-child { margin-bottom: 0; }
+.pre-file__h { display: flex; justify-content: space-between; gap: 10px; font-size: 11px; }
+.pre-file__s { font-family: var(--font-mono); font-size: 10px; color: var(--text-faint); }
+.pre-file__s.ok { color: var(--term-ok, #22c55e); }
+.pre-file__p { margin: 6px 0 0; padding: 8px 10px; max-height: 160px; overflow: auto; background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius-sm); font-family: var(--font-mono); font-size: 10px; line-height: 1.5; color: var(--text-secondary); white-space: pre-wrap; }
+
+.tbl td.ok { color: var(--term-ok, #22c55e); }
+.tbl td.bad { color: var(--sev-high, #f59e0b); }
+
+@media (max-width: 900px) {
+  .pre-tech { grid-template-columns: minmax(0, 1fr); }
+  .pre-names { columns: 1; }
+}

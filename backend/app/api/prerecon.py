@@ -1,9 +1,9 @@
-"""GET /api/recon/scope and POST /api/recon.
+"""GET /api/prerecon/scope and POST /api/prerecon.
 
-Recon runs before an engagement exists, so there is no scope gate to pass and
+Pre-recon runs before an engagement exists, so there is no scope gate to pass and
 none can be applied. Two things stand in its place:
 
-  * app/recon/budget.py bounds what can leave this machine, as a constant.
+  * app/prerecon/budget.py bounds what can leave this machine, as a constant.
   * every run is written to the audit log with the operator's name on it.
 
 That second one matters more than it looks. The audit log is the record of what
@@ -19,14 +19,14 @@ from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
 from app.audit import audit
-from app.recon import budget, run
-from app.recon.target import TargetError, parse
+from app.prerecon import budget, run
+from app.prerecon.target import TargetError, parse
 
-router = APIRouter(prefix="/api/recon", tags=["recon"])
-logger = logging.getLogger("syphax.api.recon")
+router = APIRouter(prefix="/api/prerecon", tags=["prerecon"])
+logger = logging.getLogger("syphax.api.prerecon")
 
 
-class ReconRequest(BaseModel):
+class PreReconRequest(BaseModel):
     target: str
     # crt.sh is the slowest source by a wide margin and the one most likely to
     # be rate-limiting. Skippable so a second look at the same target is fast.
@@ -35,7 +35,7 @@ class ReconRequest(BaseModel):
 
 @router.get("/scope")
 async def scope() -> Dict[str, Any]:
-    """Exactly what a recon run does, and does not do.
+    """Exactly what a pre-recon run does, and does not do.
 
     Served to the UI and shown next to the button. An operator pointing this at
     a host they do not own should be able to read what leaves this machine
@@ -45,7 +45,7 @@ async def scope() -> Dict[str, Any]:
 
 
 @router.post("")
-async def recon(body: ReconRequest, request: Request) -> Dict[str, Any]:
+async def prerecon(body: PreReconRequest, request: Request) -> Dict[str, Any]:
     try:
         target = parse(body.target)
     except TargetError as exc:
@@ -54,7 +54,7 @@ async def recon(body: ReconRequest, request: Request) -> Dict[str, Any]:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     user = getattr(request.state, "user", None)
-    await audit("recon.run", target=target.host, url=target.base_url,
+    await audit("prerecon.run", target=target.host, url=target.base_url,
                 by=(user or {}).get("username", "api-key"))
 
     try:
@@ -62,8 +62,8 @@ async def recon(body: ReconRequest, request: Request) -> Dict[str, Any]:
     except TargetError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:  # noqa: BLE001
-        logger.exception("recon failed for %s", target.host)
+        logger.exception("pre-recon failed for %s", target.host)
         raise HTTPException(
             status_code=500,
-            detail=f"recon failed: {exc.__class__.__name__}. The container log has "
+            detail=f"pre-recon failed: {exc.__class__.__name__}. The container log has "
                    f"the detail.") from exc

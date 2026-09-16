@@ -1,7 +1,7 @@
-"""Run every recon section, concurrently, and let each one fail on its own.
+"""Run every pre-recon section, concurrently, and let each one fail on its own.
 
 The shape of this function is the whole design: `asyncio.gather` with
-`return_exceptions=True`, and a per-section try. A recon view is made of eight
+`return_exceptions=True`, and a per-section try. A pre-recon view is made of eight
 independent lookups against eight independent services, and the one that is
 slow or down today has nothing to do with the seven that would have answered.
 Failing the whole view because crt.sh is rate-limiting would make the feature
@@ -17,10 +17,10 @@ import logging
 import time
 from typing import Any, Dict, List
 
-from app.recon import budget, ct_logs, dns_lookup, http_probe, net_info, summary, tech, tls_info
-from app.recon.target import Target, parse
+from app.prerecon import budget, ct_logs, dns_lookup, http_probe, net_info, summary, tech, tls_info
+from app.prerecon.target import Target, parse
 
-logger = logging.getLogger("syphax.recon")
+logger = logging.getLogger("syphax.prerecon")
 
 
 async def _safe(name: str, coro, errors: List[Dict[str, str]], default):

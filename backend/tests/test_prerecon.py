@@ -1,24 +1,29 @@
-"""Pre-engagement recon: the parsing, the budget, the fingerprinting, the synthesis.
+"""Pre-recon: the parsing, the budget, the fingerprinting, the synthesis.
 
-The budget tests are the ones that matter most. Recon runs *before* an
-engagement exists, which means there is no authorized scope to check against
-and none can be applied - so what reaches the target is bounded by a constant
-instead. A change that grows that constant should have to argue with a test.
+This is the look taken *before* an engagement exists - not the engagement's
+recon phase, which drives subfinder, dnsx, httpx, gau, naabu and nmap and is a
+different thing entirely.
+
+The budget tests are the ones that matter most. Pre-recon runs before any
+engagement, which means there is no authorized scope to check against and none
+can be applied - so what reaches the target is bounded by a constant instead. A
+change that grows that constant should have to argue with a test.
 """
 from __future__ import annotations
 
 import pytest
 
-from app.recon import budget, ct_logs, http_probe, net_info, summary, tech
-from app.recon.target import TargetError, parse
+from app.prerecon import budget, ct_logs, http_probe, net_info, summary, tech
+from app.prerecon.target import TargetError, parse
 
 
 # ---- the budget: the whole authorization story ------------------------------
 
-def test_recon_touches_four_paths_and_no_others():
+def test_pre_recon_touches_four_paths_and_no_others():
     """Each one is either the page a browser would load, or a file the web has
-    agreed is public. Anything else is enumeration, which belongs to an
-    engagement - the thing that carries the authorization to do it."""
+    agreed is public. Anything else is enumeration, which belongs to the
+    engagement's recon and mapping phases - they carry the authorization to do
+    it, and the tools to do it properly."""
     assert set(budget.PROBE_PATHS) == {
         "/", "/robots.txt", "/sitemap.xml", "/.well-known/security.txt"}
 
@@ -28,7 +33,7 @@ def test_nothing_else_is_requestable():
         assert not budget.path_allowed(path)
 
 
-def test_recon_never_changes_anything_it_looks_at():
+def test_pre_recon_never_changes_anything_it_looks_at():
     assert budget.ALLOWED_METHODS == {"GET", "HEAD"}
     for method in ("POST", "PUT", "PATCH", "DELETE", "TRACE", "OPTIONS"):
         assert not budget.method_allowed(method)
@@ -344,11 +349,41 @@ def test_a_connection_that_never_answered_is_not_reported_as_six_missing_headers
     """Reviewing headers on a response that does not exist reports every
     security header as absent - which reads as a finding about the target when
     it is a finding about the connection."""
-    from app.recon.http_probe import Probe
-    from app.recon.run import _from_http
+    from app.prerecon.http_probe import Probe
+    from app.prerecon.run import _from_http
 
     out = _from_http(Probe(requests_made=1, root=None, error="connection timed out"))
     assert out["headers"] == {}
     assert out["technologies"] == {}
     assert out["http"]["error"] == "connection timed out"
     assert summary.counts({**_report(), **out})["missing_headers"] == 0
+
+
+def test_pre_recon_is_not_the_engagements_recon_phase():
+    """Two different things with one word between them.
+
+    Pre-recon reads DNS, the registries and one HTTP response before any
+    engagement exists. The engagement's recon phase runs actual tools under an
+    attestation. This pins that pre-recon never reaches for one of them - if it
+    ever did, it would be running a scanner against a host nobody authorized.
+    """
+    import inspect
+    import pathlib
+
+    from app import prerecon
+    from app.methodology.catalog import CATALOG, PHASE_RECON
+
+    phase_tools = {c.tool for c in CATALOG if c.phase == PHASE_RECON}
+    assert phase_tools, "the recon phase should still have tools"
+
+    package = pathlib.Path(inspect.getfile(prerecon)).parent
+    source = "\n".join(p.read_text() for p in package.glob("*.py"))
+    for tool in phase_tools | {"nuclei", "ffuf", "sqlmap", "katana", "dalfox"}:
+        assert f"get_wrapper(\"{tool}\")" not in source
+        assert f"submit(\"{tool}\"" not in source
+    # It does import app.scans.identity - that is a header set, not a tool, and
+    # sharing it is why pre-recon presents the same way a scan would. What it
+    # must never touch is the runner or a wrapper.
+    for forbidden in ("app.scans.runner", "app.scans.wrappers", "get_runner"):
+        assert forbidden not in source, \
+            f"pre-recon reaches {forbidden}; that path needs an engagement"

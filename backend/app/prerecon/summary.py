@@ -1,6 +1,6 @@
 """What the operator should read first.
 
-A recon view that returns eight panels of raw data makes the operator do the
+A pre-recon view that returns eight panels of raw data makes the operator do the
 synthesis, and the synthesis is the part that decides whether an engagement is
 worth opening. These are pure functions over the collected sections, so the
 same conclusions appear in the UI and could appear in a scoping note without a

@@ -24,17 +24,17 @@ const LlmSetup = React.lazy(() => import('../pages/LlmSetup.jsx'));
  * Routes that work without a model, and are therefore not held behind the
  * model gate.
  *
- * Recon is the whole list, and the reason is that it genuinely does not use
- * one: it reads DNS, the registries, a certificate and one HTTP response, and
- * every conclusion it draws is a pure function over those. Blocking it would
- * be the tool refusing to do something it is perfectly capable of, to enforce
- * a requirement that does not apply - and it is the one page a person
+ * Pre-recon is the whole list, and the reason is that it genuinely does not
+ * use one: it reads DNS, the registries, a certificate and one HTTP response,
+ * and every conclusion it draws is a pure function over those. Blocking it
+ * would be the tool refusing to do something it is perfectly capable of, to
+ * enforce a requirement that does not apply - and it is the one page a person
  * evaluating this would reach for before they go and buy an API key.
  *
  * Adding a route here is a claim that it needs no model. Check that it is true
  * before you make it: the failure mode is a page that silently does less.
  */
-const WORKS_WITHOUT_A_MODEL = ['/recon'];
+const WORKS_WITHOUT_A_MODEL = ['/pre-recon'];
 
 function needsModel(pathname) {
   const path = '/' + (pathname || '').replace(/^\/+|\/+$/g, '');

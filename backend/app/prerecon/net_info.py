@@ -24,9 +24,9 @@ import ipaddress
 import logging
 from typing import Any, Dict, List, Optional
 
-from app.recon.budget import CONNECT_TIMEOUT, READ_TIMEOUT
+from app.prerecon.budget import CONNECT_TIMEOUT, READ_TIMEOUT
 
-logger = logging.getLogger("syphax.recon.net")
+logger = logging.getLogger("syphax.prerecon.net")
 
 RDAP_BASE = "https://rdap.org"
 CYMRU_V4 = "origin.asn.cymru.com"
@@ -61,7 +61,7 @@ async def asn_for(address: str) -> Dict[str, Any]:
     name = _cymru_name(address)
     if not name:
         return {}
-    from app.recon.dns_lookup import _query  # noqa: PLC0415
+    from app.prerecon.dns_lookup import _query  # noqa: PLC0415
 
     answers = await _query(name, "TXT")
     if not answers:
@@ -85,7 +85,7 @@ async def asn_for(address: str) -> Dict[str, Any]:
 
 
 async def _as_name(asn: str) -> str:
-    from app.recon.dns_lookup import _query  # noqa: PLC0415
+    from app.prerecon.dns_lookup import _query  # noqa: PLC0415
     answers = await _query(f"AS{asn}.{CYMRU_AS}", "TXT")
     if not answers:
         return ""

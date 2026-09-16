@@ -46,9 +46,9 @@ const BLANK = {
 
 export default function Engagements() {
   const nav = useNavigate();
-  // Recon hands the target over in router state rather than a query string:
-  // the scope list it suggests can be two hundred hostnames, and a URL is the
-  // wrong place for them.
+  // Pre-recon hands the target over in router state rather than a query
+  // string: the scope list it suggests can be two hundred hostnames, and a URL
+  // is the wrong place for them.
   const handoff = useLocation().state || {};
   const [form, setForm] = useState(
     handoff.target_url
@@ -156,9 +156,9 @@ export default function Engagements() {
               <div className="field">
                 <label className="field__label">In-scope hosts <span style={{ textTransform: 'none', color: 'var(--text-faint)', fontWeight: 400 }}>optional</span></label>
                 <input className="input" placeholder="api.example.com, .example.com" value={form.scope_hosts} onChange={(e) => set({ scope_hosts: e.target.value })} />
-                {handoff.from_recon && (
+                {handoff.from_prerecon && (
                   <span className="field__hint">
-                    Prefilled from recon on {handoff.from_recon}: names found on the
+                    Prefilled from pre-recon on {handoff.from_prerecon}: names found on the
                     certificate and in Certificate Transparency. These are
                     suggestions — keep only what you are authorized to test.
                   </span>

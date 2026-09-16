@@ -8,8 +8,10 @@ import logoMark from '../assets/logo-mark.svg';
 const LINKS = [
   { label: 'Home', to: '/' },
   // Before Engagements on purpose: it is the step before one, not a tool you
-  // reach for afterwards.
-  { label: 'Recon', to: '/recon' },
+  // reach for afterwards. "Pre-recon" and not "Recon": the engagement's recon
+  // PHASE is a different thing that runs real tools, and one word between them
+  // is how an operator ends up looking for subfinder output on this page.
+  { label: 'Pre-recon', to: '/pre-recon' },
   { label: 'Engagements', to: '/engagements' },
   { label: 'Live', to: '/live' },         // resolves to the most-recent engagement
   { label: 'Scans', to: '/scans' },

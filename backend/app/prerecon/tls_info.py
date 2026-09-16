@@ -5,7 +5,7 @@ operator may not have on their scoping document, its issuer says who the
 organisation buys from, and its expiry is a finding in its own right often
 enough to be worth the two seconds.
 
-The handshake is deliberately permissive - verification off - because a recon
+The handshake is deliberately permissive - verification off - because a pre-recon
 view that refuses to show you an expired or self-signed certificate is refusing
 to show you the interesting case. Nothing is trusted as a result: the connection
 is used to read the certificate and then dropped, no data is sent, and every
@@ -20,9 +20,9 @@ import logging
 import ssl
 from typing import Any, Dict, List, Optional
 
-from app.recon.budget import CONNECT_TIMEOUT
+from app.prerecon.budget import CONNECT_TIMEOUT
 
-logger = logging.getLogger("syphax.recon.tls")
+logger = logging.getLogger("syphax.prerecon.tls")
 
 # Signature algorithms nobody should still be issuing.
 WEAK_SIGNATURES = ("md5", "sha1")

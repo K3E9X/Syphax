@@ -107,14 +107,18 @@ The providers offered: **Z.ai (GLM)**, **Moonshot (Kimi)**, **DeepSeek**,
 provider for all three roles is the default; splitting them (a strong model on
 the planner, a cheap fast one on the executor) is a checkbox.
 
-### Recon first
+### Pre-recon first
 
-**Recon** sits between Home and Engagements. Paste a hostname, URL or IP and it
-answers the four questions worth asking before you open an engagement: where it
-actually lives, whose network that is (ASN and netblock — an address belonging
-to a hosting provider is not one your client can authorize you to attack), what
-it is built out of, split into frontend / backend / infrastructure, and what
-else carries the same name.
+**Pre-recon** sits between Home and Engagements. Paste a hostname, URL or IP and
+it answers the four questions worth asking before you open an engagement: where
+it actually lives, whose network that is (ASN and netblock — an address
+belonging to a hosting provider is not one your client can authorize you to
+attack), what it is built out of, split into frontend / backend /
+infrastructure, and what else carries the same name.
+
+It is not the engagement's **recon phase** — that one runs inside an authorized
+run, drives subfinder, dnsx, httpx, gau, naabu and nmap, and is where the real
+enumeration happens.
 
 It is passive by construction: DNS, RDAP and Certificate Transparency ask public
 infrastructure *about* the target, and the only thing that reaches the target is
@@ -153,7 +157,7 @@ included) and wiping state: **[docs/OPERATING.md](docs/OPERATING.md)**.
               │
       API (FastAPI)                              :8000
        │         │            │             │
-   Recon     Engagements  Orchestrator   Proxy capture   :8080
+  Pre-recon  Engagements  Orchestrator   Proxy capture   :8080
   (passive)  + authz gate  (the brain)   (own image: mitmproxy → Postgres)
                                 │
               Planner ──> Executor ──> Validator
@@ -197,10 +201,11 @@ after a human has read them.
   scope covers the host. Enforced in `Runner.submit()`, the single chokepoint
   every caller passes through, so the autonomous and manual paths are covered
   by the same check.
-- **Recon is outside that gate, and therefore bounded by a list.** It runs
+- **Pre-recon is outside that gate, and therefore bounded by a list.** It runs
   before an engagement exists, so there is no scope to check against. What may
-  leave the machine is a constant in `app/recon/budget.py` — four paths, GET and
-  HEAD, six requests — not a judgement call, and every run is audited.
+  leave the machine is a constant in `app/prerecon/budget.py` — four paths, GET
+  and HEAD, six requests — not a judgement call, and every run is audited. The
+  engagement's recon phase is a different thing entirely and is unaffected.
 - **A model is required** — the planner decides the next move, the executor
   reads what the tools said, the validator confirms or kills each finding. A run
   with no provider configured is refused with a 409 that names the fix, rather

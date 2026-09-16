@@ -1,12 +1,14 @@
-"""What pre-engagement recon is allowed to do, as data.
+"""What pre-recon is allowed to do, as data.
 
 This module exists because of where the feature sits. Everywhere else in this
-tool, an *engagement* is what authorizes touching a host: the operator attests,
-the scope gate enforces, the audit log records. Recon runs BEFORE that exists -
-it is how you decide whether to open an engagement at all - so it has no scope
-to check against and cannot be given one.
+tool - including the engagement's own recon phase, which drives subfinder, dnsx,
+httpx, gau, naabu and nmap and is not affected by anything here - an
+*engagement* is what authorizes touching a host: the operator attests, the scope
+gate enforces, the audit log records. Pre-recon runs BEFORE that exists - it is
+how you decide whether to open an engagement at all - so it has no scope to
+check against and cannot be given one.
 
-The line drawn here is therefore not "be careful", it is a list. Recon may:
+The line drawn here is therefore not "be careful", it is a list. Pre-recon may:
 
   * ask public infrastructure ABOUT the target - DNS resolvers, RDAP registries,
     Certificate Transparency logs. None of this reaches the target at all.
@@ -17,8 +19,9 @@ The line drawn here is therefore not "be careful", it is a list. Recon may:
 
 That is the whole list, and it is enforced by PROBE_PATHS and MAX_TARGET_REQUESTS
 rather than by anyone remembering. A port scan, a directory brute force, a
-vulnerability template or a subdomain wordlist belongs to an engagement, which
-is the thing that carries the authorization to run it.
+vulnerability template or a subdomain wordlist belongs to the engagement's recon
+and mapping phases, which have the authorization to run them and the tools to do
+it properly.
 
 Keeping this as a constant means a test can assert that the set never grew, and
 that the growth is what someone has to justify - not the restraint.
@@ -27,7 +30,7 @@ from __future__ import annotations
 
 from typing import Dict, List, Tuple
 
-# Every path recon will ever request from the target. Adding to this list is a
+# Every path pre-recon will ever request from the target. Adding to this list is a
 # deliberate act with a security review attached; it is not a convenience.
 PROBE_PATHS: Tuple[str, ...] = (
     "/",
@@ -40,7 +43,7 @@ PROBE_PATHS: Tuple[str, ...] = (
 # well, so a future bug that loops cannot turn this view into a scanner.
 MAX_TARGET_REQUESTS = len(PROBE_PATHS) + 2
 
-# A browser gives up long before this. Recon that takes a minute is recon the
+# A browser gives up long before this. Pre-recon that takes a minute is one the
 # operator has already stopped reading.
 CONNECT_TIMEOUT = 5.0
 READ_TIMEOUT = 8.0
@@ -57,7 +60,7 @@ MAX_REDIRECTS = 3
 # <title> or a generator tag.
 MAX_BODY_BYTES = 512 * 1024
 
-# Methods. GET and HEAD only: recon must never change anything it looks at.
+# Methods. GET and HEAD only: pre-recon must never change anything it looks at.
 ALLOWED_METHODS = frozenset({"GET", "HEAD"})
 
 # What we ask third parties, rather than the target.

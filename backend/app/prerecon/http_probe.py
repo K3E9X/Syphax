@@ -1,7 +1,7 @@
 """One GET of the root, and the three files the web agrees are public.
 
 Everything the fingerprinter, the header review and the redirect trail need
-comes from here, and it is bounded by app/recon/budget.py rather than by
+comes from here, and it is bounded by app/prerecon/budget.py rather than by
 judgement: the paths are a constant, the count is capped at runtime, and the
 methods are GET and HEAD.
 
@@ -15,10 +15,10 @@ import logging
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
-from app.recon import budget
-from app.recon.target import Target
+from app.prerecon import budget
+from app.prerecon.target import Target
 
-logger = logging.getLogger("syphax.recon.http")
+logger = logging.getLogger("syphax.prerecon.http")
 
 # Security headers, and what their absence actually costs. Reported as facts
 # with consequences rather than as a grade: a missing CSP on a static brochure

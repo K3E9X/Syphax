@@ -4,13 +4,17 @@ import { api } from '../lib/api.js';
 import { Card, Empty, Metric, Notice } from '../components/ui.jsx';
 
 /**
- * The step before an engagement.
+ * Pre-recon: the look taken before an engagement exists.
  *
- * An operator arrives with a URL written on a scoping document and four
- * questions: where does this actually live, whose network is it on, what is it
- * built out of, and what else carries the same name. Answering them used to
- * mean opening an engagement - which is the thing that authorizes active
- * testing - just to find out whether one was worth opening.
+ * NOT the engagement's recon phase. That one runs inside an authorized
+ * engagement, drives subfinder, dnsx, httpx, gau, naabu and nmap through the
+ * queue, and feeds the orchestrator. It is unchanged and lives where it always
+ * did - in the run.
+ *
+ * This is what you do with a URL on a scoping document and nothing else: where
+ * does it live, whose network is that, what is it built out of, what else
+ * carries the same name. It exists so that opening an engagement is a decision
+ * rather than the only way to find out.
  *
  * Everything here is passive by construction, and the page says so out loud
  * next to the button rather than in a docstring nobody reads. The list comes
@@ -26,7 +30,7 @@ function Rows({ items }) {
   return (
     <dl className="kv">
       {present.map(([k, v]) => (
-        <div key={k} className="rec-row">
+        <div key={k} className="pre-row">
           <dt>{k}</dt>
           <dd className="mono">{Array.isArray(v) ? v.join(', ') : String(v)}</dd>
         </div>
@@ -41,7 +45,7 @@ function NameList({ names, empty, cap = 40 }) {
   const shown = all ? names : names.slice(0, cap);
   return (
     <>
-      <ul className="rec-names">
+      <ul className="pre-names">
         {shown.map((n) => <li key={n} className="mono">{n}</li>)}
       </ul>
       {names.length > cap && (
@@ -58,12 +62,12 @@ function ScopeNotice({ scope }) {
   const [open, setOpen] = useState(false);
   if (!scope) return null;
   return (
-    <div className="rec-scope">
-      <button type="button" className="rec-scope__toggle" onClick={() => setOpen((o) => !o)}>
+    <div className="pre-scope">
+      <button type="button" className="pre-scope__toggle" onClick={() => setOpen((o) => !o)}>
         {open ? '▾' : '▸'} Passive only — what this sends, exactly
       </button>
       {open && (
-        <div className="rec-scope__body">
+        <div className="pre-scope__body">
           <div>
             <strong>Reaches the target</strong>
             <ul>{scope.touches_target.map((x) => <li key={x} className="mono">{x}</li>)}</ul>
@@ -88,24 +92,24 @@ function ScopeNotice({ scope }) {
 
 function TechColumn({ title, note, items }) {
   return (
-    <div className="rec-tech__col">
-      <div className="rec-tech__h">{title}<small>{note}</small></div>
+    <div className="pre-tech__col">
+      <div className="pre-tech__h">{title}<small>{note}</small></div>
       {!items?.length && <Empty>Nothing identified.</Empty>}
       {items?.map((t) => (
-        <div key={t.name + t.evidence} className="rec-tech__item" title={t.evidence}>
-          <span className="rec-tech__name">
-            {t.name}{t.version ? <span className="rec-tech__v"> {t.version}</span> : null}
+        <div key={t.name + t.evidence} className="pre-tech__item" title={t.evidence}>
+          <span className="pre-tech__name">
+            {t.name}{t.version ? <span className="pre-tech__v"> {t.version}</span> : null}
           </span>
-          <span className={'rec-tech__c rec-tech__c--' + t.confidence}>{t.confidence}</span>
-          <span className="rec-tech__cat">{t.category}</span>
-          {t.note && <span className="rec-tech__note">{t.note}</span>}
+          <span className={'pre-tech__c pre-tech__c--' + t.confidence}>{t.confidence}</span>
+          <span className="pre-tech__cat">{t.category}</span>
+          {t.note && <span className="pre-tech__note">{t.note}</span>}
         </div>
       ))}
     </div>
   );
 }
 
-export default function Recon() {
+export default function PreRecon() {
   const nav = useNavigate();
   const [target, setTarget] = useState('');
   const [includeCt, setIncludeCt] = useState(true);
@@ -118,7 +122,7 @@ export default function Recon() {
     // A failure here costs the disclosure panel and nothing else, so it does
     // not get an error surface of its own - but it must not be swallowed
     // either, or the panel silently disappears.
-    api.recon.scope().then(setScope).catch((e) => setError((prev) => prev || e.message));
+    api.prerecon.scope().then(setScope).catch((e) => setError((prev) => prev || e.message));
   }, []);
 
   const run = useCallback(async (e) => {
@@ -127,7 +131,7 @@ export default function Recon() {
     setBusy(true);
     setError('');
     try {
-      setReport(await api.recon.run(target.trim(), includeCt));
+      setReport(await api.prerecon.run(target.trim(), includeCt));
     } catch (err) {
       setError(err.message);
       setReport(null);
@@ -143,7 +147,7 @@ export default function Recon() {
       state: {
         target_url: report.target.base_url,
         scope_hosts: (report.candidate_hosts || []).join(', '),
-        from_recon: report.target.host,
+        from_prerecon: report.target.host,
       },
     });
   }
@@ -164,9 +168,9 @@ export default function Recon() {
 
   return (
     <div className="page">
-      <form className="rec-bar" onSubmit={run}>
+      <form className="pre-bar" onSubmit={run}>
         <input
-          className="input rec-bar__input"
+          className="input pre-bar__input"
           placeholder="example.com, https://app.example.com:8443, or 1.2.3.4"
           value={target}
           onChange={(e) => setTarget(e.target.value)}
@@ -174,13 +178,13 @@ export default function Recon() {
           spellCheck="false"
           aria-label="Target"
         />
-        <label className="rec-bar__ct" title="Certificate Transparency: the slowest source, and the one most likely to be rate-limiting">
+        <label className="pre-bar__ct" title="Certificate Transparency: the slowest source, and the one most likely to be rate-limiting">
           <input type="checkbox" checked={includeCt}
                  onChange={(e) => setIncludeCt(e.target.checked)} />
           <span>CT logs</span>
         </label>
         <button className="btn btn--solid" type="submit" disabled={!target.trim() || busy}>
-          {busy ? 'Looking…' : 'Run recon'}
+          {busy ? 'Looking…' : 'Run pre-recon'}
         </button>
       </form>
 
@@ -198,18 +202,22 @@ export default function Recon() {
             Nothing here is an authorized test. It asks public infrastructure about
             the target — DNS, the registries, Certificate Transparency — and makes
             the same handful of requests a browser makes when you type the URL.
-            Active testing needs an engagement, which is where the authorization
-            lives.
+          </p>
+          <p className="home-intro">
+            This is <em>not</em> the recon phase. That one runs inside an engagement,
+            drives subfinder, dnsx, httpx, gau, naabu and nmap, and is where the
+            real enumeration happens — it needs the attestation that an engagement
+            carries, and it is unchanged.
           </p>
         </Card>
       )}
 
       {report && (
         <>
-          <div className="rec-head">
-            <div className="rec-head__target">
-              <span className="rec-head__host mono">{t.host}</span>
-              <span className="rec-head__meta mono">
+          <div className="pre-head">
+            <div className="pre-head__target">
+              <span className="pre-head__host mono">{t.host}</span>
+              <span className="pre-head__meta mono">
                 {t.base_url}{t.registrable_domain && t.registrable_domain !== t.host
                   ? ` · ${t.registrable_domain}` : ''} · {report.took_ms} ms
               </span>
@@ -235,9 +243,9 @@ export default function Recon() {
           {!!report.highlights?.length && (
             <Card title="Read this first">
               {report.highlights.map((h, i) => (
-                <div key={i} className={'rec-hl rec-hl--' + LEVEL_KIND[h.level]}>
-                  <span className="rec-hl__t">{h.text}</span>
-                  {h.why && <span className="rec-hl__w">{h.why}</span>}
+                <div key={i} className={'pre-hl pre-hl--' + LEVEL_KIND[h.level]}>
+                  <span className="pre-hl__t">{h.text}</span>
+                  {h.why && <span className="pre-hl__w">{h.why}</span>}
                 </div>
               ))}
             </Card>
@@ -318,7 +326,7 @@ export default function Recon() {
 
             <Card className="set-full" title="Technology"
                   meta="three layers, because they answer three different questions">
-              <div className="rec-tech">
+              <div className="pre-tech">
                 <TechColumn title="Frontend" note="runs in the browser"
                             items={tech.frontend} />
                 <TechColumn title="Backend" note="runs on the server"
@@ -341,7 +349,7 @@ export default function Recon() {
               {!!http.redirects?.length && (
                 <>
                   <div className="io-label">Redirect chain</div>
-                  <ol className="rec-redirects">
+                  <ol className="pre-redirects">
                     {http.redirects.map((r, i) => (
                       <li key={i} className="mono">{r.status} → {r.to}</li>
                     ))}
@@ -360,9 +368,9 @@ export default function Recon() {
                 <>
                   <div className="io-label">Present</div>
                   {headers.present.map((h) => (
-                    <div key={h.name} className="rec-hdr">
-                      <span className="rec-hdr__n mono">{h.name}</span>
-                      <span className="rec-hdr__v mono">{h.value}</span>
+                    <div key={h.name} className="pre-hdr">
+                      <span className="pre-hdr__n mono">{h.name}</span>
+                      <span className="pre-hdr__v mono">{h.value}</span>
                     </div>
                   ))}
                 </>
@@ -371,9 +379,9 @@ export default function Recon() {
                 <>
                   <div className="io-label">Missing, and what that costs</div>
                   {headers.missing.map((h) => (
-                    <div key={h.name} className="rec-hdr rec-hdr--missing">
-                      <span className="rec-hdr__n mono">{h.name}</span>
-                      <span className="rec-hdr__why">{h.consequence}</span>
+                    <div key={h.name} className="pre-hdr pre-hdr--missing">
+                      <span className="pre-hdr__n mono">{h.name}</span>
+                      <span className="pre-hdr__why">{h.consequence}</span>
                     </div>
                   ))}
                 </>
@@ -382,9 +390,9 @@ export default function Recon() {
                 <>
                   <div className="io-label">Disclosing a version</div>
                   {headers.disclosing.map((h) => (
-                    <div key={h.name} className="rec-hdr">
-                      <span className="rec-hdr__n mono">{h.name}</span>
-                      <span className="rec-hdr__v mono">{h.value}</span>
+                    <div key={h.name} className="pre-hdr">
+                      <span className="pre-hdr__n mono">{h.name}</span>
+                      <span className="pre-hdr__v mono">{h.value}</span>
                     </div>
                   ))}
                 </>
@@ -413,14 +421,14 @@ export default function Recon() {
 
             <Card title="Public files" meta="robots, sitemap, security.txt">
               {Object.entries(files).map(([path, info]) => (
-                <div key={path} className="rec-file">
-                  <div className="rec-file__h">
+                <div key={path} className="pre-file">
+                  <div className="pre-file__h">
                     <span className="mono">{path}</span>
-                    <span className={'rec-file__s ' + (info.present ? 'ok' : 'unset')}>
+                    <span className={'pre-file__s ' + (info.present ? 'ok' : 'unset')}>
                       {info.error || (info.present ? `${info.bytes} bytes` : `${info.status}`)}
                     </span>
                   </div>
-                  {info.present && <pre className="rec-file__p">{info.preview}</pre>}
+                  {info.present && <pre className="pre-file__p">{info.preview}</pre>}
                 </div>
               ))}
               {!Object.keys(files).length && <Empty>Not fetched.</Empty>}

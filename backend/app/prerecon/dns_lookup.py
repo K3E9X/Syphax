@@ -24,9 +24,9 @@ import asyncio
 import logging
 from typing import Any, Dict, List
 
-from app.recon.budget import DNS_TIMEOUT
+from app.prerecon.budget import DNS_TIMEOUT
 
-logger = logging.getLogger("syphax.recon.dns")
+logger = logging.getLogger("syphax.prerecon.dns")
 
 RECORD_TYPES = ("A", "AAAA", "CNAME", "NS", "MX", "TXT", "SOA", "CAA")
 

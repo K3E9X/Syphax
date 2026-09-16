@@ -39,7 +39,7 @@ export default function LlmSetup({ onReady }) {
         <ModelRouter compact onSaved={onReady} />
 
         <p className="auth__foot">
-          Not ready to pick one yet? <Link to="/recon">Recon</Link> works without
+          Not ready to pick one yet? <Link to="/pre-recon">Pre-recon</Link> works without
           a model — it reads DNS, the registries, the certificate and one HTTP
           response, and none of that needs one. Everything else does.
         </p>

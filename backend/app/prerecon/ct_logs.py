@@ -18,7 +18,7 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict, List
 
-logger = logging.getLogger("syphax.recon.ct")
+logger = logging.getLogger("syphax.prerecon.ct")
 
 CRTSH = "https://crt.sh/"
 # Short on purpose. crt.sh can take 30s on a large domain, and an operator

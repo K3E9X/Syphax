@@ -42,7 +42,7 @@ from app.api.network import router as network_router
 from app.api.poc import router as poc_router
 from app.api.orchestrator import router as orchestrator_router
 from app.api.proxy import router as proxy_router
-from app.api.recon import router as recon_router
+from app.api.prerecon import router as prerecon_router
 from app.api.reports import router as reports_router
 from app.api.sandbox import router as sandbox_router
 from app.api.scans import router as scans_router
@@ -203,7 +203,7 @@ async def llm_ping(role: str = "planner") -> dict:
 
 
 app.include_router(auth_router)
-app.include_router(recon_router)
+app.include_router(prerecon_router)
 app.include_router(engagements_router)
 app.include_router(orchestrator_router)
 app.include_router(proxy_router)
