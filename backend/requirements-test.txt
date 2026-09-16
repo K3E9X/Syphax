@@ -18,3 +18,6 @@ fastapi==0.141.1
 PyYAML==6.0.2
 pytest==9.0.3
 pytest-asyncio==1.4.0
+# Linting runs in the same job as the tests; see backend/ruff.toml for
+# which rules are on and why the noisy ones are not.
+ruff==0.16.8

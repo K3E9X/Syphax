@@ -592,11 +592,41 @@ deliberate survivor.
 
 ## Running the tests
 
-    cd backend  && pytest -q     # 1208 tests, no DB / network / LLM needed
-    cd frontend && npm test      # 67 tests (vitest + jsdom)
+    cd backend  && pytest -q && ruff check .    # 1416 tests, no DB / network / LLM
+    cd frontend && npm test && npm run lint     # 151 tests (vitest + jsdom)
 
-Both run in CI on every push, alongside the frontend build, `docker compose
-config` and a hadolint pass over the Dockerfiles.
+### What CI checks
+
+On every push:
+
+| Job | What it answers |
+| --- | --- |
+| Backend | Does it parse, lint clean, and pass 1416 unit tests? |
+| Frontend | Does it lint clean, pass 151 tests, and build? |
+| Compose + Dockerfile | Is the compose file valid, do all three Dockerfiles lint, do the four shell scripts pass shellcheck? |
+| Dependencies | Any known CVE in a pinned Python or npm package? |
+| Wrapped tools | Does every pinned tool download still exist, on both architectures? |
+
+Nightly, on `main` only:
+
+* the same suite against the **latest** release of every test dependency, so a
+  breaking upstream change is a warning before it is a broken pin;
+* the four images built for **amd64 and arm64** under QEMU — the only way to
+  catch a tool with no arm64 archive or a wheel with no aarch64 build;
+* every test module imported with the CI dependency set *alone*, which is how
+  a test that silently skipped in CI was found;
+* a **smoke test**: a fresh install, booted, exercised from outside. Nothing
+  is reachable before setup; setup creates the account and then refuses a
+  second call; the session works and a wrong password does not; a run is
+  refused while no model is configured; logout ends the session. Every one of
+  those is checked in isolation by a unit test and by nothing end to end.
+
+The linters are configured to catch bugs, not style — see `backend/ruff.toml`
+and `frontend/eslint.config.js`, both of which explain what is deliberately
+*off* and why. Their first run found eight defects, including an `except
+ScopeError:` whose name was imported in a different function (so an
+out-of-scope URL raised `NameError` instead of being skipped) and three places
+where a failed load rendered as an empty result.
 
 The frontend suite covers the shared data layer rather than the markup: that a
 slow response cannot overwrite a newer one, that an error reaches `error`

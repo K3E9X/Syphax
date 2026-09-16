@@ -40,6 +40,12 @@ jobs:
         run: pip install -r requirements-test.txt
       - name: Byte-compile
         run: python -m compileall -q app
+      # compileall proves the file parses. It says nothing about a name that
+      # does not exist until the line runs - which is how `except ScopeError:`
+      # sat in jwt_analysis.py with the import in a different function, and
+      # every out-of-scope URL raised NameError instead of being skipped.
+      - name: Lint (ruff)
+        run: ruff check .
       - name: Unit tests
         run: pytest -q
 
@@ -58,6 +64,11 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
       - name: Install dependencies
         run: npm ci --no-audit --no-fund
+      # `npm run build` is happy with a component that calls an undeclared
+      # setter; the page throws ReferenceError the moment it renders. Four
+      # pages shipped like that.
+      - name: Lint (eslint)
+        run: npm run lint
       - name: Unit tests
         run: npm test
       - name: Build
@@ -76,8 +87,91 @@ jobs:
           cp .env.example .env
           docker compose config --quiet
           echo "compose OK"
-      - name: Lint the Dockerfiles
+      # All three, not just the backend's. The sandbox runner's Dockerfile is
+      # the one that must stay minimal - every extra binary in that image is a
+      # binary a trojaned PoC gets to use - and it was never linted.
+      - name: Lint backend/Dockerfile
         uses: hadolint/hadolint-action@v3.1.0
         with:
           dockerfile: backend/Dockerfile
           failure-threshold: error
+      - name: Lint frontend/Dockerfile
+        uses: hadolint/hadolint-action@v3.1.0
+        with:
+          dockerfile: frontend/Dockerfile
+          failure-threshold: error
+      - name: Lint sandbox-runner/Dockerfile
+        uses: hadolint/hadolint-action@v3.1.0
+        with:
+          dockerfile: sandbox-runner/Dockerfile
+          failure-threshold: error
+      # install.sh generates the secrets and sandbox-runner/entrypoint.sh pins
+      # the egress policy before dropping privileges. Both are `set -euo
+      # pipefail`, where `[ test ] && { action; }` on a final line exits the
+      # script when the test is false - which install.sh did, silently, on
+      # every run without --bind.
+      - name: Lint the shell scripts
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck
+          shellcheck --severity=warning \
+            install.sh start.sh wipe.sh sandbox-runner/entrypoint.sh
+
+  deps:
+    name: Dependencies (audit + pins)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install pip-audit
+        run: python -m pip install --upgrade pip pip-audit
+
+      # A known-vulnerable dependency in a security tool is its own headline.
+      # Advisories appear without anyone touching this repo, so this also runs
+      # nightly; here it catches the one a pull request introduces.
+      - name: Audit the application dependencies
+        run: |
+          pip-audit --requirement backend/requirements.txt \
+                    --requirement backend/requirements-test.txt
+
+      # The proxy stack is reported, not blocked, and the distinction is
+      # deliberate. mitmproxy pins its own transitive versions (cryptography
+      # below 44.1, among others) and we cannot move them without moving
+      # mitmproxy. A finding here is a reason to check whether the addon is
+      # actually affected and to plan an upgrade - not a reason to make every
+      # unrelated pull request red until upstream ships.
+      - name: Audit the proxy dependencies (report only)
+        continue-on-error: true
+        run: pip-audit --requirement backend/requirements-proxy.txt
+
+      - name: Audit JavaScript dependencies
+        working-directory: frontend
+        run: |
+          npm ci --no-audit --no-fund
+          npm audit --audit-level=high
+
+      # The pins themselves - exact versions, no duplicates, production and CI
+      # agreeing - are asserted in backend/tests/test_tool_manifest.py, which
+      # runs in the backend job. This job is about advisories.
+
+  tools:
+    name: Wrapped tools (downloads still exist)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      # The image build takes ~20 minutes under QEMU and fails at whichever
+      # step 404s. This resolves the same URLs from the same ARG defaults and
+      # HEAD-checks them on both architectures in about three seconds, so a
+      # yanked release is a fast red instead of a slow one.
+      - name: Pre-flight every pinned download
+        run: python3 backend/scripts/check_download_urls.py

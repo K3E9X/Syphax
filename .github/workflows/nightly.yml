@@ -167,6 +167,119 @@ jobs:
           done
           exit $fail
 
+  smoke:
+    name: Stack boots and the gate holds
+    needs: guard
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      # Everything else in this workflow proves the pieces are individually
+      # sound. This one proves they add up to a running install - which is what
+      # an operator on a fresh VM actually finds out, and the one thing no unit
+      # test can tell us. amd64 only: this is about wiring, and the
+      # architecture question is answered by the `docker` job above.
+      - name: Prepare a fresh install, the way an operator would
+        run: |
+          ./install.sh --yes --skip-build
+          # The generated password has to survive into the containers, so the
+          # only thing this proves is that install.sh wrote a usable .env.
+          grep -q '^POSTGRES_PASSWORD=.\{16,\}' .env
+          grep -q '^SYPHAX_SECRET_KEY=.\{16,\}' .env
+
+      - name: Build the API image (amd64)
+        run: docker compose build backend
+
+      - name: Start postgres, redis and the API
+        run: |
+          docker compose up -d postgres redis backend
+          for i in $(seq 1 60); do
+            if curl -fsS http://127.0.0.1:8000/api/health >/dev/null 2>&1; then
+              echo "up after ${i}s"; exit 0
+            fi
+            sleep 1
+          done
+          echo "::error::the backend never answered /api/health"
+          docker compose logs backend
+          exit 1
+
+      # The gate, from the outside. Each assertion below is a property the unit
+      # tests check in isolation and nothing checks end to end.
+      - name: A fresh install exposes nothing but setup
+        run: |
+          set -eu
+          code=$(curl -s -o /tmp/body -w '%{http_code}' http://127.0.0.1:8000/api/engagements)
+          test "$code" = "401" || { echo "::error::/api/engagements answered $code, not 401"; cat /tmp/body; exit 1; }
+          grep -q '"setup_required":true' /tmp/body || { echo "::error::401 did not say setup is required"; cat /tmp/body; exit 1; }
+
+          # The login page has to be able to load, or there is no way in.
+          curl -fsS http://127.0.0.1:8000/api/auth/status | grep -q '"setup_required":true'
+
+      - name: Setup creates the account, and then closes
+        run: |
+          set -eu
+          curl -fsS -c /tmp/jar -X POST http://127.0.0.1:8000/api/auth/setup \
+            -H 'Content-Type: application/json' \
+            -d '{"username":"ci-operator","password":"a long enough passphrase"}' \
+            | grep -q '"username":"ci-operator"'
+
+          # A second call must be refused. An open setup route is a backdoor.
+          code=$(curl -s -o /dev/null -w '%{http_code}' -X POST http://127.0.0.1:8000/api/auth/setup \
+            -H 'Content-Type: application/json' \
+            -d '{"username":"attacker","password":"a long enough passphrase"}')
+          test "$code" = "409" || { echo "::error::setup reopened, answering $code"; exit 1; }
+
+      - name: The session works, and a wrong password does not
+        run: |
+          set -eu
+          # The cookie from setup is a working session.
+          curl -fsS -b /tmp/jar http://127.0.0.1:8000/api/engagements >/dev/null
+
+          # Without it, still 401 - but no longer "setup required".
+          code=$(curl -s -o /tmp/body -w '%{http_code}' http://127.0.0.1:8000/api/engagements)
+          test "$code" = "401"
+          grep -q '"setup_required":false' /tmp/body
+
+          code=$(curl -s -o /dev/null -w '%{http_code}' -X POST http://127.0.0.1:8000/api/auth/login \
+            -H 'Content-Type: application/json' \
+            -d '{"username":"ci-operator","password":"the wrong passphrase"}')
+          test "$code" = "401" || { echo "::error::a wrong password answered $code"; exit 1; }
+
+          curl -fsS -c /tmp/jar2 -X POST http://127.0.0.1:8000/api/auth/login \
+            -H 'Content-Type: application/json' \
+            -d '{"username":"ci-operator","password":"a long enough passphrase"}' >/dev/null
+          curl -fsS -b /tmp/jar2 http://127.0.0.1:8000/api/auth/me | grep -q '"username":"ci-operator"'
+
+      - name: A run is refused while no model is configured
+        run: |
+          set -eu
+          # example.com is IANA's reserved documentation domain. Nothing is
+          # scanned here - the run is refused before it starts, which is the
+          # assertion - but the target must still be a real, safe string.
+          eng=$(curl -fsS -b /tmp/jar2 -X POST http://127.0.0.1:8000/api/engagements \
+            -H 'Content-Type: application/json' \
+            -d '{"target_url":"https://example.com","title":"ci smoke","attest_authorized":true}' \
+            | python3 -c 'import json,sys; print(json.load(sys.stdin)["engagement"]["id"])')
+          code=$(curl -s -o /tmp/body -w '%{http_code}' -b /tmp/jar2 -X POST \
+            "http://127.0.0.1:8000/api/engagements/$eng/run")
+          test "$code" = "409" || { echo "::error::a run started with no model; answered $code"; cat /tmp/body; exit 1; }
+          grep -qi 'settings' /tmp/body || { echo "::error::the refusal does not name the fix"; cat /tmp/body; exit 1; }
+
+      - name: Logout ends the session
+        run: |
+          set -eu
+          curl -fsS -b /tmp/jar2 -c /tmp/jar2 -X POST http://127.0.0.1:8000/api/auth/logout >/dev/null
+          code=$(curl -s -o /dev/null -w '%{http_code}' -b /tmp/jar2 http://127.0.0.1:8000/api/auth/me)
+          test "$code" = "401" || { echo "::error::the session survived logout, answering $code"; exit 1; }
+
+      - name: Backend logs (always)
+        if: always()
+        run: docker compose logs --no-color backend | tail -100
+
+      - name: Tear down
+        if: always()
+        run: docker compose down -v
+
   ci-env-parity:
     name: CI env parity
     needs: guard
