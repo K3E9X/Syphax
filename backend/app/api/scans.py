@@ -38,6 +38,28 @@ def _host_of(target: str) -> str:
     return target.split("/", 1)[0].split(":", 1)[0].lower()
 
 
+@router.get("/identities")
+async def identities() -> dict:
+    """How the tools can present themselves on the wire.
+
+    Served rather than hardcoded in the frontend: a UI offering a browser the
+    backend does not know would silently fall back to rotating, and the
+    operator would have no way to tell.
+    """
+    from app.config import settings as _settings
+    from app.scans.identity import choices
+    return {
+        "items": choices(),
+        # What an engagement that expresses no preference will get.
+        "environment_default": (_settings.user_agent_mode or "rotate").strip().lower(),
+        "caveat": (
+            "This controls how the TOOLS identify themselves. It does not make a "
+            "scan invisible: the source IP, the request rate and the payloads are "
+            "in the target's logs regardless. Use the scope rate limit for that."
+        ),
+    }
+
+
 @router.get("/tools")
 async def list_tools() -> list:
     """Which wrappers exist and whether their binary is installed."""

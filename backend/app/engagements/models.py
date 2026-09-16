@@ -79,6 +79,14 @@ class Engagement:
     # Authenticated scanning: HTTP headers of the PRIMARY identity, injected
     # into every active scanner so it tests behind the login. Never returned.
     primary_auth: List[Dict[str, str]] = field(default_factory=list)
+    # How the tools present themselves on the wire for THIS engagement. Empty
+    # means "use the environment" (USER_AGENT_MODE), which is what every
+    # existing engagement has. See app/scans/identity.py for the choices; it is
+    # about tool fingerprinting and about matching what the client expects to
+    # see, not about evading anything - the source IP and the request rate are
+    # in their logs either way.
+    user_agent_mode: str = ""
+    user_agent: str = ""
 
     @property
     def grey_box(self) -> bool:
@@ -104,6 +112,8 @@ class Engagement:
         allow_active_exploit: bool = False,
         allow_sql_os_cmd: bool = False,
         allow_data_proof: bool = False,
+        user_agent_mode: str = "",
+        user_agent: str = "",
         secondary_auth: Optional[List[Dict[str, str]]] = None,
         primary_auth: Optional[List[Dict[str, str]]] = None,
     ) -> "Engagement":
@@ -137,6 +147,8 @@ class Engagement:
             allow_active_exploit=allow_active_exploit,
             allow_sql_os_cmd=allow_sql_os_cmd,
             allow_data_proof=allow_data_proof,
+            user_agent_mode=(user_agent_mode or "").strip().lower(),
+            user_agent=(user_agent or "").strip(),
             secondary_auth=list(secondary_auth or []),
             primary_auth=list(primary_auth or []),
         )

@@ -67,12 +67,29 @@ class CreateEngagementRequest(BaseModel):
     allow_sql_os_cmd: bool = False
     # Sub-flag: prove a data breach with a small bounded SQLi dump (<=3 rows).
     allow_data_proof: bool = False
+    # How the tools present themselves on the wire for this engagement.
+    # Empty = follow USER_AGENT_MODE from the environment. See
+    # GET /api/scans/identities for the list.
+    user_agent_mode: str = ""
+    user_agent: str = ""
 
 
 @router.post("", status_code=201)
 async def create_engagement(req: CreateEngagementRequest) -> dict:
     if not req.target_url:
         raise HTTPException(status_code=400, detail="target_url is required")
+    from app.scans.identity import MODE_CUSTOM, is_valid_choice
+    if not is_valid_choice(req.user_agent_mode):
+        raise HTTPException(
+            status_code=400,
+            detail=f"unknown user_agent_mode {req.user_agent_mode!r}. "
+                   f"See GET /api/scans/identities.")
+    if (req.user_agent_mode or "").strip().lower() == MODE_CUSTOM \
+            and not (req.user_agent or "").strip():
+        raise HTTPException(
+            status_code=400,
+            detail="user_agent_mode 'custom' needs a user_agent string. "
+                   "An empty one would strip the header the tool would have sent.")
     if not req.attest_authorized:
         raise HTTPException(
             status_code=400,
@@ -94,6 +111,8 @@ async def create_engagement(req: CreateEngagementRequest) -> dict:
         allow_data_proof=req.allow_data_proof,
         secondary_auth=_parse_headers_blob(req.secondary_auth_headers),
         primary_auth=_parse_headers_blob(req.auth_headers),
+        user_agent_mode=req.user_agent_mode,
+        user_agent=req.user_agent,
     )
     await _repo.create(e)
     await audit(

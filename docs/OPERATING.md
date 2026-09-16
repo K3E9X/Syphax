@@ -148,6 +148,50 @@ One thing it will not do: report six missing security headers when nothing
 answered at all. That reads as a finding about the target when it is a finding
 about the connection.
 
+## Scan identity
+
+The engagement form has a **Scan identity** field, chosen before the run:
+
+| Choice | What it is for |
+| --- | --- |
+| Follow the server default | `USER_AGENT_MODE` from `.env`. What every engagement created before this field existed does. |
+| A named browser | Pin one. Useful when the client's WAF is tuned for a particular browser, or when the report has to say exactly what was sent. |
+| Custom User-Agent | Your own string — a mobile app's client, a partner integration, an allowlist entry the client keeps. |
+| Each tool's own | Send nothing and let sqlmap look like `sqlmap`. |
+
+That last one is an honest option, not a lesser one. On an announced test the
+client's SOC often *wants* to see the tool in their logs, and pretending to be
+Chrome while hammering their login makes the report harder to defend rather
+than easier. Pair it with `PENTEST_ID`, which adds `X-Pentest-ID` to every
+request — that header is sent in every mode, including this one, because
+"is this authorised" is a different question from "which browser".
+
+### It is a profile, not a string
+
+Rotating only the User-Agent is itself a signature. Real Chrome sends
+`Sec-CH-UA` client hints, a specific `Accept` ordering and `Sec-Fetch-*`
+metadata; Firefox sends no client hints and a different `Accept`. A request
+claiming Firefox while sending Chrome's client hints stands out **more** than
+one with no User-Agent at all — naive filters look at the User-Agent, better
+ones look at whether the set is self-consistent.
+
+So each choice carries the whole header set, and a custom string gets the
+headers of the engine it claims: `Firefox/123` gets no client hints,
+`Chrome/131 ... Mobile` gets `Sec-CH-UA` with version 131 and
+`Sec-CH-UA-Mobile: ?1`.
+
+### What it does not do
+
+It does not make a scan invisible. The source IP is in their logs, the request
+rate and ordering are a far stronger signal than any header, and the payloads
+themselves are recorded. This defeats fingerprinting of *the tool*; it does
+nothing against rate-based or behavioural detection — use the scope rate limit
+for that.
+
+The choice is shown on the engagement's detail panel afterwards, because "why
+did their WAF block us" and "why does the client's log say Chrome" are both
+answered by that one line.
+
 ## Run an engagement
 
 1. **Engagements** -> enter a target you own, tick the authorization box,
@@ -448,7 +492,7 @@ A directory that was never produced yields zero findings, not an error.
 | ------------------------------ | -------------------------------------------------- |
 | `PLANNER/EXECUTOR/VALIDATOR_BASE_URL` `_API_KEY` `_MODEL` | Per-role LLM, for unattended provisioning. **Anything set in the UI wins**, and the UI is the normal path — it stores the key encrypted rather than in a file. Default `.env` puts the planner on Kimi K3 and the executor + validator on Z.ai GLM. |
 | `LLM_PRICING`                  | `model=IN/OUT` USD per 1M tokens. **Without it the dashboard shows real token counts against $0.00 spend** — every unlisted model costs 0. |
-| `USER_AGENT_MODE`              | `rotate` (default) impersonates a different real browser per job, headers included. `fixed` pins `USER_AGENT`. |
+| `USER_AGENT_MODE`              | The **default** for engagements that express no preference. `rotate` impersonates a different real browser per job, headers included; `fixed` pins `USER_AGENT`. Each engagement can override it — see **Scan identity** below. |
 | `REQUIRE_VPN` / `SCAN_PROXY` / `VPN_CONFIG_PATH` | Route scan traffic through a proxy or tunnel, and refuse to scan when the exit IP still matches your real one. |
 | `RESET_ON_START`               | Wipe scan artefacts on every boot (default `true`). See **Full wipe** below for what it does *not* cover. |
 | `OPENROUTER_API_KEY` / `_MODEL` / `_FALLBACK_MODELS` | **Optional** free fallback aggregator, used only for roles whose own key is blank. |

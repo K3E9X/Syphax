@@ -27,7 +27,8 @@ rate limit for that.
 from __future__ import annotations
 
 import random
-from typing import Dict, List
+import re
+from typing import Dict, List, Optional
 
 from app.config import settings
 
@@ -57,8 +58,11 @@ _FETCH_NAV = {
 
 
 def _chromium(ua: str, brand: str, version: str, platform: str,
-              mobile: str = "?0", lang: str = "en-US,en;q=0.9") -> Dict[str, object]:
+              mobile: str = "?0", lang: str = "en-US,en;q=0.9",
+              id: str = "", label: str = "") -> Dict[str, object]:
     return {
+        "id": id,
+        "label": label or f"{brand} {version} on {platform}",
         "ua": ua,
         "headers": {
             "Accept": _ACCEPT_CHROMIUM,
@@ -73,16 +77,22 @@ def _chromium(ua: str, brand: str, version: str, platform: str,
     }
 
 
-def _gecko(ua: str, lang: str = "en-US,en;q=0.5") -> Dict[str, object]:
+def _gecko(ua: str, lang: str = "en-US,en;q=0.5", id: str = "",
+           label: str = "") -> Dict[str, object]:
     return {
+        "id": id,
+        "label": label or "Firefox",
         "ua": ua,
         # No Sec-CH-UA: Firefox does not implement client hints.
         "headers": {"Accept": _ACCEPT_FIREFOX, "Accept-Language": lang, **_FETCH_NAV},
     }
 
 
-def _webkit(ua: str, lang: str = "en-US,en;q=0.9") -> Dict[str, object]:
+def _webkit(ua: str, lang: str = "en-US,en;q=0.9", id: str = "",
+            label: str = "") -> Dict[str, object]:
     return {
+        "id": id,
+        "label": label or "Safari",
         "ua": ua,
         "headers": {"Accept": _ACCEPT_SAFARI, "Accept-Language": lang, **_FETCH_NAV},
     }
@@ -94,44 +104,48 @@ BROWSER_PROFILES: List[Dict[str, object]] = [
     _chromium(
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) "
         "Chrome/126.0.0.0 Safari/537.36",
-        "Google Chrome", "126", "Windows",
+        "Google Chrome", "126", "Windows", id="chrome-126-windows",
     ),
     _chromium(
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) "
         "Chrome/125.0.0.0 Safari/537.36",
-        "Google Chrome", "125", "Windows",
+        "Google Chrome", "125", "Windows", id="chrome-125-windows",
     ),
     _chromium(
         "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) "
         "Chrome/126.0.0.0 Safari/537.36",
-        "Google Chrome", "126", "macOS",
+        "Google Chrome", "126", "macOS", id="chrome-126-macos",
     ),
     _chromium(
         "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) "
         "Chrome/126.0.0.0 Safari/537.36",
-        "Google Chrome", "126", "Linux",
+        "Google Chrome", "126", "Linux", id="chrome-126-linux",
     ),
     _chromium(
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) "
         "Chrome/126.0.0.0 Safari/537.36 Edg/126.0.0.0",
-        "Microsoft Edge", "126", "Windows",
+        "Microsoft Edge", "126", "Windows", id="edge-126-windows",
     ),
     _chromium(
         "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) "
         "Chrome/126.0.0.0 Mobile Safari/537.36",
-        "Google Chrome", "126", "Android", mobile="?1",
+        "Google Chrome", "126", "Android", mobile="?1", id="chrome-126-android",
     ),
     _gecko(
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:127.0) Gecko/20100101 Firefox/127.0"
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:127.0) Gecko/20100101 Firefox/127.0",
+        id="firefox-127-windows", label="Firefox 127 on Windows",
     ),
-    _gecko("Mozilla/5.0 (X11; Linux x86_64; rv:127.0) Gecko/20100101 Firefox/127.0"),
+    _gecko("Mozilla/5.0 (X11; Linux x86_64; rv:127.0) Gecko/20100101 Firefox/127.0",
+           id="firefox-127-linux", label="Firefox 127 on Linux"),
     _webkit(
         "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) "
-        "Version/17.5 Safari/605.1.15"
+        "Version/17.5 Safari/605.1.15",
+        id="safari-17-macos", label="Safari 17 on macOS",
     ),
     _webkit(
         "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 "
-        "(KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1"
+        "(KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1",
+        id="safari-17-ios", label="Safari 17 on iPhone",
     ),
 ]
 
@@ -142,29 +156,97 @@ _DASH_H = {"nuclei", "ffuf", "dalfox", "katana", "httpx"}
 _NO_HTTP = {"subfinder", "dnsx", "naabu", "gau", "nmap", "testssl"}
 
 
-def current_profile() -> Dict[str, object]:
-    """The browser profile to impersonate for the next job."""
-    mode = (settings.user_agent_mode or MODE_ROTATE).strip().lower()
-    if mode == MODE_ROTATE:
-        return random.choice(BROWSER_PROFILES)
+BY_ID: Dict[str, Dict[str, object]] = {str(p["id"]): p for p in BROWSER_PROFILES}
 
-    # Fixed mode: the operator pinned a User-Agent. Reuse the matching
-    # profile's headers when we recognise it, so the set stays coherent.
-    pinned = (settings.user_agent or "").strip()
+# Modes that are not a specific browser.
+#   rotate - a different real browser per job. The default, and the right
+#            answer when nobody has a reason to prefer another.
+#   tool   - send nothing, and let each binary use its own User-Agent. An
+#            honest option, not a lesser one: on an announced test the client's
+#            SOC often WANTS to see `sqlmap/1.8` in the logs, and pretending to
+#            be Chrome while hammering their login makes the report harder to
+#            defend, not easier.
+#   custom - the operator supplies the string. For matching a mobile app's own
+#            client, a partner integration, or an allowlist the client keeps.
+MODE_TOOL = "tool"
+MODE_CUSTOM = "custom"
+
+
+def profile_for_ua(ua: str) -> Dict[str, object]:
+    """Build a coherent profile around an arbitrary User-Agent string.
+
+    The headers matter as much as the string. A request claiming to be Firefox
+    while sending Sec-CH-UA client hints - which Firefox does not implement -
+    is more conspicuous than one with no User-Agent at all, so the engine is
+    inferred from the string and the header set matched to it.
+    """
+    pinned = (ua or "").strip()
     for profile in BROWSER_PROFILES:
         if profile["ua"] == pinned:
             return profile
-    if not pinned:
-        return BROWSER_PROFILES[0]
-    # Unknown custom UA: infer the engine from the string rather than pairing
-    # it with Chromium client hints it would never send.
     low = pinned.lower()
     if "firefox" in low:
-        return _gecko(pinned)
-    if "safari" in low and "chrome" not in low:
-        return _webkit(pinned)
-    return {"ua": pinned, "headers": {"Accept": _ACCEPT_CHROMIUM,
-                                      "Accept-Language": "en-US,en;q=0.9", **_FETCH_NAV}}
+        return _gecko(pinned, id=MODE_CUSTOM, label="Custom")
+    if "safari" in low and "chrome" not in low and "edg/" not in low:
+        return _webkit(pinned, id=MODE_CUSTOM, label="Custom")
+
+    # Anything else is treated as Chromium, which is what an unrecognised
+    # string most often is. The client hints have to come with it: this used to
+    # return the Chromium `Accept` and no Sec-CH-UA at all, producing exactly
+    # the incoherent set this module exists to avoid - a request claiming
+    # Chrome while sending none of the headers Chrome always sends.
+    match = re.search(r"(?:edg|chrome)/(\d+)", low)
+    version = match.group(1) if match else "126"
+    brand = "Microsoft Edge" if "edg/" in low else "Google Chrome"
+    platform = "Windows"
+    for needle, name in (("android", "Android"), ("iphone", "iOS"),
+                         ("mac os x", "macOS"), ("linux", "Linux")):
+        if needle in low:
+            platform = name
+            break
+    mobile = "?1" if ("mobile" in low or "android" in low or "iphone" in low) else "?0"
+    return _chromium(pinned, brand, version, platform, mobile=mobile,
+                     id=MODE_CUSTOM, label="Custom")
+
+
+def resolve_profile(mode: str, custom_ua: str = "") -> Optional[Dict[str, object]]:
+    """The profile for one job, from an explicit choice.
+
+    Pure apart from `rotate`, which is random by definition. `None` means "send
+    nothing" - the tool's own default - and is distinct from a profile with an
+    empty User-Agent, which would strip the header the tool would have sent.
+    """
+    choice = (mode or "").strip().lower()
+
+    if choice == MODE_TOOL:
+        return None
+    if choice in (MODE_ROTATE, ""):
+        return random.choice(BROWSER_PROFILES)
+    if choice in BY_ID:
+        return BY_ID[choice]
+    if choice == MODE_CUSTOM:
+        # A custom mode with no string is a misconfiguration, not an
+        # instruction to send an empty User-Agent. Fall back to rotating.
+        return profile_for_ua(custom_ua) if custom_ua.strip() else random.choice(BROWSER_PROFILES)
+    if choice == MODE_FIXED:
+        # The historical env-var spelling: USER_AGENT_MODE=fixed plus USER_AGENT.
+        pinned = custom_ua.strip() or (settings.user_agent or "").strip()
+        return profile_for_ua(pinned) if pinned else BROWSER_PROFILES[0]
+
+    # An unrecognised mode must not silently become "no headers at all".
+    return random.choice(BROWSER_PROFILES)
+
+
+def current_profile() -> Dict[str, object]:
+    """The browser profile for a job with no engagement preference.
+
+    Falls back to the environment: USER_AGENT_MODE / USER_AGENT. Used by the
+    recon view, which runs before any engagement exists, and by any scan
+    submitted without one.
+    """
+    profile = resolve_profile(settings.user_agent_mode or MODE_ROTATE,
+                              settings.user_agent or "")
+    return profile if profile is not None else BROWSER_PROFILES[0]
 
 
 def current_user_agent() -> str:
@@ -172,10 +254,47 @@ def current_user_agent() -> str:
     return str(current_profile()["ua"])
 
 
-def _headers_for_job() -> Dict[str, str]:
+def choices() -> List[Dict[str, str]]:
+    """What the engagement form offers, with what each one is for.
+
+    Served rather than hardcoded in the frontend so the list and the profiles
+    behind it cannot drift - a UI offering a browser the backend does not know
+    would silently fall back to rotating.
+    """
+    out = [
+        {"id": MODE_ROTATE, "label": "Rotate (default)",
+         "note": "A different real browser per job, headers included. Right "
+                 "unless you have a reason to prefer another."},
+    ]
+    out += [{"id": str(p["id"]), "label": str(p["label"]),
+             "note": str(p["ua"])} for p in BROWSER_PROFILES]
+    out += [
+        {"id": MODE_CUSTOM, "label": "Custom User-Agent",
+         "note": "Your own string. The other headers are matched to the engine "
+                 "it claims, because a Firefox User-Agent sending Chrome client "
+                 "hints stands out more than no User-Agent at all."},
+        {"id": MODE_TOOL, "label": "Each tool's own",
+         "note": "Send nothing and let sqlmap look like sqlmap. On an announced "
+                 "test the client's SOC often wants exactly that."},
+    ]
+    return out
+
+
+def is_valid_choice(mode: str) -> bool:
+    choice = (mode or "").strip().lower()
+    return choice == "" or choice in {MODE_ROTATE, MODE_FIXED, MODE_TOOL,
+                                      MODE_CUSTOM} | set(BY_ID)
+
+
+def _headers_for_job(profile: Optional[Dict[str, object]] = None) -> Dict[str, str]:
     """Full header set for this job: browser profile, plus the optional
-    attribution header when the operator explicitly set one."""
-    profile = current_profile()
+    attribution header when the operator explicitly set one.
+
+    `profile` is the engagement's choice. Passing None means "decide from the
+    environment", which is what a scan with no engagement gets.
+    """
+    if profile is None:
+        profile = current_profile()
     headers: Dict[str, str] = {"User-Agent": str(profile["ua"])}
     headers.update(profile["headers"])  # type: ignore[arg-type]
 
@@ -189,13 +308,36 @@ def _headers_for_job() -> Dict[str, str]:
     return headers
 
 
-def identity_args(tool: str) -> List[str]:
-    """CLI flags carrying the browser profile headers for `tool`"""
+def identity_args(tool: str, *, mode: str = "", custom_ua: str = "") -> List[str]:
+    """CLI flags carrying the browser profile headers for `tool`.
+
+    `mode` is the engagement's identity choice; empty means "use the
+    environment", which is what a scan submitted without an engagement gets.
+    """
     if tool in _NO_HTTP:
         return []
 
-    headers = _headers_for_job()
+    if mode:
+        profile = resolve_profile(mode, custom_ua)
+        if profile is None:
+            # "Each tool's own": send nothing and let the binary identify
+            # itself. The attribution header still applies if one is set - it
+            # is about telling the client's SOC this is authorised, which is
+            # orthogonal to which User-Agent the tool uses.
+            pentest_id = (settings.pentest_id or "").strip()
+            return _as_args(tool, "", {"X-Pentest-ID": pentest_id} if pentest_id else {},
+                            rotating=False)
+    else:
+        profile = None
+
+    rotating = (mode or settings.user_agent_mode or MODE_ROTATE).strip().lower() == MODE_ROTATE
+    headers = _headers_for_job(profile)
     ua = headers.pop("User-Agent", "")
+    return _as_args(tool, ua, headers, rotating=rotating)
+
+
+def _as_args(tool: str, ua: str, headers: Dict[str, str], *, rotating: bool) -> List[str]:
+    """Spell one header set the way `tool` wants it."""
     if not ua and not headers:
         return []
 
@@ -227,7 +369,6 @@ def identity_args(tool: str) -> List[str]:
     if tool == "wpscan":
         # In rotate mode the wrapper adds --random-user-agent and we must not
         # also pass --user-agent: the two conflict.
-        rotating = (settings.user_agent_mode or MODE_ROTATE).strip().lower() == MODE_ROTATE
         args = []
         if ua and not rotating:
             args += ["--user-agent", ua]

@@ -160,6 +160,10 @@ export const api = {
 
   scans: {
     tools: () => request('/api/scans/tools'),
+    // How the tools may present themselves on the wire. Served, not hardcoded:
+    // a UI offering a browser the backend does not know would silently fall
+    // back to rotating and nobody would be able to tell.
+    identities: () => request('/api/scans/identities'),
     list: (params = {}) => {
       const qs = new URLSearchParams(
         Object.entries(params).filter(([, v]) => v !== undefined && v !== '' && v !== null)

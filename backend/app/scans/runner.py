@@ -56,6 +56,11 @@ class Runner:
 
         options = list(options or [])
 
+        # Set by the gate below when there is an engagement. Initialised here
+        # rather than relying on the `if` branch having run, which would be a
+        # NameError on every scan submitted without one.
+        eng = None
+
         if engagement_id:
             # ----- authorization gate (EVERY autonomous/exploit submission) -----
             # The REST endpoint checks this, but the orchestrator and the exploit
@@ -135,7 +140,15 @@ class Runner:
         try:
             from app.scans.identity import identity_args, proxy_args
 
-            options = identity_args(tool) + options
+            # The engagement's identity choice, when there is one. Loaded from
+            # the row the authorization gate already fetched above, so this
+            # costs nothing extra; falls back to the environment otherwise,
+            # which is what a scan submitted without an engagement gets.
+            options = identity_args(
+                tool,
+                mode=getattr(eng, "user_agent_mode", "") if eng else "",
+                custom_ua=getattr(eng, "user_agent", "") if eng else "",
+            ) + options
             proxy = await netmgr.proxy_for_tools_shared()
             if proxy:
                 options = proxy_args(tool, proxy) + options

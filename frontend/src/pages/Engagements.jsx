@@ -39,6 +39,9 @@ const BLANK = {
   target_url: '', scope_hosts: '', auth: '', secondary_auth: '',
   require_approval: false, allow_active_exploit: false,
   allow_sql_os_cmd: false, allow_data_proof: false, attest: false,
+  // Empty means "follow USER_AGENT_MODE from the environment", which is what
+  // every engagement created before this field existed does.
+  user_agent_mode: '', user_agent: '',
 };
 
 export default function Engagements() {
@@ -55,7 +58,17 @@ export default function Engagements() {
   const [selectedId, setSelectedId] = useState(null);
   const [toast, setToast] = useState(null);
   const [error, setError] = useState(null);
+  const [identities, setIdentities] = useState(null);
   const set = (patch) => setForm((f) => ({ ...f, ...patch }));
+
+  useEffect(() => {
+    // A failure here costs the picker and nothing else - the field falls back
+    // to "follow the environment", which is the old behaviour. It still has to
+    // be visible, or the select silently disappears.
+    api.scans.identities()
+      .then(setIdentities)
+      .catch((e) => setError((prev) => prev || `Could not load the identity list: ${e.message}`));
+  }, []);
 
   const load = useCallback(async () => {
     try { const r = await api.engagements.list(); setItems(r.items || []); }
@@ -73,6 +86,8 @@ export default function Engagements() {
       const res = await api.engagements.create({
         target_url: form.target_url,
         scope_hosts: scope.length ? scope : undefined,
+        user_agent_mode: form.user_agent_mode || undefined,
+        user_agent: form.user_agent_mode === 'custom' ? form.user_agent : undefined,
         attest_authorized: true,
         require_exploit_approval: form.require_approval,
         allow_active_exploit: form.allow_active_exploit,
@@ -164,6 +179,49 @@ export default function Engagements() {
               <span className="field__hint">A second identity's headers. Enables true IDOR/BOLA proof by replaying a captured request as another user.</span>
             </div>
 
+            <div className="form-sub">Scan identity</div>
+            <div className="field">
+              <label className="field__label" htmlFor="eng-ua">
+                How the tools identify themselves
+              </label>
+              <div className="select-box">
+                <select id="eng-ua" className="select" value={form.user_agent_mode}
+                        onChange={(e) => set({ user_agent_mode: e.target.value })}>
+                  <option value="">
+                    Follow the server default{identities?.environment_default
+                      ? ` (${identities.environment_default})` : ''}
+                  </option>
+                  {(identities?.items || []).map((i) => (
+                    <option key={i.id} value={i.id}>{i.label}</option>
+                  ))}
+                </select>
+              </div>
+              {/* The note for the selected entry, which for a browser is the
+                  User-Agent string itself - the thing the operator is actually
+                  choosing, and the thing they will be asked about later. */}
+              <span className="field__hint">
+                {(identities?.items || []).find((i) => i.id === form.user_agent_mode)?.note
+                  || identities?.caveat
+                  || 'Loading…'}
+              </span>
+            </div>
+            {form.user_agent_mode === 'custom' && (
+              <div className="field">
+                <label className="field__label" htmlFor="eng-ua-custom">User-Agent string</label>
+                <input id="eng-ua-custom" className="input" placeholder="MyCorp-Scanner/1.0"
+                       value={form.user_agent}
+                       onChange={(e) => set({ user_agent: e.target.value })} />
+                <span className="field__hint">
+                  The other headers are matched to the engine this string claims —
+                  a Firefox User-Agent sending Chrome client hints stands out more
+                  than no User-Agent at all.
+                </span>
+              </div>
+            )}
+            {identities?.caveat && form.user_agent_mode && (
+              <p className="field__hint" style={{ marginTop: -8 }}>{identities.caveat}</p>
+            )}
+
             <div className="form-sub">Run options</div>
             <div className="checks">
               <Check checked={form.require_approval} onChange={(v) => set({ require_approval: v })}>
@@ -245,6 +303,18 @@ export default function Engagements() {
                 <dt>Status</dt><dd className={'eng-' + selected.status}>{selected.status}</dd>
                 <dt>Scope</dt><dd>{(selected.scope_hosts || []).join(', ')}</dd>
                 <dt>Authorized via</dt><dd>{selected.verification_method || '-'}</dd>
+                {/* Worth showing after the fact: "why did their WAF block us"
+                    and "why does the client's log say Chrome" are both
+                    answered by this one line. */}
+                <dt>Scan identity</dt>
+                <dd className="mono">
+                  {selected.user_agent_mode
+                    ? (identities?.items || []).find((i) => i.id === selected.user_agent_mode)?.label
+                      || selected.user_agent_mode
+                    : `server default${identities?.environment_default ? ` (${identities.environment_default})` : ''}`}
+                  {selected.user_agent_mode === 'custom' && selected.user_agent
+                    ? ` — ${selected.user_agent}` : ''}
+                </dd>
                 <dt>Phase</dt><dd>{selected.phase || '-'}</dd>
                 <dt>Progress</dt><dd><div className="eng-progress"><div className="eng-progress__bar"><div className="eng-progress__fill" style={{ width: (selected.progress || 0) + '%' }}></div></div><span className="eng-progress__n">{selected.progress || 0}%</span></div></dd>
                 <dt>Findings</dt>
