@@ -15,16 +15,37 @@ set -euo pipefail
 
 ALLOWED="${SANDBOX_ALLOWED_HOSTS:-}"
 
-if ! command -v iptables >/dev/null 2>&1; then
-  echo "[sandbox] iptables missing: cannot enforce egress, refusing to start" >&2
+# Refusing to start is the correct answer to "I cannot enforce egress" - a
+# sandbox that runs untrusted code without a policy is worse than no sandbox.
+# But the operator only ever saw the UI say "runner unavailable", so say here,
+# in the container log, exactly which step failed and what it usually means.
+die() {
+  echo "[sandbox] FATAL: $1" >&2
+  echo "[sandbox] the runner refuses to start without an egress policy:" >&2
+  echo "[sandbox]   untrusted PoC code would run with unrestricted network." >&2
+  echo "[sandbox] check 'docker compose logs sandbox-runner' for the line above." >&2
   exit 1
+}
+
+if ! command -v iptables >/dev/null 2>&1; then
+  die "iptables is not installed in this image"
 fi
 
 echo "[sandbox] applying egress policy"
 
+# The first rule is also the probe: if the kernel backing this container has no
+# nf_tables (Docker Desktop's LinuxKit VM is the common case) or the container
+# was started without NET_ADMIN, it fails here rather than halfway through a
+# half-applied policy.
+if ! iptables -F OUTPUT 2>/tmp/iptables.err; then
+  echo "[sandbox] iptables said: $(cat /tmp/iptables.err)" >&2
+  die "cannot write firewall rules. Either the container lacks NET_ADMIN \
+(check cap_add in docker-compose.yml) or this kernel has no nf_tables support \
+- which is the usual case on Docker Desktop for Mac and Windows."
+fi
+
 # Loopback and established replies always allowed; DNS to the docker resolver
 # only, so a PoC cannot use an arbitrary resolver as a covert channel.
-iptables -F OUTPUT
 iptables -A OUTPUT -o lo -j ACCEPT
 iptables -A OUTPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
 iptables -A OUTPUT -p udp --dport 53 -d 127.0.0.11 -j ACCEPT

@@ -285,6 +285,40 @@ async def run_engagement_loop(run_id: str) -> dict:
     return run.to_public()
 
 
+async def _report_verification_limits(engagement, run) -> None:
+    """Name what kept findings unverified, in the live console.
+
+    Everything here was already decided and already discarded: run_cve_checks
+    returned {"skipped": 1, "reason": "allow_active_exploit is off"} into a
+    dict nobody rendered, and the file-reading tools scanned an empty directory
+    and reported nothing - which looks exactly like finding nothing.
+    """
+    try:
+        from app.scans.artifacts import js_dir, listdir
+        from app.scans.wrappers import _WRAPPERS
+        from app.validation import ValidatedFindingRepository
+        from app.validation.limits import (limits_for, summary_line,
+                                           unverified_classes_of)
+
+        findings = await ValidatedFindingRepository().list(engagement.id)
+        limits = limits_for(
+            allow_active_exploit=bool(engagement.allow_active_exploit),
+            unverified_classes=unverified_classes_of(findings),
+            captured_js_files=len(listdir(js_dir(engagement.target_url), limit=1)),
+            stop_reason=run.stop_reason or "",
+            tools_unavailable=[n for n, w in _WRAPPERS.items() if not w.is_available()],
+        )
+        if not limits:
+            return
+        logger.info("[%s] %s", run.id, summary_line(limits))
+        for limit in limits:
+            await events.emit(engagement.id, events.THOUGHT, limit.sentence,
+                              level=events.LEVEL_INFO, run_id=run.id,
+                              limit=limit.key)
+    except Exception:  # noqa: BLE001 - explaining must never fail the run
+        logger.debug("could not report the verification limits", exc_info=True)
+
+
 async def _llm_budget_exceeded(engagement_id: str):
     """Spend so far if it has crossed the per-engagement cap, else None.
 
@@ -487,6 +521,11 @@ async def _finalize_engagement(engagement, run: Run, runs: RunRepository,
                           f"Validated: {stats.get('confirmed',0)} confirmed, "
                           f"{stats.get('false_positive',0)} false positive",
                           run_id=run.id, stats=stats)
+
+        # "0 confirmed" reads as "the scanner is broken". Usually it means an
+        # oracle existed but a switch kept it from running, or the input it
+        # needs was never captured. Say which, or the operator has to guess.
+        await _report_verification_limits(engagement, run)
         if chains:
             await events.emit(engagement.id, events.CHAIN_BUILT,
                               f"{len(chains)} kill-chain(s) identified",

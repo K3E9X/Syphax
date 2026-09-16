@@ -48,7 +48,22 @@ async def build_report(engagement_id: str) -> Dict[str, Any]:
 
     overall = _overall_risk(reportable)
     proof = partition_by_proof(reportable)
-    md = _markdown(e, reportable, chains, tools_used, hosts, tech, cov, vsum, overall)
+
+    # The same limits the live console reported, from the same function, so the
+    # report cannot claim a thoroughness the run did not have.
+    from app.scans.artifacts import js_dir, listdir
+    from app.validation.limits import limits_for, unverified_classes_of
+    try:
+        limits = limits_for(
+            allow_active_exploit=bool(getattr(e, "allow_active_exploit", False)),
+            unverified_classes=unverified_classes_of(findings),
+            captured_js_files=len(listdir(js_dir(e.target_url), limit=1)),
+        )
+    except Exception:  # noqa: BLE001 - a report must still render
+        limits = []
+
+    md = _markdown(e, reportable, chains, tools_used, hosts, tech, cov, vsum,
+                   overall, limits)
     return {
         "markdown": md,
         "html": _html(md),
@@ -57,6 +72,7 @@ async def build_report(engagement_id: str) -> Dict[str, Any]:
             "reportable_findings": len(reportable),
             "proven_findings": len(proof["proven"]),
             "unverified_findings": len(proof["unverified"]),
+            "verification_limits": [l.to_public() for l in limits],
             "chains": len(chains),
             "false_positive_rate_pct": false_positive_rate(vsum),
         },
@@ -152,7 +168,8 @@ def _by_severity(findings: List) -> Dict[str, List]:
     return out
 
 
-def _markdown(e, findings, chains, tools, hosts, tech, cov, vsum, overall) -> str:
+def _markdown(e, findings, chains, tools, hosts, tech, cov, vsum, overall,
+              limits=()) -> str:
     L: List[str] = []
     ts = time.strftime("%Y-%m-%d %H:%M UTC", time.gmtime())
     L.append("# Penetration Test Report")
@@ -229,6 +246,15 @@ def _markdown(e, findings, chains, tools, hosts, tech, cov, vsum, overall) -> st
                  "re-checked them against the target: treat them as leads for "
                  "manual confirmation, not as established issues.")
         L.append("")
+        # Why they are unverified. Without this the section reads as "the tool
+        # could not tell", when the honest answer is often "it was not allowed
+        # to try" - a distinction the reader has to have to judge the report.
+        if limits:
+            L.append("**This assessment verified less than it could have:**")
+            L.append("")
+            for limit in limits:
+                L.append(f"- {limit.sentence}")
+            L.append("")
         _render_findings(L, split["unverified"])
 
     # 5. Kill-chains

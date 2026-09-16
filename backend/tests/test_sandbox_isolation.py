@@ -118,8 +118,39 @@ def test_entrypoint_denies_everything_by_default():
 
 
 def test_entrypoint_refuses_to_start_without_iptables():
+    """A sandbox that cannot enforce egress must not run untrusted code.
+
+    This asserted the phrase "refusing to start", which broke the moment the
+    message was reworded even though the behaviour was unchanged. Assert the
+    behaviour instead: every path that cannot apply the policy exits non-zero,
+    and the script aborts on any unhandled failure.
+    """
     src = (COMPOSE.parent / "sandbox-runner" / "entrypoint.sh").read_text()
-    assert "refusing to start" in src
+    assert "set -euo pipefail" in src, "an unchecked failure would start anyway"
+
+    # Both ways the policy can be impossible: no iptables binary, or iptables
+    # refusing to write rules (no NET_ADMIN, or a kernel without nf_tables).
+    assert "command -v iptables" in src
+    assert "iptables -F OUTPUT" in src
+
+    # Each of those leads to a non-zero exit rather than falling through.
+    assert src.count("exit 1") >= 1
+    assert "die " in src or "exit 1" in src
+
+    # And the deny-all rule is the last one, so anything not explicitly
+    # allowed above it is rejected.
+    rules = [l.strip() for l in src.splitlines() if l.strip().startswith("iptables -A OUTPUT")]
+    assert rules[-1].startswith("iptables -A OUTPUT -j REJECT"), (
+        f"the final rule must reject; it is {rules[-1]!r}")
+
+
+def test_entrypoint_says_which_step_failed():
+    """The operator only ever saw "runner unavailable" in the UI. The container
+    log has to name the cause, or there is nothing to act on."""
+    src = (COMPOSE.parent / "sandbox-runner" / "entrypoint.sh").read_text()
+    assert "NET_ADMIN" in src, "the capability case is the common one"
+    assert "nf_tables" in src, "Docker Desktop's kernel is the other common one"
+    assert "docker compose logs sandbox-runner" in src
 
 
 def test_runner_image_ships_no_network_tooling():

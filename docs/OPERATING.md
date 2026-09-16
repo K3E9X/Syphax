@@ -395,6 +395,37 @@ POSTing a guessed form to a guessed endpoint creates orders and sends mail.
 unverified ones in section 4 as leads for manual confirmation. `meta` carries
 `proven_findings`, `unverified_findings` and the real `false_positive_rate_pct`.
 
+## Why a finding stayed unverified
+
+`0 confirmed` is the most confusing line this tool prints. It reads as "the
+scanner is broken", and it usually means something far more ordinary: an oracle
+existed but a switch was off, or the input that oracle needs was never
+captured.
+
+Both facts were already known and both were thrown away. `run_cve_checks`
+returned `{"skipped": 1, "reason": "allow_active_exploit is off"}` into a dict
+nobody rendered, and the file-reading tools scanned an empty directory and
+reported nothing - which looks exactly like finding nothing.
+
+The live console now names each limit once, and the report prints the same
+list under section 4, from the same function, so it cannot claim a
+thoroughness the run did not have:
+
+- **`allow_active_exploit` is off** and something needed a crafted request to
+  be decided (a known CVE, an injection). The safe-PoC checks and the adaptive
+  prober never ran.
+- **the run ended early** (`exploit_denied`, `stopped`, `cancelled`) before the
+  active phase.
+- **no JavaScript was captured** through the proxy, so retire.js, jsluice and
+  trufflehog had no files to read. Browse the target through the MITM proxy
+  once, then re-run the analysis.
+- **a tool's binary is missing** from the image, so its catalog items were
+  skipped rather than failing the run.
+
+A limit that blocked nothing is not reported: with no finding that needed an
+active check, the gate cost nothing, and listing it would train you to ignore
+the panel.
+
 ## One engagement at a time
 
 Every screen is scoped to a single active engagement, remembered across reloads
