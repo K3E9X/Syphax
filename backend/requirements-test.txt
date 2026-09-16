@@ -8,10 +8,10 @@ asyncpg==0.31.0
 httpx[socks]==0.28.1
 pydantic==2.13.5
 pydantic-settings==2.6.1
-python-dotenv==1.0.1
+python-dotenv==1.2.2
 dnspython==2.7.0
 arq==0.28.0
-cryptography==46.0.3
+cryptography==50.0.1
 # The sandbox isolation tests assert against docker-compose.yml: that config
 # IS the isolation (no route to Postgres, no env_file), so CI has to parse it.
 fastapi==0.141.1

@@ -1,9 +1,30 @@
 # The mitmproxy addon ONLY. Kept apart from requirements.txt because mitmproxy
-# pins cryptography<44.1, and while both lived in one environment that pin held
-# the whole API stack back seven major versions. The addon needs mitmproxy to
-# run and psycopg to write captured flows - nothing else.
-mitmproxy==11.0.2
+# pins its own cryptography range, and while both lived in one environment that
+# pin held the whole API stack back seven major versions. The addon needs
+# mitmproxy to run and psycopg to write captured flows - nothing else.
+#
+# 12.2.3 rather than 11.0.2: 11.x embeds h2 <= 4.2.0, whose HTTP/2 header
+# validation gap allows request smuggling when a proxy translates HTTP/2 to
+# HTTP/1 (GHSA-63cx-g855-hvv4). That is precisely what this proxy does all day.
+# The other two advisories against 11.0.2 do not apply here - one is mitmweb,
+# which we do not run, and one is the LDAP `proxyauth` option, which we do not
+# set - but the smuggling one is squarely on our path.
+#
+# The addon survives the major bump untouched: it uses `from mitmproxy import
+# http` and a single `response(flow)` hook, which is the most stable surface
+# mitmproxy has.
+#
+# pydantic is held at 2.11.9 HERE AND ONLY HERE. mitmproxy 12 pins
+# typing-extensions<=4.14 and pydantic 2.13 needs >=4.14.1, so the two cannot
+# share an environment - which is exactly the situation this file was split off
+# to handle, in the opposite direction. The addon's only use of pydantic is
+# app/config.py reading environment variables through pydantic-settings, which
+# is plain field declarations and behaves identically on 2.11.
+#
+# If that divergence ever starts to matter, the fix is to stop importing
+# app.config from the addon rather than to re-merge the two requirement sets.
+mitmproxy==12.2.3
 psycopg[binary]==3.3.5
-pydantic==2.13.5
+pydantic==2.11.9
 pydantic-settings==2.6.1
-python-dotenv==1.0.1
+python-dotenv==1.2.2

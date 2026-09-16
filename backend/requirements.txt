@@ -6,11 +6,11 @@ pydantic-settings==2.6.1
 # setup) raised on client construction, and the error was swallowed into a
 # misleading "public IP unreadable".
 httpx[socks]==0.28.1
-python-dotenv==1.0.1
+python-dotenv==1.2.2
 asyncpg==0.31.0
 psycopg[binary]==3.3.5
 arq==0.28.0
 dnspython==2.7.0
 # No longer capped by mitmproxy: the addon runs in its own container off
 # requirements-proxy.txt, so the API/worker stack is free to track upstream.
-cryptography==46.0.3
+cryptography==50.0.1
