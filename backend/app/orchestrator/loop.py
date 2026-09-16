@@ -518,6 +518,22 @@ async def _finalize_engagement(engagement, run: Run, runs: RunRepository,
         except Exception:  # noqa: BLE001 - enrichment never fails a run
             logger.exception("[%s] public-exploit aggregation error", run.id)
 
+        # The campaign: walk every validated finding, pick the best available
+        # route to proving it, and follow it. Reads the aggregation above to
+        # know which findings have a published PoC, so it runs after it.
+        #
+        # Also outside the gate, and for the same reason: fetching a repository
+        # and asking a model both happen without touching the target, and an
+        # operator deciding whether to turn allow_active_exploit on should be
+        # able to see what it would unlock. Executing a staged PoC is where the
+        # gate bites - /api/poc/{id}/run re-checks every one of them rather
+        # than trusting the approval it was given.
+        try:
+            from app.exploit import run_campaign
+            await run_campaign(engagement.id)
+        except Exception:  # noqa: BLE001 - one dead route is not the run
+            logger.exception("[%s] exploitation campaign error", run.id)
+
         run.phase = "validation"
         await runs.update(run)
         await events.emit(engagement.id, events.PHASE_CHANGED, "Phase: validation",

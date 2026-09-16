@@ -229,13 +229,22 @@ after a human has read them.
   in-scope read-only request and a benign marker. An LLM judge kills false
   positives and proposes a replayable proof. Status is confirmed / likely /
   unconfirmed / false_positive.
+- **Exploitation** — every validated finding gets a route: a bundled nuclei
+  template, the tool that confirmed it, a published PoC, or one the model writes
+  for this application specifically. That last route is what covers IDOR, BOLA
+  and broken business rules — the bugs no template exists for, because they live
+  in one application. Third-party and authored code are both **staged**, never
+  auto-run: a human reads them, then the isolated runner executes them. A
+  finding with no route is recorded with the reason.
 - **Kill-chains** — confirmed findings are linked into multi-step attack paths.
 - **Live view** — the loop emits typed events to Postgres; a WebSocket tails
   them, so the console, phase timeline and findings update in real time.
 
 Nothing a model produces reaches a target unfiltered: proposals are matched
 against assets that already exist, tool flags against per-tool allowlists, and
-proofs against a read-only policy.
+proofs against a read-only policy. Exploit code the model writes may POST, write
+files, upload a shell and execute commands — it may not destroy, persist, flood
+or leave scope, and a human reads it before it runs.
 
 ## Tests
 

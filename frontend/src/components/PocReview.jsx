@@ -23,6 +23,37 @@ function Verdict({ verdict }) {
   return <span className={'poc-verdict poc-verdict--' + (verdict || 'review')}>{label}</span>;
 }
 
+/**
+ * Where the code came from. A reviewer treats a script a model wrote in the
+ * last minute differently from one a researcher published after studying the
+ * bug, and nothing else on this screen tells them which is which.
+ */
+function Origin({ origin }) {
+  if (origin === 'authored') {
+    return <span className="poc-origin poc-origin--authored" title="Written by the model for this finding">authored</span>;
+  }
+  if (origin === 'public') {
+    return <span className="poc-origin poc-origin--public" title="Published third-party exploit">public</span>;
+  }
+  return <span className="poc-origin" title="Staged by hand">manual</span>;
+}
+
+/**
+ * Whether it may run at all.
+ *
+ * Separate from the inspection verdict, because they answer different
+ * questions: the inspection asks whether the code attacks YOU, this asks
+ * whether what it does to the target is something an engagement can defend.
+ * A refusal here is not overridable by approving — /api/poc/{id}/run re-checks
+ * it — so it belongs in the list, not buried in the detail panel.
+ */
+function Fitness({ vetting }) {
+  if (!vetting) return <span className="poc-fit">—</span>;
+  return vetting.allowed
+    ? <span className="poc-fit poc-fit--ok">ok</span>
+    : <span className="poc-fit poc-fit--no" title={vetting.summary}>refused</span>;
+}
+
 export default function PocReview({ engagementId }) {
   const [items, setItems] = useState([]);
   const [open, setOpen] = useState(null);       // full staged PoC incl. code
@@ -157,14 +188,16 @@ export default function PocReview({ engagementId }) {
           {items.length > 0 && (
             <table className="tbl poc-tbl">
               <thead>
-                <tr><th>Repository</th><th>File</th><th>Inspection</th><th>Status</th></tr>
+                <tr><th>Origin</th><th>Source</th><th>File</th><th>Fit to run</th><th>Inspection</th><th>Status</th></tr>
               </thead>
               <tbody>
                 {items.map((p) => (
                   <tr key={p.id} className={open?.id === p.id ? 'on' : ''}
                       onClick={() => openPoc(p.id)}>
-                    <td className="mono">{p.repo}</td>
+                    <td><Origin origin={p.inspection?.origin} /></td>
+                    <td className="mono truncate" style={{ maxWidth: 200 }} title={p.repo}>{p.repo}</td>
                     <td className="mono">{p.path}</td>
+                    <td><Fitness vetting={p.inspection?.vetting} /></td>
                     <td><Verdict verdict={p.inspection?.verdict} /></td>
                     <td><span className={'st poc-st--' + p.status}>{p.status}</span></td>
                   </tr>
@@ -183,6 +216,35 @@ export default function PocReview({ engagementId }) {
           </div>
           <div className="card__body">
             <p className="poc-summary">{open.inspection?.summary}</p>
+
+            {open.inspection?.origin === 'authored' && (
+              <p className="poc-note">
+                Written by the model for this finding
+                {open.inspection?.attempts > 1
+                  ? ` (rewritten after ${open.inspection.attempts - 1} refusal)` : ''}.
+                It has never run. Read it as you would a stranger&apos;s.
+              </p>
+            )}
+
+            {open.inspection?.vetting && !open.inspection.vetting.allowed && (
+              <div className="poc-refused">
+                <strong>This will not run.</strong> {open.inspection.vetting.summary}
+                <ul>
+                  {(open.inspection.vetting.blocking || []).map((b, i) => (
+                    <li key={i}>
+                      <span className="poc-signal__sev">{b.category}</span>
+                      {b.line_no ? <span className="poc-signal__loc">L{b.line_no}</span> : null}
+                      <span className="poc-signal__detail">{b.detail}</span>
+                      {b.line && <code className="poc-signal__line">{b.line}</code>}
+                    </li>
+                  ))}
+                </ul>
+                <span className="poc-note">
+                  Approving does not override this — the run endpoint re-checks it.
+                  Fix the line and re-stage, or reject it.
+                </span>
+              </div>
+            )}
 
             {signals.length > 0 && (
               <div className="poc-signals">
@@ -223,7 +285,8 @@ export default function PocReview({ engagementId }) {
               {open.status === 'approved' && (
                 <>
                   <button className="btn btn--solid" onClick={runPoc}
-                          disabled={busy || !egressLocked}>
+                          disabled={busy || !egressLocked
+                                    || open.inspection?.vetting?.allowed === false}>
                     Run in sandbox
                   </button>
                   <button className="btn btn--danger" onClick={reject} disabled={busy}>

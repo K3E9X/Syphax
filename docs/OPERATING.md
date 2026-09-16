@@ -208,6 +208,92 @@ The choice is shown on the engagement's detail panel afterwards, because "why
 did their WAF block us" and "why does the client's log say Chrome" are both
 answered by that one line.
 
+## The exploitation phase
+
+It used to be three independent passes — nuclei templates by fingerprint,
+commix/sqlmap on confirmed injections, an auth spray. Each one worked. What
+none of them did was look at a finding and ask *what is the best available
+route to proving this one?*, so a finding no pass happened to cover was never
+exploited and nothing said so. A report could not tell "we tried and it held"
+from "nobody looked".
+
+The phase now walks every validated finding and picks a route
+(`backend/app/exploit/strategy.py`), best first:
+
+| Route | When | What happens |
+| --- | --- | --- |
+| `bundled` | a nuclei CVE template exists | runs unattended, in scope |
+| `tool` | a tool already **confirmed** the injection | commix/sqlmap re-run for proof |
+| `public_poc` | a published exploit exists | fetched, inspected, **staged for you** |
+| `authored` | nothing above covers it | the model writes one, **staged for you** |
+
+`authored` is the one that changes what this tool can do. No template exists for
+"user A can read user B's invoices by changing an integer", because that bug
+lives in one application — and that class, IDOR/BOLA/BFLA/business logic, is
+most of what a real engagement reports and none of what a scanner proves. The
+model gets the finding, its evidence, the target and the scope, and writes a
+script whose only job is to make the client unable to argue.
+
+A finding with no route is recorded **with the reason**, because "nothing was
+tried here" and "this was tried and held" look identical otherwise.
+
+### Staging is not running
+
+Fetching a repository and asking a model both happen without touching the
+target, so the campaign runs whatever `allow_active_exploit` says — an operator
+deciding whether to turn that on should be able to see what it would unlock.
+Executing a staged PoC is where the gate bites, and `/api/poc/{id}/run`
+re-checks every gate rather than trusting the approval it was given.
+
+### What is refused, and it is a short list
+
+Three things, and none of them are refused because the code looks malicious —
+they are refused because an engagement cannot defend them
+(`backend/app/exploit/vetting.py`):
+
+* **destructive** — `rm -rf`, `DROP TABLE`, `DELETE` with no `WHERE`, `mkfs`,
+  `shutdown`. An engagement proves impact; it does not cause it. A client who
+  loses a table learns nothing they could not have learned from a `SELECT`.
+* **persistent** — cron, systemd units, `authorized_keys`, registry Run keys,
+  reverse shells. What the operator forgets to remove becomes the client's
+  problem after the report is signed.
+* **denial** — fork bombs, unbounded request loops, credential sprays from a
+  wordlist. Availability damage is the one thing a scope document almost never
+  covers. (There *is* a credential module — `app/exploit/auth_brute.py` — and
+  the engagement gates it separately, rate-limited.)
+
+Plus anything that leaves the engagement's scope.
+
+**Everything an exploit actually needs is allowed** and always was: POST, PUT,
+writing a file on the target, uploading a webshell, executing a command,
+reading data out of a database. Those are flagged for the reviewer, not
+blocked. An exploitation tool that refuses to POST is a scanner with extra
+steps.
+
+A refusal names the line, so the code can be fixed and re-staged — and when the
+model wrote it, the refusal goes back to the model, which usually rewrites it
+correctly. One retry: a model that writes `rm -rf` twice is not going to write
+something good on the third attempt.
+
+This is the one thing a human approval does not override. `/api/poc/{id}/run`
+re-vets before executing, and the UI disables the Run button rather than letting
+you find out at the click.
+
+### Read the code
+
+Both readings run on everything staged, and they answer different questions:
+
+* `app/sandbox/inspect.py` asks whether the code attacks **you**. A repository
+  advertising a PoC for a fresh CVE, containing a stealer that reads `~/.ssh`
+  and `~/.aws`, is a recurring and well-documented attack on researchers — and
+  the person running it has credentials for client environments.
+* `app/exploit/vetting.py` asks what it does to the **target**.
+
+Neither is a verdict. Static analysis of hostile code is defeatable by
+construction: a block is real, a clean pass proves nothing. The Sandbox page
+says which PoC was written by the model and which was published by a stranger,
+because those are read differently — and then you read it.
+
 ## Public exploits, and what runs them
 
 For every CVE a run finds, the exploitation phase gathers what public PoCs

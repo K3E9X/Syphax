@@ -16,6 +16,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from app.audit import audit
+from app.exploit import vetting
 from app.engagements import EngagementRepository, EngagementStatus
 from app.sandbox import runner_client
 from app.sandbox.inspect import inspect_code
@@ -165,6 +166,26 @@ async def run(poc_id: str, req: RunRequest) -> Dict[str, Any]:
                             detail="allow_active_exploit is off for this engagement")
     if not eng.scope_hosts:
         raise HTTPException(status_code=409, detail="engagement has no scope")
+
+    # Re-vetted here, against the scope as it stands now. The approval said "I
+    # have read this code"; it did not say "and it may destroy a database".
+    #
+    # This is the one thing a human approval does not unlock, and the line is
+    # narrow on purpose: destructive, persistent, denial-of-service or
+    # out-of-scope. Everything an exploit actually needs - POST, PUT, writing a
+    # file, uploading a shell, executing a command, reading data - is allowed
+    # and always was. What is refused is damage the operator cannot undo and a
+    # report they cannot defend, and the refusal names the line so the code can
+    # be fixed and re-staged.
+    verdict = vetting.vet(poc.code, scope_hosts=eng.scope_hosts)
+    if not verdict.allowed:
+        offending = "; ".join(
+            f"line {s.line_no}: {s.detail}" if s.line_no else s.detail
+            for s in verdict.blocking[:5])
+        await audit("poc.refused", engagement_id=eng.id, poc_id=poc_id,
+                    repo=poc.repo, path=poc.path,
+                    reasons=[s.category for s in verdict.blocking])
+        raise HTTPException(status_code=409, detail=f"{verdict.summary} {offending}")
 
     try:
         result = await runner_client.run_poc(
