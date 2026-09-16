@@ -57,7 +57,11 @@ async def run_analysis(engagement_id: str, *, allow_active: bool = True) -> Dict
     ]
     if allow_active:
         steps.append(("cve_checks", run_cve_checks))    # confirm high-value CVEs
-    steps.append(("public_exploits", analyze_public_exploits))  # enriches CVE findings
+    # public_exploits used to run here. It now runs in the EXPLOITATION phase
+    # (app/orchestrator/loop.py), after the known-CVE pass, for two reasons:
+    # the pass discovers CVEs of its own that the aggregation was missing
+    # entirely, and "which public PoCs exist for this" is exploitation
+    # intelligence, not traffic analysis.
     out: Dict[str, Dict] = {}
     for name, fn in steps:
         try:

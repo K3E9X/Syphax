@@ -208,6 +208,42 @@ The choice is shown on the engagement's detail panel afterwards, because "why
 did their WAF block us" and "why does the client's log say Chrome" are both
 answered by that one line.
 
+## Public exploits, and what runs them
+
+For every CVE a run finds, the exploitation phase gathers what public PoCs
+exist and sorts them into three tiers. The tier decides who may run it.
+
+| Tier | What it is | Who runs it |
+| --- | --- | --- |
+| `auto` | a nuclei CVE template — a vetted public PoC that actively verifies | the run, automatically, in scope |
+| `sandbox` | a raw script: Exploit-DB, a GitHub PoC repo | you, after reading the code, in the isolated runner |
+| `reference` | an advisory or a search link | nobody; it is a pointer |
+
+**What runs by itself.** `run_known_exploits()` reads the engagement's
+fingerprints (WordPress, Joomla, Drupal, Magento…), maps them to nuclei CVE
+template tags and runs a focused pass per in-scope host with out-of-band
+confirmation on. Those templates are vetted public exploits that genuinely
+attempt the issue. Double-gated: `allow_active_exploit` on the engagement, and
+the exploitation approval checkpoint.
+
+**What is gathered but never run.** The aggregation queries the local
+`searchsploit` database and the GitHub PoC search for each CVE, and attaches
+the result to a finding whose evidence lists every PoC with its URL. It is
+read-only — it never touches the target — so it runs whatever
+`allow_active_exploit` says. An engagement that stops short of exploiting still
+wants "a working public exploit exists for this" in its report, and an operator
+deciding *whether* to allow exploitation needs that list to decide with.
+
+It runs **after** the known-CVE pass, because that pass finds CVEs of its own
+and aggregating first missed every one of them.
+
+**What needs you.** A raw public script is never executed by the run. Paste the
+repository URL into **Sandbox**, the platform fetches and ranks the candidate
+files, you read the code, and only then approve it into the isolated runner —
+no route to Postgres, no secrets, egress pinned to the engagement scope. That
+step is manual on purpose: this platform will not execute unvetted third-party
+code on your say-so alone.
+
 ## Run an engagement
 
 1. **Engagements** -> enter a target you own, tick the authorization box,

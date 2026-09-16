@@ -474,6 +474,18 @@ async def _finalize_engagement(engagement, run: Run, runs: RunRepository,
         # ...but never run active exploitation if the operator denied the
         # exploitation checkpoint or stopped/cancelled the run.
         _suppressed = {"exploit_denied", "stopped", "cancelled"}
+
+        # Say it is the exploitation phase while it IS the exploitation phase.
+        # This block runs the known-CVE pass, the auth spray and the proof of
+        # impact, and it used to do all of that while the UI read "validation"
+        # - so an operator watching the live view saw the most consequential
+        # part of the run under the wrong banner.
+        run.phase = PHASE_EXPLOIT
+        await runs.update(run)
+        await events.emit(engagement.id, events.PHASE_CHANGED,
+                          f"Phase: {PHASE_EXPLOIT}", run_id=run.id,
+                          phase=PHASE_EXPLOIT)
+
         if engagement.allow_active_exploit and run.stop_reason not in _suppressed:
             try:
                 from app.exploit import (prove_impact, run_auth_spray,
@@ -485,6 +497,32 @@ async def _finalize_engagement(engagement, run: Run, runs: RunRepository,
                 await prove_impact(engagement.id)
             except Exception:  # noqa: BLE001 - never fail the run on proof
                 logger.exception("[%s] active-exploit phase error", run.id)
+
+        # Which public PoCs exist for every CVE found - Exploit-DB via the
+        # local searchsploit database, real GitHub PoC repositories, and the
+        # advisory links.
+        #
+        # Deliberately OUTSIDE the allow_active_exploit gate above. It is
+        # read-only: it queries a local database and a search API, and never
+        # touches the target. Gating it would withhold exactly the information
+        # an operator needs in order to decide whether to allow exploitation at
+        # all - and an engagement that stops short of exploiting still wants
+        # "a working public exploit exists for this" in its report.
+        #
+        # It runs AFTER the block above rather than before it, because the
+        # known-CVE pass finds CVEs of its own and the aggregation was missing
+        # every one of them.
+        try:
+            from app.analysis import analyze_public_exploits
+            await analyze_public_exploits(engagement.id)
+        except Exception:  # noqa: BLE001 - enrichment never fails a run
+            logger.exception("[%s] public-exploit aggregation error", run.id)
+
+        run.phase = "validation"
+        await runs.update(run)
+        await events.emit(engagement.id, events.PHASE_CHANGED, "Phase: validation",
+                          run_id=run.id, phase="validation")
+
         stats = await validate_engagement(engagement.id)
         # Intelligence #3: LLM judge pass to kill false positives / confirm
         # with grounded evidence (best-effort; no-op without an LLM).
