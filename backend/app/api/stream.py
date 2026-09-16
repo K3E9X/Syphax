@@ -20,15 +20,42 @@ logger = logging.getLogger("syphax.stream")
 POLL_INTERVAL = 1.0
 
 
+async def authorize_socket(websocket: WebSocket) -> bool:
+    """The gate, for a WebSocket. Same policy as the HTTP middleware."""
+    from app.auth import policy, storage, tokens
+    from app.config import settings as _settings
+
+    user = None
+    token = websocket.cookies.get(tokens.COOKIE_NAME, "")
+    if token:
+        try:
+            user = await storage.resolve_session(token)
+        except Exception:  # noqa: BLE001 - database down is not authorisation
+            user = None
+    try:
+        has_users = await storage.has_users()
+    except Exception:  # noqa: BLE001
+        return False
+
+    decision = policy.decide(
+        path=websocket.url.path,
+        has_users=has_users,
+        session_user=user,
+        provided_key=policy.extract_key(websocket.headers,
+                                        websocket.query_params.get("key", "")),
+        expected_key=_settings.api_key,
+    )
+    return decision.allow
+
+
 @router.websocket("/ws/engagements/{engagement_id}/stream")
 async def engagement_stream(websocket: WebSocket, engagement_id: str) -> None:
-    # The HTTP middleware does not cover the WebSocket handshake, and a browser
-    # cannot set headers on one - so the key travels as ?key= here. Refuse
-    # before accept() so an unauthorised client never gets a socket.
-    from app.api_auth import key_ok
-    from app.config import settings as _settings
-    if _settings.api_key and not key_ok(websocket.query_params.get("key", ""),
-                                        _settings.api_key):
+    # The HTTP middleware does not cover the WebSocket handshake, so the same
+    # decision is made here, before accept(), so an unauthorised client never
+    # gets a socket. A browser cannot set headers on a handshake but it DOES
+    # send same-origin cookies, so the session works unmodified; the ?key=
+    # fallback stays for scripts.
+    if not await authorize_socket(websocket):
         await websocket.close(code=1008)   # policy violation
         return
     await websocket.accept()

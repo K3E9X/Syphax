@@ -26,6 +26,7 @@
 @import "./styles/pages/attacksurface.css";
 @import "./styles/pages/sandbox.css";
 @import "./styles/pages/settings.css";
+@import "./styles/pages/auth.css";
 
 /* App shell: the top nav is sticky; content scrolls under it. */
 #root { min-height: 100%; }

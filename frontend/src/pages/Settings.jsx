@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api, getApiKey, setApiKey } from '../lib/api.js';
+import { Notice } from '../components/ui.jsx';
+import AccountCard from '../components/AccountCard.jsx';
 
 function Toggle({ on, onChange }) {
   return (
@@ -56,6 +58,8 @@ export default function Settings() {
     <div className="page">
       <Notice kind="error" message={loadError} />
       <div className="set-grid">
+        <AccountCard />
+
         <div className="card set-full">
           <div className="card__head"><span className="card__title">API key</span><span className="card__meta">this browser only &middot; never sent to the server settings</span></div>
           <div className="card__body">

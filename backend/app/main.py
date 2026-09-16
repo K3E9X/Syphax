@@ -18,6 +18,7 @@ from fastapi.responses import JSONResponse
 import app.memory  # noqa: F401  - register schema
 import app.network.shared_state  # noqa: F401  - register schema
 import app.audit  # noqa: F401
+import app.auth.storage  # noqa: F401  - register schema
 import app.events  # noqa: F401
 import app.llm.usage  # noqa: F401
 import app.engagements.storage  # noqa: F401
@@ -31,6 +32,7 @@ import app.validation.storage  # noqa: F401
 
 from app import db
 from app.api.audit import router as audit_router
+from app.api.auth import router as auth_router
 from app.api.dashboard import router as dashboard_router
 from app.api.engagements import router as engagements_router
 from app.api.findings import router as findings_router
@@ -61,6 +63,11 @@ async def lifespan(app: FastAPI):  # noqa: ARG001
         # Redis outlives the containers too; a queued job whose row we just
         # deleted would otherwise be picked up by the worker after the restart.
         await reset_job_queue()
+    # Unattended provisioning: seed the first operator account from the
+    # environment when there is none. Never overwrites an existing one.
+    from app.auth import storage as auth_storage
+    await auth_storage.bootstrap_from_env()
+    await auth_storage.purge_expired()
     from app import settings_store
     await settings_store.apply_saved_on_startup()
     # Record the real exit IP now, while nothing is tunnelled, so the kill
@@ -85,16 +92,47 @@ app.add_middleware(
 )
 
 
-# --- API key (opt-in; see app/api_auth.py) -----------------------------------
+# --- Authentication (mandatory; see app/auth/policy.py) ----------------------
+# This used to be opt-in: with SYPHAX_API_KEY unset, every request was allowed.
+# That is defensible for a loopback-only tool on a laptop and indefensible on a
+# VM, which is where this now installs. There is no variable that turns it off.
 @app.middleware("http")
-async def _api_key_guard(request, call_next):
-    from app.api_auth import authorize
-    if not authorize(request.url.path, request.headers, settings.api_key,
-                     request.query_params.get("key")):
+async def _auth_guard(request, call_next):
+    from app.auth import policy, storage, tokens
+
+    request.state.user = None
+    token = request.cookies.get(tokens.COOKIE_NAME, "")
+
+    try:
+        has_users = await storage.has_users()
+        if token:
+            request.state.user = await storage.resolve_session(token)
+    except Exception:  # noqa: BLE001
+        # The database is down or still starting. Fail CLOSED on everything
+        # guarded: an unreachable user table is not an empty one, and treating
+        # it as empty would open the setup route on a configured install.
+        if policy.is_guarded(request.url.path) or policy.is_setup_path(request.url.path):
+            return JSONResponse(
+                status_code=503,
+                content={"detail": "database unavailable; the backend is still starting",
+                         "reason": "database_unavailable"},
+            )
+        return await call_next(request)
+
+    decision = policy.decide(
+        path=request.url.path,
+        has_users=has_users,
+        session_user=request.state.user,
+        provided_key=policy.extract_key(request.headers,
+                                        request.query_params.get("key")),
+        expected_key=settings.api_key,
+    )
+    if not decision.allow:
         return JSONResponse(
-            status_code=401,
-            content={"detail": "missing or invalid API key "
-                                "(send X-API-Key or Authorization: Bearer)"},
+            status_code=decision.status,
+            content={"detail": decision.message,
+                     "reason": decision.reason,
+                     "setup_required": decision.setup_required},
         )
     return await call_next(request)
 
@@ -159,6 +197,7 @@ async def llm_ping(role: str = "planner") -> dict:
     }
 
 
+app.include_router(auth_router)
 app.include_router(engagements_router)
 app.include_router(orchestrator_router)
 app.include_router(proxy_router)

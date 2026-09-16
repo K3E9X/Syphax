@@ -2,6 +2,8 @@ import React, { useEffect, useState } from 'react';
 import ReactDOM from 'react-dom/client';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import App from './App.jsx';
+import Gate from './components/Gate.jsx';
+import { AuthProvider } from './lib/auth.jsx';
 import Home from './pages/Home.jsx';
 import { api } from './lib/api.js';
 
@@ -52,7 +54,9 @@ function LiveRedirect() {
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
     <BrowserRouter>
+      <AuthProvider>
       <React.Suspense fallback={<div className="page"><div className="empty empty--loading">Loading…</div></div>}>
+        <Gate>
           <Routes>
         <Route path="/" element={<App />}>
           <Route index element={<Home />} />
@@ -72,7 +76,9 @@ ReactDOM.createRoot(document.getElementById('root')).render(
           <Route path="*" element={<NotFound />} />
         </Route>
       </Routes>
-        </React.Suspense>
+        </Gate>
+      </React.Suspense>
+      </AuthProvider>
     </BrowserRouter>
   </React.StrictMode>
 );

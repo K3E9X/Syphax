@@ -68,15 +68,20 @@ services:
       - DATABASE_URL=postgresql://${POSTGRES_USER:-syphax}:${POSTGRES_PASSWORD:-syphax}@postgres:5432/${POSTGRES_DB:-syphax}
       - REDIS_URL=redis://redis:6379/0
     ports:
-      # Loopback only. The API has no authentication beyond the optional
-      # SYPHAX_API_KEY, and 8080 is a live HTTPS-intercepting proxy holding the
-      # operator's captured sessions - neither belongs on every host interface.
+      # Loopback by default. BIND_ADDRESS=0.0.0.0 publishes them on every
+      # interface, which is what a VM install needs - and what you should not
+      # do until there is TLS in front of it.
+      #
+      # The API now requires an operator account, so an exposed 8000 is a login
+      # page rather than an open door. 8080 is different: it is a live
+      # HTTPS-intercepting proxy holding captured sessions, it has no
+      # authentication of its own, and mitmproxy will happily proxy for anyone
+      # who can reach it. Expose it only on a network you control.
+      #
       # 8080 is published here rather than on the proxy service because that
       # service shares this container's network namespace (for the tunnel).
-      # To point a phone or VM at the proxy, change 8080 deliberately and set
-      # SYPHAX_API_KEY first.
-      - "127.0.0.1:8000:8000"
-      - "127.0.0.1:8080:8080"
+      - "${BIND_ADDRESS:-127.0.0.1}:8000:8000"
+      - "${BIND_ADDRESS:-127.0.0.1}:8080:8080"
     volumes:
       # Bind mount: mitmproxy CA cert lives here, users download it from /api/proxy/ca.pem.
       - ./data:/data
@@ -196,7 +201,7 @@ services:
     depends_on:
       - backend
     ports:
-      - "3000:80"
+      - "${BIND_ADDRESS:-127.0.0.1}:3000:80"
 
   # Runs untrusted third-party PoCs. Attached to sandbox-net ONLY: Postgres,
   # Redis and the backend's secrets live on syphax-net, which this container is

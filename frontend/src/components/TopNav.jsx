@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { NavLink } from 'react-router-dom';
 import { api } from '../lib/api.js';
+import { useAuth } from '../lib/auth.jsx';
 import logoMark from '../assets/logo-mark.svg';
 
 // Canonical nav order (HANDOFF section 1). Text-only, no icons.
@@ -19,6 +20,7 @@ const LINKS = [
 ];
 
 export default function TopNav() {
+  const { user, logout } = useAuth();
   // Without this, a backend that is down looks identical to a tool with no
   // data: every page renders its empty state and says nothing is wrong.
   const [online, setOnline] = useState(null);
@@ -71,6 +73,16 @@ export default function TopNav() {
           );
         })}
       </div>
+      {user && (
+        <div className="topnav__who">
+          <span className="topnav__user" title={`signed in as ${user.username} (${user.role})`}>
+            {user.username}
+          </span>
+          <button type="button" className="btn btn--muted btn--sm" onClick={logout}>
+            Sign out
+          </button>
+        </div>
+      )}
     </nav>
   );
 }

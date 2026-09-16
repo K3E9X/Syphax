@@ -1,8 +1,10 @@
 // Thin fetch wrappers for the FastAPI backend. Paths are relative so they
 // work behind the nginx proxy in production and the Vite dev proxy locally.
 
-// Optional API key (backend SYPHAX_API_KEY). Stored per browser; empty when the
-// backend runs unauthenticated on loopback, which is the default.
+// Machine credential (backend SYPHAX_API_KEY), for scripts and CI. A browser
+// normally authenticates with the session cookie set by /api/auth/login and
+// leaves this empty; it is stored per browser for the case where an operator
+// drives the API from the UI of a headless install.
 const KEY_STORAGE = 'syphax_api_key';
 
 export function getApiKey() {
@@ -16,15 +18,34 @@ export function setApiKey(key) {
   } catch { /* private mode: the key just won't persist */ }
 }
 
+// Raised when the backend says this browser is not signed in, so the shell can
+// swap in the login screen from wherever the 401 happened - a background poll
+// on a page the operator is not even looking at included.
+export const UNAUTHENTICATED_EVENT = 'syphax:unauthenticated';
+
 async function request(path, opts = {}) {
   const key = getApiKey();
-  const res = await fetch(path, key
-    ? { ...opts, headers: { ...(opts.headers || {}), 'X-API-Key': key } }
-    : opts);
+  const res = await fetch(path, {
+    // The session is an httpOnly cookie; without this an opts object with its
+    // own `credentials` would silently drop it.
+    credentials: 'same-origin',
+    ...opts,
+    headers: key
+      ? { ...(opts.headers || {}), 'X-API-Key': key }
+      : (opts.headers || {}),
+  });
   const text = await res.text();
   const body = text ? safeJson(text) : null;
   if (!res.ok) {
-    throw new Error(errorMessage(body, text, res.status));
+    if (res.status === 401 && typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent(UNAUTHENTICATED_EVENT, {
+        detail: { reason: body?.reason || '', setupRequired: !!body?.setup_required },
+      }));
+    }
+    const err = new Error(errorMessage(body, text, res.status));
+    err.status = res.status;
+    err.reason = body?.reason || '';
+    throw err;
   }
   return body;
 }
@@ -175,6 +196,36 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     }),
+  },
+
+  auth: {
+    status: () => request('/api/auth/status'),
+    setup: (username, password) => request('/api/auth/setup', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, password }),
+    }),
+    login: (username, password) => request('/api/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, password }),
+    }),
+    logout: () => request('/api/auth/logout', { method: 'POST' }),
+    changePassword: (currentPassword, newPassword) => request('/api/auth/password', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }),
+    }),
+    revokeSessions: () => request('/api/auth/sessions/revoke', { method: 'POST' }),
+    sessions: () => request('/api/auth/sessions'),
+    apiKeyState: () => request('/api/auth/api-key'),
+    users: () => request('/api/auth/users'),
+    addUser: (payload) => request('/api/auth/users', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    }),
+    removeUser: (id) => request(`/api/auth/users/${id}`, { method: 'DELETE' }),
   },
 
   settings: {
