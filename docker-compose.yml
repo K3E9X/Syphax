@@ -73,15 +73,18 @@ services:
       # do until there is TLS in front of it.
       #
       # The API now requires an operator account, so an exposed 8000 is a login
-      # page rather than an open door. 8080 is different: it is a live
-      # HTTPS-intercepting proxy holding captured sessions, it has no
-      # authentication of its own, and mitmproxy will happily proxy for anyone
-      # who can reach it. Expose it only on a network you control.
+      # page rather than an open door.
+      #
+      # 8080 has its OWN variable, and it is not BIND_ADDRESS. That port is a
+      # live HTTPS-intercepting proxy: it has no authentication of its own, and
+      # mitmproxy will relay for anyone who can reach it. Publishing it because
+      # you wanted the UI reachable would hand the network an open proxy with a
+      # trusted CA behind it. Two variables, so that cannot happen by accident.
       #
       # 8080 is published here rather than on the proxy service because that
       # service shares this container's network namespace (for the tunnel).
       - "${BIND_ADDRESS:-127.0.0.1}:8000:8000"
-      - "${BIND_ADDRESS:-127.0.0.1}:8080:8080"
+      - "${PROXY_BIND_ADDRESS:-127.0.0.1}:8080:8080"
     volumes:
       # Bind mount: mitmproxy CA cert lives here, users download it from /api/proxy/ca.pem.
       - ./data:/data

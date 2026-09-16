@@ -47,12 +47,29 @@ case "${1:-up}" in
         ;;
 esac
 
+# Print the address the stack is actually reachable on. "localhost" is a lie on
+# a VM the operator reached over SSH, and it is the line they copy.
+bind="$(grep -E '^BIND_ADDRESS=' .env 2>/dev/null | head -1 | cut -d= -f2- || true)"
+proxy_bind="$(grep -E '^PROXY_BIND_ADDRESS=' .env 2>/dev/null | head -1 | cut -d= -f2- || true)"
+host="${bind:-127.0.0.1}"
+if [ "$host" = "0.0.0.0" ] || [ -z "$host" ]; then
+    host="$(hostname -I 2>/dev/null | awk '{print $1}')"
+    [ -n "$host" ] || host="<this host>"
+fi
+
 printf '\n'
 log "Stack is up."
-log "  UI:         http://localhost:3000"
-log "  API:        http://localhost:8000"
-log "  API docs:   http://localhost:8000/docs"
-log "  MITM proxy: http://localhost:8080  (set this as your browser HTTP/HTTPS proxy)"
+log "  UI:         http://${host}:3000"
+log "  API:        http://${host}:8000"
+log "  API docs:   http://${host}:8000/docs"
+if [ "${proxy_bind:-127.0.0.1}" = "127.0.0.1" ]; then
+    log "  MITM proxy: http://127.0.0.1:8080  (loopback only; see PROXY_BIND_ADDRESS)"
+else
+    log "  MITM proxy: http://${proxy_bind}:8080  (set as your browser HTTP/HTTPS proxy)"
+fi
+log ""
+log "First run: create the operator account, then connect a model. The tool"
+log "does not start a run without either."
 printf '\n'
 
 if [ "${1:-}" = "--logs" ]; then

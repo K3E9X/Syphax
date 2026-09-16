@@ -3,6 +3,53 @@
 What the README leaves out: running an engagement day to day, authenticated
 testing, proof of impact, platform specifics, and wiping state.
 
+## Signing in
+
+There is no anonymous mode. The first visit creates the operator account, and
+the setup page closes permanently once it exists — an open one is a backdoor,
+not a setup page.
+
+* Sessions last 8 hours, slide while you use them, and cap at 7 days. The token
+  is an httpOnly cookie; only its SHA-256 is stored, so a database dump
+  contains nothing replayable.
+* Failed logins back off per (username, source address) **together**: per
+  username alone would let someone lock you out of your own tool, per address
+  alone is defeated by a proxy list. The delay is capped.
+* **Settings -> Account** changes the password (which ends every other
+  session), lists the sessions that are live, and signs out everywhere.
+* `SYPHAX_API_KEY` is a machine credential for scripts and CI. It is an
+  alternative to a session, not a way to skip having an account: with no
+  account, it authorises nothing.
+
+Forgotten the password on a host you control? There is no reset link. Delete
+the row and let setup run again:
+
+```bash
+docker compose exec postgres psql -U syphax -d syphax \
+    -c 'DELETE FROM user_sessions; DELETE FROM users;'
+```
+
+## Connecting a model
+
+The tool will not run without one. Three roles need a provider:
+
+| Role | What it does | What to put there |
+| --- | --- | --- |
+| planner | decides the next move | the strongest model you are willing to pay for; it runs least often |
+| executor | drives the tools, reads their output | the cheapest fast one; it runs constantly |
+| validator | confirms or kills each finding | accuracy — this is what keeps false positives out of the report |
+
+Offered out of the box: **Z.ai (GLM)**, **Moonshot (Kimi)**, **DeepSeek**,
+**Qwen (DashScope)**, **OpenRouter**, and "Other" for anything else that speaks
+`/v1/chat/completions` — a self-hosted vLLM or Ollama, an in-house gateway.
+
+The model name is free text. Nothing validates against the suggestions, which
+will lag the provider; if a model string is wrong, the provider says so and the
+per-role **Test** button in Settings shows you exactly what it said.
+
+Keys are encrypted with `SYPHAX_SECRET_KEY` before they are written and are
+never returned to the browser — the UI can only ask whether one is stored.
+
 ## Run an engagement
 
 1. **Engagements** -> enter a target you own, tick the authorization box,
@@ -100,6 +147,84 @@ leaked-secret → server compromise, broken-access-control → bulk data exposur
 weak-JWT → account takeover, SSRF → cloud credential theft, subdomain takeover
 → session theft, GraphQL introspection → authorization abuse (plus an optional
 LLM pass for additional chains).
+
+## Installing on a VM
+
+The difference between a laptop install and a VM install is one flag.
+
+```bash
+git clone https://github.com/K3E9X/Syphax && cd Syphax
+./install.sh --bind 0.0.0.0
+./start.sh
+```
+
+`install.sh` generates `POSTGRES_PASSWORD` and `SYPHAX_SECRET_KEY` into `.env`
+and `chmod 600`s it. It does not ship a working default for either: a default
+that requires a human step is a default that survives into production.
+
+### The two bind addresses, and why they are two
+
+| Variable | Default | What it publishes |
+| --- | --- | --- |
+| `BIND_ADDRESS` | `127.0.0.1` | UI (3000) and API (8000) |
+| `PROXY_BIND_ADDRESS` | `127.0.0.1` | mitmproxy (8080) |
+
+They used to be one. An operator setting it to `0.0.0.0` wanted the UI
+reachable from their laptop; they would also have published an HTTPS-
+intercepting proxy that has **no authentication of its own**, will relay for
+anyone who can reach it, and has a CA their devices trust. That is an open
+relay acquired as a side effect. Two variables so it cannot happen by accident.
+
+To use the proxy from another device, prefer an SSH tunnel:
+
+```bash
+ssh -N -L 8080:127.0.0.1:8080 operator@your-vm
+```
+
+### There is no TLS in this stack
+
+The login page protects the API. It does not encrypt it. A password sent to
+`http://your-vm:3000` is a password on the wire, and so is every captured
+session the UI renders afterwards. Before exposing anything:
+
+* put a reverse proxy with a certificate in front of 3000 and 8000 (caddy,
+  nginx, traefik — any of them), **or**
+* keep `BIND_ADDRESS=127.0.0.1` and reach the UI over an SSH tunnel:
+  `ssh -N -L 3000:127.0.0.1:3000 -L 8000:127.0.0.1:8000 operator@your-vm`.
+
+Behind a TLS terminator, forward `X-Forwarded-Proto: https` — the session
+cookie sets its `Secure` flag from that header. Without it the cookie is issued
+without `Secure` and a downgrade would send it in the clear.
+
+Also set `CORS_ORIGINS` to the origin you actually serve the UI from; it still
+lists `http://localhost:3000`.
+
+### Unattended provisioning
+
+```bash
+./install.sh --yes --bind 0.0.0.0 \
+    --admin-user operator \
+    --admin-password "$(cat /run/secrets/syphax-admin)"
+```
+
+That writes `SYPHAX_ADMIN_USER` / `SYPHAX_ADMIN_PASSWORD` into `.env`, and the
+first start creates the account from them. They are read **only when no account
+exists**, so they can never reset an existing operator's password — but the
+password is sitting in `.env` in plaintext until you remove those two lines,
+which you should.
+
+`--skip-build` writes `.env` and `./data` without needing Docker installed yet,
+for the usual provisioning order of "lay down the config, then the runtime".
+
+### Sizing
+
+The backend image carries around twenty scanner binaries. Budget **12 GB of
+free disk** for the build and 4 GB of RAM to run the stack; the installer warns
+if the disk is short, because the error Docker prints when it runs out
+mid-build is about a layer, not about disk.
+
+`/dev/net/tun` must exist for the VPN endpoints (`modprobe tun`). Everything
+else works without it.
 
 ## Platform specifics
 
@@ -223,20 +348,25 @@ A directory that was never produced yields zero findings, not an error.
 
 | Variable                       | Purpose                                            |
 | ------------------------------ | -------------------------------------------------- |
-| `PLANNER/EXECUTOR/VALIDATOR_BASE_URL` `_API_KEY` `_MODEL` | Per-role LLM. Default `.env` puts the **planner on Kimi K3** (`https://api.moonshot.ai/v1`, `kimi-k3`) and the **executor + validator on Z.ai GLM** (`glm-5.2`); set the keys to activate. |
+| `PLANNER/EXECUTOR/VALIDATOR_BASE_URL` `_API_KEY` `_MODEL` | Per-role LLM, for unattended provisioning. **Anything set in the UI wins**, and the UI is the normal path — it stores the key encrypted rather than in a file. Default `.env` puts the planner on Kimi K3 and the executor + validator on Z.ai GLM. |
 | `LLM_PRICING`                  | `model=IN/OUT` USD per 1M tokens. **Without it the dashboard shows real token counts against $0.00 spend** — every unlisted model costs 0. |
 | `USER_AGENT_MODE`              | `rotate` (default) impersonates a different real browser per job, headers included. `fixed` pins `USER_AGENT`. |
 | `REQUIRE_VPN` / `SCAN_PROXY` / `VPN_CONFIG_PATH` | Route scan traffic through a proxy or tunnel, and refuse to scan when the exit IP still matches your real one. |
 | `RESET_ON_START`               | Wipe scan artefacts on every boot (default `true`). See **Full wipe** below for what it does *not* cover. |
 | `OPENROUTER_API_KEY` / `_MODEL` / `_FALLBACK_MODELS` | **Optional** free fallback aggregator, used only for roles whose own key is blank. |
-| `SYPHAX_API_KEY`               | **Optional.** Empty = no authentication, which is fine while `:8000` / `:8080` are bound to `127.0.0.1` (the compose default). Set it before exposing either, then paste the same value into **Settings → API key**. Enforced on `/api` and on the WebSocket (as `?key=`, since a browser cannot set headers on a WS handshake). `/api/health` stays open for the healthcheck. |
+| `SYPHAX_API_KEY`               | **Optional machine credential** for scripts and CI — an alternative to signing in, not a way to skip having an account. With no account it authorises nothing. Enforced on `/api` and on the WebSocket (as `?key=`, since a browser cannot set headers on a WS handshake). `/api/health`, `/api/auth/status` and `/api/auth/login` stay open. |
+| `SYPHAX_ADMIN_USER` / `_PASSWORD` | Seeds the operator account on first start, for a VM built by a script. Read **only when no account exists**, so they cannot reset an existing password. |
+| `SYPHAX_SECRET_KEY`            | Encrypts the stored provider API keys at rest. Generated by `install.sh`. If left blank the backend mints one into `./data/.settings.key` — which works until `./data` is not durable, and then every stored key silently stops decrypting. |
+| `BIND_ADDRESS`                 | Interface for the UI (3000) and API (8000). `127.0.0.1` by default; `0.0.0.0` for a VM, behind TLS. |
+| `PROXY_BIND_ADDRESS`           | Interface for mitmproxy (8080). Separate from `BIND_ADDRESS` on purpose — it is an unauthenticated intercepting proxy, so exposing it must be a deliberate act. |
 | `LLM_RECON_MAX_FLOWS` / `_BODY_CHARS` / `_BUDGET_CHARS` | How much captured traffic the LLM response analyst sees. Defaults suit ~128K context; raise to `200` / `600000` for a 262K model. Flows are ranked (server errors > auth/validation errors > parameterised > plain 200s > 404s) and added until either cap binds. |
 | `POSTGRES_*`                   | Database credentials (defaults work out of the box). |
 | `WPSCAN_API_TOKEN`             | Optional WordPress CVE lookups.                    |
 
-Set a Z.ai (or Kimi) key on each role for the real thing; leave keys blank and
-it falls back to OpenRouter's free models, so the stack works with a single key
-or none.
+An OpenRouter key still covers every role at once if you prefer one account.
+What no longer works is *no* key anywhere: the run gate refuses, in one 409
+that names the fix, instead of starting a run that can only print raw scanner
+output.
 
 ### Full wipe
 

@@ -9,8 +9,10 @@ into kill-chains, and you ship a client report.
 
 It orchestrates mature CLI tools — nuclei, sqlmap, ffuf, dalfox, nmap and a
 dozen more — rather than reinventing scanners, and uses an LLM to plan, reorder
-and judge. **The whole loop also runs with no LLM at all**: the methodology
-engine is deterministic; the model only adds judgement on top.
+and judge. The methodology engine underneath is deterministic, but the model is
+**required**: it decides what to do next, reads what the tools said, and
+confirms or kills every finding. A run without one is a scanner printing raw
+output, so the tool refuses to start one.
 
 > For authorized testing only. Use it on systems you own or have written
 > permission to test.
@@ -34,13 +36,34 @@ wheel, so Apple Silicon needs no compiler.
 ```bash
 git clone https://github.com/K3E9X/Syphax && cd Syphax
 
-cp .env.example .env       # then edit it — see below
-./install.sh               # checks Docker, then `docker compose build`
+./install.sh               # writes .env, generates its secrets, builds images
 ./start.sh                 # `docker compose up -d`  (also: stop | restart | --logs)
 ```
 
-`install.sh` and `start.sh` are thin guarded wrappers; `docker compose build`
-and `docker compose up -d` work just as well.
+`install.sh` creates `.env` from the example and **generates** the database
+password and the at-rest encryption key — it does not leave you a default to
+forget about. Then open the UI: it asks you to create the operator account and
+connect a model, in that order, and will not do anything else until both exist.
+
+On a VM you reach over the network:
+
+```bash
+./install.sh --bind 0.0.0.0
+```
+
+That publishes the UI and API on every interface and says, loudly, that there
+is no TLS in this stack — put a reverse proxy with a certificate in front of it.
+The mitmproxy port has its own variable (`PROXY_BIND_ADDRESS`) and stays on
+loopback: it is an unauthenticated intercepting proxy with a trusted CA behind
+it, and publishing it as a side effect of wanting the UI reachable would be an
+open relay.
+
+Fully unattended, from a provisioning script:
+
+```bash
+./install.sh --yes --bind 0.0.0.0 \
+    --admin-user operator --admin-password "$(cat /run/secrets/syphax-admin)"
+```
 
 | Service | URL |
 | --- | --- |
@@ -49,38 +72,40 @@ and `docker compose up -d` work just as well.
 | API docs | http://localhost:8000/docs |
 | MITM proxy | http://localhost:8080 (loopback only by default) |
 
+### Signing in
+
+There is no anonymous mode and no variable that disables the login. The first
+visit creates the account; after that it is a password, an 8-hour session in an
+httpOnly cookie, and a throttled login form. `SYPHAX_API_KEY` remains available
+as a machine credential for scripts and CI — an alternative to a session, not a
+way to skip having one.
+
 ### What to put in `.env`
 
-It runs with the file untouched. Three things are worth setting:
+`install.sh` fills in what must not be left at a default. Two things are worth
+setting by hand:
 
 ```bash
-# 1. LLM — optional. Without a key the deterministic engine still runs.
-#    The default splits the roles: reasoning where the decisions are made,
-#    speed where the volume is.
-PLANNER_BASE_URL=https://api.moonshot.ai/v1     # Kimi K3
-PLANNER_API_KEY=sk-...
-EXECUTOR_BASE_URL=https://api.z.ai/api/paas/v4  # GLM 5.2
-EXECUTOR_API_KEY=...
-VALIDATOR_BASE_URL=https://api.z.ai/api/paas/v4
-VALIDATOR_API_KEY=...
-
-# 2. Cost. WITHOUT THIS the dashboard shows real tokens against $0.00 spend,
+# 1. Cost. WITHOUT THIS the dashboard shows real tokens against $0.00 spend,
 #    because a model that is not listed is costed at zero.
 LLM_PRICING=kimi-k3=3.0/15.0,glm-5.2=1.4/4.4
 
-# 3. API key — optional, and empty is fine while the API is bound to 127.0.0.1
-#    (the compose default). Set it before exposing :8000 or the proxy :8080 to
-#    anything else: the API can read captured sessions and bring up a VPN.
-#    Then paste the same value into Settings -> API key in the UI.
-SYPHAX_API_KEY=
-
-# 4. Where your traffic exits. Empty = your own IP.
+# 2. Where your traffic exits. Empty = your own IP.
 REQUIRE_VPN=false          # true refuses to scan unless the exit IP changed
 SCAN_PROXY=                # socks5://127.0.0.1:9050 for Tor — no privileges
 VPN_CONFIG_PATH=           # /data/vpn/wg0.conf for WireGuard/OpenVPN
 ```
 
-Leave every LLM key blank and it falls back to OpenRouter's free models.
+The LLM provider and key are **not** here. They are entered in the UI, stored
+encrypted in the database, and never returned to the browser. The `PLANNER_*` /
+`EXECUTOR_*` / `VALIDATOR_*` variables still work for unattended provisioning,
+and anything set in the UI wins.
+
+The providers offered: **Z.ai (GLM)**, **Moonshot (Kimi)**, **DeepSeek**,
+**Qwen (DashScope)**, **OpenRouter**, and anything else that speaks
+`/v1/chat/completions` — a self-hosted vLLM or Ollama, an in-house gateway. One
+provider for all three roles is the default; splitting them (a strong model on
+the planner, a cheap fast one on the executor) is a checkbox.
 
 ### First engagement
 
