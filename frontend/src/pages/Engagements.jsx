@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { api } from '../lib/api.js';
 
 /* custom checkbox - square + CSS check, no icon */
@@ -43,7 +43,14 @@ const BLANK = {
 
 export default function Engagements() {
   const nav = useNavigate();
-  const [form, setForm] = useState(BLANK);
+  // Recon hands the target over in router state rather than a query string:
+  // the scope list it suggests can be two hundred hostnames, and a URL is the
+  // wrong place for them.
+  const handoff = useLocation().state || {};
+  const [form, setForm] = useState(
+    handoff.target_url
+      ? { ...BLANK, target_url: handoff.target_url, scope_hosts: handoff.scope_hosts || '' }
+      : BLANK);
   const [items, setItems] = useState([]);
   const [selectedId, setSelectedId] = useState(null);
   const [toast, setToast] = useState(null);
@@ -134,6 +141,13 @@ export default function Engagements() {
               <div className="field">
                 <label className="field__label">In-scope hosts <span style={{ textTransform: 'none', color: 'var(--text-faint)', fontWeight: 400 }}>optional</span></label>
                 <input className="input" placeholder="api.example.com, .example.com" value={form.scope_hosts} onChange={(e) => set({ scope_hosts: e.target.value })} />
+                {handoff.from_recon && (
+                  <span className="field__hint">
+                    Prefilled from recon on {handoff.from_recon}: names found on the
+                    certificate and in Certificate Transparency. These are
+                    suggestions — keep only what you are authorized to test.
+                  </span>
+                )}
                 <span className="field__hint">Comma-separated. Prefix with <code>.</code> to allow subdomains.</span>
               </div>
             </div>

@@ -107,6 +107,22 @@ The providers offered: **Z.ai (GLM)**, **Moonshot (Kimi)**, **DeepSeek**,
 provider for all three roles is the default; splitting them (a strong model on
 the planner, a cheap fast one on the executor) is a checkbox.
 
+### Recon first
+
+**Recon** sits between Home and Engagements. Paste a hostname, URL or IP and it
+answers the four questions worth asking before you open an engagement: where it
+actually lives, whose network that is (ASN and netblock — an address belonging
+to a hosting provider is not one your client can authorize you to attack), what
+it is built out of, split into frontend / backend / infrastructure, and what
+else carries the same name.
+
+It is passive by construction: DNS, RDAP and Certificate Transparency ask public
+infrastructure *about* the target, and the only thing that reaches the target is
+one TLS handshake, one `GET /`, and `robots.txt` / `sitemap.xml` /
+`security.txt`. The page shows that list, served from the backend, next to the
+button. Active testing needs an engagement — that is where the authorization
+lives.
+
 ### First engagement
 
 1. **Engagements** → enter the target, tick the authorization attestation,

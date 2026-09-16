@@ -129,6 +129,17 @@ export const api = {
       }),
   },
 
+  recon: {
+    // What a recon run does and does not do. Served rather than hardcoded so
+    // the page cannot promise something the backend does not enforce.
+    scope: () => request('/api/recon/scope'),
+    run: (target, includeCt = true) => request('/api/recon', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ target, include_ct: includeCt }),
+    }),
+  },
+
   methodology: {
     catalog: () => request('/api/methodology/catalog'),
   },

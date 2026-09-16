@@ -7,6 +7,9 @@ import logoMark from '../assets/logo-mark.svg';
 // Canonical nav order (HANDOFF section 1). Text-only, no icons.
 const LINKS = [
   { label: 'Home', to: '/' },
+  // Before Engagements on purpose: it is the step before one, not a tool you
+  // reach for afterwards.
+  { label: 'Recon', to: '/recon' },
   { label: 'Engagements', to: '/engagements' },
   { label: 'Live', to: '/live' },         // resolves to the most-recent engagement
   { label: 'Scans', to: '/scans' },

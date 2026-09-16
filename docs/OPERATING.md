@@ -50,6 +50,89 @@ per-role **Test** button in Settings shows you exactly what it said.
 Keys are encrypted with `SYPHAX_SECRET_KEY` before they are written and are
 never returned to the browser — the UI can only ask whether one is stored.
 
+## Recon, before the engagement
+
+**Recon** sits between Home and Engagements because that is where the step
+belongs: you arrive with a URL on a scoping document and four questions.
+
+    where does this actually live      addresses, reverse DNS, the redirect chain
+    whose network is that              ASN via Team Cymru, the netblock via RDAP
+    what is it built out of            frontend / backend / infrastructure
+    what else carries this name        the certificate's SANs, and CT logs
+
+Paste a hostname, a URL or an IP and press Run. It takes about a second without
+CT logs, a few with.
+
+### What it sends, and why that list is short
+
+An engagement is what authorizes testing: the operator attests, the scope gate
+enforces, the audit log records. Recon runs *before* one exists — it is how you
+decide whether to open one — so it has no scope to check against and cannot be
+given one. The line is therefore a list, not a judgement call
+(`backend/app/recon/budget.py`):
+
+* **Asks public infrastructure about the target.** DNS, RDAP, Certificate
+  Transparency. None of this reaches the target at all.
+* **Does what a browser does.** One TLS handshake, one `GET /`.
+* **Reads the three files the web agreed are public.** `robots.txt`,
+  `sitemap.xml`, `.well-known/security.txt`.
+
+That is the whole list. No port scan, no directory or subdomain brute force, no
+vulnerability templates, no authentication attempts, GET and HEAD only, at most
+six requests. The UI shows the same list next to the button — served from the
+backend, so the page cannot promise less than the backend enforces.
+
+Every run is written to the audit log with the operator's name on it. That
+matters more here than anywhere else: it is the one lookup no engagement covers.
+
+### The three technology layers
+
+Split deliberately, because they answer three different questions:
+
+| Layer | Question it answers |
+| --- | --- |
+| frontend | is DOM XSS on the table, and which bundles are worth pulling apart |
+| backend | which injection families are plausible, which CVE feeds to read |
+| infrastructure | what sits in front — and a WAF changes how everything else is approached |
+
+That last distinction is the one people skip and then misread their own
+results. `Server: cloudflare` says nothing whatsoever about the application.
+
+Each detection carries the evidence that produced it (hover it), and a coarse
+confidence: `certain` for a header or cookie only that software emits, `likely`
+for a body pattern someone could have written by hand. A wrong one can be
+dismissed by looking at it rather than by trusting the signature table.
+
+### Certificate Transparency is the productive part
+
+Every publicly-trusted certificate issued since 2018 is in a public log. Reading
+it is not enumeration — the target is never contacted — and in practice it is
+the single best source of scope before an engagement: staging hosts, admin
+panels, internal tools and the vendor SaaS nobody mentioned all end up with
+certificates. Names that are not on the scoping document are the conversation to
+have on the call, not in week two.
+
+crt.sh is one free service run by one CA. When it is slow or down, the panel
+says so — "crt.sh unreachable" and "this domain has no certificates" are
+different facts and conflating them would quietly shrink the scope.
+
+### Carrying it into an engagement
+
+**Create an engagement with this target** prefills the target URL and suggests a
+scope list built from the certificate's names and the CT names. They are
+suggestions. Keep only what you are authorized to test — the engagement form is
+where the attestation is, and it is still yours to make.
+
+### When a source does not answer
+
+Every section is an independent lookup against an independent service, so each
+one fails on its own and the page renders what came back. A list of what did not
+answer appears above the panels rather than replacing them.
+
+One thing it will not do: report six missing security headers when nothing
+answered at all. That reads as a finding about the target when it is a finding
+about the connection.
+
 ## Run an engagement
 
 1. **Engagements** -> enter a target you own, tick the authorization box,
