@@ -17,6 +17,12 @@ not a setup page.
   alone is defeated by a proxy list. The delay is capped.
 * **Settings -> Account** changes the password (which ends every other
   session), lists the sessions that are live, and signs out everywhere.
+* **Settings -> Operators** (admin only) adds and removes accounts. A VM shared
+  by two or three testers is the case this is for: each gets their own password
+  and their own line in the audit log, because "who ran this scan" is not a
+  question a shared account can answer. Roles are `admin` (everything) and
+  `operator` (runs engagements, cannot manage accounts). The last account cannot
+  be deleted, and neither can the one you are signed in as.
 * `SYPHAX_API_KEY` is a machine credential for scripts and CI. It is an
   alternative to a session, not a way to skip having an account: with no
   account, it authorises nothing.

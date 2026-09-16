@@ -26,12 +26,22 @@ export default function AccountCard() {
   const [ok, setOk] = useState('');
   const [sessions, setSessions] = useState(null);
   const [sessionsError, setSessionsError] = useState('');
+  const [apiKey, setApiKey] = useState(null);
 
   const loadSessions = () => api.auth.sessions()
     .then((r) => { setSessions(r?.items || []); setSessionsError(''); })
     .catch((e) => { setSessions([]); setSessionsError(e.message); });
 
   useEffect(() => { loadSessions(); }, []);
+
+  // Whether the backend has a machine credential configured at all. Without
+  // this the operator pastes a key into Settings and finds out it does nothing
+  // only when a script gets a 401.
+  useEffect(() => {
+    api.auth.apiKeyState()
+      .then(setApiKey)
+      .catch((e) => setApiKey({ configured: null, error: e.message }));
+  }, []);
 
   const mismatch = confirm !== '' && next !== confirm;
   const canSubmit = current && next && next === confirm && !busy;
@@ -97,6 +107,22 @@ export default function AccountCard() {
             {busy ? 'Working…' : 'Change password'}
           </button>
         </form>
+
+        <div className="io-label">Machine credential</div>
+        <div className="scan-note">
+          {apiKey === null && 'Checking…'}
+          {apiKey?.configured === true && (
+            <>SYPHAX_API_KEY is set on the backend, so a script may authenticate
+            with the <code>{apiKey.header}</code> header instead of signing in.{' '}
+            {apiKey.hint}</>
+          )}
+          {apiKey?.configured === false && (
+            <>No SYPHAX_API_KEY is set, so a session is the only way in — which is
+            the right default. {apiKey.hint}</>
+          )}
+          {apiKey?.configured === null
+            && `Could not read the machine-credential state: ${apiKey.error}`}
+        </div>
 
         <div className="io-label">Live sessions</div>
         {sessionsError && <Notice kind="error" message={sessionsError} onRetry={loadSessions} />}

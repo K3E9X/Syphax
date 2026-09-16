@@ -40,3 +40,6 @@
 
 .card__meta--warn { color: var(--sev-high, var(--severity-high, #f59e0b)); }
 .page--flush { padding-bottom: 0; }
+
+.ops__you { font-family: var(--font-sans); font-size: 10px; color: var(--text-faint); text-transform: uppercase; letter-spacing: .05em; }
+.ops__add { margin-top: 10px; }
