@@ -1,8 +1,12 @@
 import { useCallback, useEffect, useState } from 'react';
 import { api } from '../lib/api.js';
 import { Notice } from '../components/ui.jsx';
+import { Donut, Histogram, Legend } from '../components/Charts.jsx';
 
 const METHODS = ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS', 'HEAD'];
+const METHOD_HEX = { GET: '#22c55e', POST: '#22d3ee', PUT: '#eab308', PATCH: '#a78bfa', DELETE: '#ef4444', HEAD: '#737373', OPTIONS: '#525252' };
+const SC_HEX = { '2xx': '#22c55e', '3xx': '#22d3ee', '4xx': '#eab308', '5xx': '#ef4444' };
+const scBucket = (c) => c >= 500 ? '5xx' : c >= 400 ? '4xx' : c >= 300 ? '3xx' : c >= 200 ? '2xx' : null;
 const fmtBytes = (n) => n == null ? '-' : n < 1024 ? n + ' B' : (n / 1024).toFixed(1) + ' KB';
 const scClass = (c) => c >= 500 ? 'sc-5xx' : c >= 400 ? 'sc-4xx' : c >= 300 ? 'sc-3xx' : 'sc-2xx';
 const timeOf = (ts) => ts ? new Date(ts * 1000).toLocaleTimeString('en-US', { hour12: false }) : '-';
@@ -64,6 +68,23 @@ export default function Proxy() {
 
   const f = detail;
 
+  // Chart data over the captured flows: response-code classes (spot a wall of
+  // 4xx/5xx at a glance) and the request-method mix.
+  const scCounts = {};
+  const methodCounts = {};
+  for (const fl of flows) {
+    const b = scBucket(fl.status_code || 0);
+    if (b) scCounts[b] = (scCounts[b] || 0) + 1;
+    const m = (fl.method || 'GET').toUpperCase();
+    methodCounts[m] = (methodCounts[m] || 0) + 1;
+  }
+  const scSegments = ['2xx', '3xx', '4xx', '5xx']
+    .map((k) => ({ label: k, value: scCounts[k] || 0, color: SC_HEX[k] }))
+    .filter((s) => s.value > 0);
+  const methodBars = Object.entries(methodCounts)
+    .map(([m, n]) => ({ label: m, value: n, color: METHOD_HEX[m] || '#737373' }))
+    .sort((a, b) => b.value - a.value);
+
   return (
     <div className="page">
       <Notice kind="error" message={loadError} />
@@ -83,6 +104,26 @@ export default function Proxy() {
           </div>
         </div>
       </div>
+
+      {flows.length > 0 && (scSegments.length > 0 || methodBars.length > 0) && (
+        <div className="viz-row" style={{ marginBottom: 16 }}>
+          {scSegments.length > 0 && (
+            <div className="viz">
+              <div className="viz__h">Response codes</div>
+              <div className="viz__body">
+                <Donut segments={scSegments} centerLabel="flows" />
+                <Legend segments={scSegments} />
+              </div>
+            </div>
+          )}
+          {methodBars.length > 0 && (
+            <div className="viz">
+              <div className="viz__h">Request-method mix</div>
+              <div className="viz__body" style={{ width: '100%' }}><Histogram data={methodBars} /></div>
+            </div>
+          )}
+        </div>
+      )}
 
       <div className="card">
         <div className="card__body" style={{ paddingBottom: 14 }}>

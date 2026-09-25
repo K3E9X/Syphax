@@ -48,3 +48,10 @@
 .toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: var(--surface); border: 1px solid var(--accent-ring); color: var(--text-primary); font-size: 13px; padding: 10px 16px; border-radius: var(--radius-sm); box-shadow: var(--shadow-pop); z-index: 50; }
 
 @media (max-width: 900px) { .set-grid { grid-template-columns: 1fr; } .router-row { grid-template-columns: 1fr; gap: 6px; } }
+
+/* Sticky save bar: this page is long and the save button used to sit off the
+   bottom, so a change made near the top meant scrolling to commit it. */
+.set-actions { position: sticky; bottom: 0; z-index: 10; display: flex; align-items: center; gap: 12px;
+  margin: 16px -4px 0; padding: 14px 4px; border-top: 1px solid var(--border);
+  background: color-mix(in srgb, var(--bg) 90%, transparent); backdrop-filter: blur(8px); }
+.set-actions__msg { font-family: var(--font-mono); font-size: 12px; color: var(--text-secondary); }

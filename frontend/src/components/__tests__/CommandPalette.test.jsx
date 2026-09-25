@@ -50,14 +50,16 @@ it('is closed until the shortcut opens it', async () => {
 
 it('toggles shut on a second ⌘K and on Escape', async () => {
   await mount();
-  // Open, and wait for it to actually be on screen before toggling - two
-  // synchronous keydowns raced the open effect and made this flaky.
+  // Open, then wait for the async open effect to fully settle (its live-data
+  // load resolves and paints 'ACME prod') BEFORE toggling shut. Otherwise the
+  // pending setLive raced the close and intermittently left the dialog open.
   await act(async () => { openPalette(); });
-  await waitFor(() => expect(screen.getByRole('dialog')).toBeTruthy());
+  await waitFor(() => expect(screen.getByText('ACME prod')).toBeTruthy());
   await act(async () => { openPalette(); });
   await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
 
   await act(async () => { openPalette(); });
+  await waitFor(() => expect(screen.getByText('ACME prod')).toBeTruthy());
   await waitFor(() => expect(screen.getByRole('dialog')).toBeTruthy());
   await userEvent.keyboard('{Escape}');
   await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());

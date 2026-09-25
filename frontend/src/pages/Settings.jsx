@@ -132,9 +132,9 @@ export default function Settings() {
         </div>
       </div>
 
-      <div className="form-actions" style={{ marginTop: 6 }}>
+      <div className="set-actions">
         <button className="btn btn--solid" onClick={save}>Save settings</button>
-        {saved && <span className="form-error" style={{ color: 'var(--text-secondary)' }}>{saved}</span>}
+        {saved && <span className="set-actions__msg">{saved}</span>}
       </div>
     </div>
   );

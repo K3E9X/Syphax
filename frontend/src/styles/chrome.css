@@ -81,6 +81,8 @@ body { background: var(--bg); color: var(--text-primary); font: var(--font-body)
 .card__title { display: inline-flex; align-items: center; gap: 8px; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; color: var(--text-secondary); }
 .card__title svg { width: 13px; height: 13px; stroke: var(--text-faint); }
 .card__meta { display: inline-flex; align-items: center; gap: 7px; font-family: var(--font-mono); font-size: 11px; color: var(--text-faint); }
+.card__meta--ok { color: var(--term-ok); }
+.card__meta--warn { color: var(--severity-high); }
 .card__body { padding: 16px; }
 
 /* ---------- consoles (monochrome, colored [tag] only) ---------- */

@@ -73,7 +73,11 @@ export default function Sandbox() {
 
       {out && (
         <div className="card">
-          <div className="card__head"><span className="card__title">Result</span><span className="card__meta">{out.verdict || ''}{out.time_ms != null ? ` · ${out.time_ms} ms` : ''}</span></div>
+          <div className="card__head"><span className="card__title">Result</span>
+            <span className={'card__meta ' + (out.verdict === 'error' || out.verdict === 'refused' ? 'card__meta--warn' : out.verdict ? 'card__meta--ok' : '')}>
+              {out.verdict || ''}{out.time_ms != null ? ` · ${out.time_ms} ms` : ''}
+            </span>
+          </div>
           <div className="card__body">
             {out.req && <><div className="io-label">Request</div><pre className="io-block">{out.req}</pre></>}
             {out.resp && <><div className="io-label">Response</div><pre className="io-block">{out.resp}</pre></>}
