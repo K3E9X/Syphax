@@ -1,0 +1,31 @@
+/* Shared SVG/CSS charts (Charts.jsx): radar, donut, histogram, legend. */
+.chart { display: block; }
+.chart--radar, .chart--donut { overflow: visible; }
+
+/* a responsive row of chart panels */
+.viz-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 14px; }
+.viz { border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--bg); padding: 14px 16px; }
+.viz__h { font-size: 10px; text-transform: uppercase; letter-spacing: .06em; color: var(--text-faint); margin-bottom: 10px; }
+.viz__body { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; justify-content: center; }
+.viz__center { display: flex; justify-content: center; }
+
+/* donut + legend pairing */
+.chart-legend { display: flex; flex-direction: column; gap: 5px; min-width: 96px; }
+.chart-legend__row { display: flex; align-items: center; gap: 8px; font-size: 12px; }
+.chart-legend__dot { width: 9px; height: 9px; border-radius: 2px; flex: none; }
+.chart-legend__l { color: var(--text-secondary); text-transform: capitalize; flex: 1; }
+.chart-legend__v { font-family: var(--font-mono); color: var(--text-primary); }
+
+/* radar axis readout */
+.radar-axes { display: grid; grid-template-columns: repeat(2, auto); gap: 3px 14px; font-family: var(--font-mono); font-size: 11px; color: var(--text-faint); }
+.radar-axes b { color: var(--text-primary); font-weight: 500; }
+
+/* vertical histogram */
+.chart-hist { display: flex; align-items: flex-end; gap: 10px; width: 100%; }
+.chart-hist__col { flex: 1; display: flex; flex-direction: column; align-items: center; height: 100%; min-width: 0; }
+.chart-hist__val { font-family: var(--font-mono); font-size: 11px; color: var(--text-secondary); margin-bottom: 4px; }
+.chart-hist__track { flex: 1; width: 100%; display: flex; align-items: flex-end; border-bottom: 1px solid var(--border-strong); }
+.chart-hist__bar { width: 100%; border-radius: 3px 3px 0 0; min-height: 2px; transition: height .35s cubic-bezier(.2,.7,.3,1); }
+.chart-hist__lab { font-size: 10px; color: var(--text-faint); margin-top: 6px; text-transform: capitalize; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+
+@media (prefers-reduced-motion: reduce) { .chart-hist__bar { transition: none; } }

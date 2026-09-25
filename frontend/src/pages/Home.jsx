@@ -3,9 +3,12 @@ import { Link } from 'react-router-dom';
 import { api } from '../lib/api.js';
 import { useApi } from '../lib/useApi.js';
 import { Notice, UsageRow, fmtTokens, fmtUsd } from '../components/ui.jsx';
+import { COV_AXES, Donut, Histogram, Legend, Radar, SEV_HEX } from '../components/Charts.jsx';
 
 const PHASE_ORDER = ['Reconnaissance', 'Scanning & enumeration', 'Exploitation', 'Capture & analysis', 'Other'];
 const LLM_ROLES = ['planner', 'executor', 'validator'];
+const ROLE_HEX = { planner: '#22d3ee', executor: '#a78bfa', validator: '#34d399' };
+const SEV_BARS = ['critical', 'high', 'medium', 'low', 'info'];
 
 export default function Home() {
   // These four used to be `.then(set).catch(() => {})`. A dead backend, a
@@ -145,6 +148,20 @@ export default function Home() {
   const conf = dash?.confirmed_findings || {};
   const confTotal = Object.values(conf).reduce((a, b) => a + b, 0);
 
+  // Chart data. The engagement list carries a per-engagement coverage radar;
+  // averaging them gives a fleet-wide "what have we actually tested" view.
+  const engList = useApi(() => api.engagements.list(), []);
+  const engItems = engList.data?.items || [];
+  const aggRadar = COV_AXES.map((_, i) => {
+    const vals = engItems.map((e) => (e.radar || [])[i]).filter((v) => typeof v === 'number');
+    return vals.length ? Math.round(vals.reduce((a, b) => a + b, 0) / vals.length) : 0;
+  });
+  const sevSegments = SEV_BARS
+    .map((s) => ({ label: s, value: conf[s] || 0, color: SEV_HEX[s] }))
+    .filter((s) => s.value > 0);
+  const roleBars = (usage.by_role || [])
+    .map((r) => ({ label: r.role, value: Math.round((r.tokens || 0) / 1000), color: ROLE_HEX[r.role] || '#22d3ee' }));
+
   const byPhase = {};
   for (const t of tools) (byPhase[t.phase] = byPhase[t.phase] || []).push(t);
   const phases = PHASE_ORDER.filter((p) => byPhase[p]);
@@ -199,6 +216,48 @@ export default function Home() {
             {budget?.monthly_limit_usd ? ` · ${budget.pct}% of budget` : ''}
           </div>
         </Link>
+      </div>
+
+      <div className="card">
+        <div className="card__head"><span className="card__title">Analytics</span><span className="card__meta">confirmed findings · testing coverage · LLM spend</span></div>
+        <div className="card__body">
+          <div className="viz-row">
+            <div className="viz">
+              <div className="viz__h">Confirmed findings by severity</div>
+              <div className="viz__body">
+                {confTotal > 0 ? (
+                  <>
+                    <Donut segments={sevSegments} centerLabel="confirmed" />
+                    <Legend segments={sevSegments} />
+                  </>
+                ) : <div className="empty">No confirmed findings yet.</div>}
+              </div>
+            </div>
+
+            <div className="viz">
+              <div className="viz__h">Testing coverage (fleet avg)</div>
+              <div className="viz__body" style={{ flexDirection: 'column' }}>
+                {engItems.length > 0 ? (
+                  <>
+                    <Radar values={aggRadar} axes={COV_AXES} />
+                    <div className="radar-axes">
+                      {COV_AXES.map((a, i) => <span key={a}>{a} <b>{aggRadar[i]}%</b></span>)}
+                    </div>
+                  </>
+                ) : <div className="empty">No engagements yet.</div>}
+              </div>
+            </div>
+
+            <div className="viz">
+              <div className="viz__h">LLM tokens by role (k)</div>
+              <div className="viz__body" style={{ width: '100%' }}>
+                {roleBars.length > 0
+                  ? <Histogram data={roleBars} />
+                  : <div className="empty">No LLM calls yet.</div>}
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
 
       <div className="dash-grid">

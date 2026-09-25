@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { api } from '../lib/api.js';
+import { COV_AXES, Radar } from '../components/Charts.jsx';
 
 /* custom checkbox - square + CSS check, no icon */
 function Check({ checked, onChange, children, className = '' }) {
@@ -13,21 +14,6 @@ function Check({ checked, onChange, children, className = '' }) {
   );
 }
 
-const COV_AXES = ['Recon', 'Config', 'Injection', 'Auth', 'Session', 'API'];
-function Radar({ values, size = 168 }) {
-  const c = size / 2, r = c - 26, n = COV_AXES.length;
-  const pt = (i, rad) => { const a = (-90 + i * 360 / n) * Math.PI / 180; return [c + rad * Math.cos(a), c + rad * Math.sin(a)]; };
-  const poly = values.map((v, i) => pt(i, r * v / 100).join(',')).join(' ');
-  return (
-    <svg width={size} height={size} viewBox={'0 0 ' + size + ' ' + size}>
-      {[0.33, 0.66, 1].map((rg, k) => <polygon key={k} points={COV_AXES.map((_, i) => pt(i, r * rg).join(',')).join(' ')} fill="none" stroke="#262626" strokeWidth="1" />)}
-      {COV_AXES.map((_, i) => { const [x, y] = pt(i, r); return <line key={i} x1={c} y1={c} x2={x} y2={y} stroke="#262626" strokeWidth="1" />; })}
-      <polygon points={poly} fill="rgba(34,211,238,0.15)" stroke="#22d3ee" strokeWidth="1.5" />
-      {values.map((v, i) => { const [x, y] = pt(i, r * v / 100); return <circle key={i} cx={x} cy={y} r="2.5" fill="#22d3ee" />; })}
-      {COV_AXES.map((lab, i) => { const [x, y] = pt(i, r + 13); return <text key={i} x={x} y={y} fill="#737373" fontSize="9" fontFamily="monospace" textAnchor="middle" dominantBaseline="middle">{lab}</text>; })}
-    </svg>
-  );
-}
 function SevMini({ sev }) {
   const map = [['critical', 'var(--severity-critical)'], ['high', 'var(--severity-high)'], ['medium', 'var(--severity-medium)'], ['low', 'var(--severity-low)']];
   const tot = (sev.critical || 0) + (sev.high || 0) + (sev.medium || 0) + (sev.low || 0);

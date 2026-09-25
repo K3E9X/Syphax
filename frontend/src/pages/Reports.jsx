@@ -2,10 +2,11 @@ import { useEffect, useMemo, useState } from 'react';
 import { api } from '../lib/api.js';
 import { useApi, useEngagements } from '../lib/useApi.js';
 import { Async, Notice } from '../components/ui.jsx';
+import { COV_AXES, Donut, Histogram, Legend, Radar, SEV_HEX } from '../components/Charts.jsx';
 
-const SEV_HEX = { critical: '#ef4444', high: '#f97316', medium: '#eab308', low: '#06b6d4', info: '#525252' };
 const SEV_ORDER = { critical: 0, high: 1, medium: 2, low: 3, info: 4 };
 const SEV_BARS = ['critical', 'high', 'medium', 'low'];
+const STATUS_HEX = { confirmed: '#22c55e', likely: '#eab308', unconfirmed: '#737373' };
 
 // A report is a deliverable someone reads top-to-bottom, so it gets a real
 // document layout: a sticky table of contents on the left that jumps to each
@@ -51,6 +52,18 @@ export default function Reports() {
   const covDone = cov.done || cov.succeeded || 0;
   const covTotal = Object.values(cov).reduce((a, n) => a + n, 0);
   const covPct = covTotal ? Math.round((covDone / covTotal) * 100) : 0;
+
+  // Chart data. The radar comes from the engagement summary the list already
+  // carries, so no extra fetch. The donut shows the severity mix; the
+  // histogram shows how many findings are confirmed vs still awaiting a human.
+  const selected = engagements.find((e) => e.id === engId);
+  const radarValues = selected?.radar || [0, 0, 0, 0, 0, 0];
+  const sevSegments = [...SEV_BARS, 'info']
+    .map((s) => ({ label: s, value: dist[s] || 0, color: SEV_HEX[s] }))
+    .filter((s) => s.value > 0);
+  const statusBars = ['confirmed', 'likely', 'unconfirmed']
+    .map((k) => ({ label: k, value: vsum[k] || 0, color: STATUS_HEX[k] }))
+    .filter((b) => b.value > 0);
 
   // The TOC is built from what the report actually contains, so it never
   // points at an empty section.
@@ -169,6 +182,42 @@ export default function Reports() {
                 <dt>Engagement</dt><dd>{eng.id}</dd>
               </dl>
               <p style={{ marginTop: 16 }}>The autonomous assessment of <strong>{eng.target_url}</strong> identified <strong>{total} validated finding(s)</strong>, including <strong>{dist.critical || 0} critical</strong> and <strong>{dist.high || 0} high</strong>-severity issues. <strong>{confirmed}</strong> were confirmed with a safe, read-only proof.</p>
+
+              <div className="viz-row" style={{ marginTop: 18 }}>
+                <div className="viz">
+                  <div className="viz__h">Severity mix</div>
+                  <div className="viz__body">
+                    {total > 0 ? (
+                      <>
+                        <Donut segments={sevSegments} centerLabel="findings" />
+                        <Legend segments={sevSegments} />
+                      </>
+                    ) : <div className="empty">No findings.</div>}
+                  </div>
+                </div>
+
+                <div className="viz">
+                  <div className="viz__h">Testing coverage</div>
+                  <div className="viz__body" style={{ flexDirection: 'column' }}>
+                    <Radar values={radarValues} axes={COV_AXES} />
+                    <div className="radar-axes">
+                      {COV_AXES.map((a, i) => <span key={a}>{a} <b>{radarValues[i]}%</b></span>)}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="viz">
+                  <div className="viz__h">Validation status</div>
+                  <div className="viz__body" style={{ width: '100%' }}>
+                    {statusBars.length > 0
+                      ? <Histogram data={statusBars} />
+                      : <div className="empty">Nothing validated yet.</div>}
+                  </div>
+                </div>
+              </div>
+
+              {/* Keep the compact severity bars too - a quick left-to-right read
+                  under the charts. */}
               <div className="sevdist" style={{ marginTop: 16 }}>
                 {SEV_BARS.map((s) => (
                   <div key={s} className="sevdist__row">
