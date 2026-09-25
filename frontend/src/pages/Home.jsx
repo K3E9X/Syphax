@@ -7,7 +7,7 @@ import { COV_AXES, Donut, Histogram, Legend, Radar, SEV_HEX } from '../component
 
 const PHASE_ORDER = ['Reconnaissance', 'Scanning & enumeration', 'Exploitation', 'Capture & analysis', 'Other'];
 const LLM_ROLES = ['planner', 'executor', 'validator'];
-const ROLE_HEX = { planner: '#ff7a18', executor: '#a78bfa', validator: '#34d399' };
+const ROLE_HEX = { planner: '#c2410c', executor: '#a78bfa', validator: '#34d399' };
 const SEV_BARS = ['critical', 'high', 'medium', 'low', 'info'];
 
 export default function Home() {
@@ -160,7 +160,7 @@ export default function Home() {
     .map((s) => ({ label: s, value: conf[s] || 0, color: SEV_HEX[s] }))
     .filter((s) => s.value > 0);
   const roleBars = (usage.by_role || [])
-    .map((r) => ({ label: r.role, value: Math.round((r.tokens || 0) / 1000), color: ROLE_HEX[r.role] || '#ff7a18' }));
+    .map((r) => ({ label: r.role, value: Math.round((r.tokens || 0) / 1000), color: ROLE_HEX[r.role] || '#c2410c' }));
 
   const byPhase = {};
   for (const t of tools) (byPhase[t.phase] = byPhase[t.phase] || []).push(t);

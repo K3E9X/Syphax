@@ -39,7 +39,7 @@ export default function Surface() {
     .filter((b) => b.value > 0)
     .sort((a, b) => b.value - a.value)
     .slice(0, 8)
-    .map((b) => ({ ...b, color: '#ff7a18' }));
+    .map((b) => ({ ...b, color: '#c2410c' }));
   const methodCounts = {};
   for (const x of hosts) for (const e of x.endpoints || []) {
     const m = (e.m || 'GET').toUpperCase();

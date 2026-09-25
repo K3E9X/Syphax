@@ -1,6 +1,6 @@
 <svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
   <rect width="32" height="32" rx="7" fill="#0a0a0a"></rect>
-  <rect x="0.6" y="0.6" width="30.8" height="30.8" rx="6.4" fill="none" stroke="#ff7a18" stroke-opacity="0.40"></rect>
-  <polyline points="10 10 16 16 10 22" fill="none" stroke="#ff7a18" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"></polyline>
-  <rect x="18" y="19.6" width="6.6" height="2.6" rx="1.3" fill="#c2410c"></rect>
+  <rect x="0.6" y="0.6" width="30.8" height="30.8" rx="6.4" fill="none" stroke="#c2410c" stroke-opacity="0.40"></rect>
+  <polyline points="10 10 16 16 10 22" fill="none" stroke="#c2410c" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"></polyline>
+  <rect x="18" y="19.6" width="6.6" height="2.6" rx="1.3" fill="#ea580c"></rect>
 </svg>

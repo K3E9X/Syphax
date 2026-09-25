@@ -23,17 +23,17 @@
   --neutral-100:  #e5e5e5;   /* primary text on dark */
   --white:        #ffffff;
 
-  /* ---- Brand accent: orange (bright) + dark orange (depth) ---- */
-  --orange-300:   #ffa657;   /* soft highlight / hover text */
-  --orange-400:   #ff7a18;   /* dark-theme accent (bright orange) */
-  --orange-500:   #ea580c;   /* accent pressed / dim (dark orange) */
-  --orange-700:   #c2410c;   /* deepest orange - gradients, depth */
+  /* ---- Brand accent: dark orange (#c2410c) with warmer highlights ---- */
+  --orange-300:   #ea580c;   /* brighter highlight / hover text */
+  --orange-400:   #c2410c;   /* brand accent (dark orange) */
+  --orange-500:   #9a3412;   /* accent pressed / dim (deeper) */
+  --orange-700:   #7c2d12;   /* deepest - gradients, depth */
   /* legacy names kept so any stray reference still resolves to the
      brand accent instead of breaking. */
   --cyan-400:     var(--orange-400);
   --cyan-500:     var(--orange-500);
-  --blue-500:     #ea580c;   /* light-theme accent (dark orange) */
-  --blue-600:     #c2410c;
+  --blue-500:     #c2410c;   /* light-theme accent (dark orange) */
+  --blue-600:     #9a3412;
 
   /* ---- Severity scale (vuln findings) ---- */
   --sev-critical: #ef4444;
@@ -63,16 +63,16 @@
   --text-primary:    var(--neutral-100);  /* body + headings */
   --text-secondary:  var(--neutral-400);  /* labels, captions, meta */
   --text-faint:      var(--neutral-500);  /* timestamps, ghost text */
-  --text-inverse:    var(--neutral-950);  /* text on accent/white fills */
+  --text-inverse:    var(--white);         /* text on the dark-orange accent fill */
 
   --accent:          var(--orange-400);
   --accent-dim:      var(--orange-500);
-  --accent-tint:     rgba(255, 122, 24, 0.10);  /* active nav bg, badge fill */
-  --accent-ring:     rgba(255, 122, 24, 0.32);  /* focus ring */
+  --accent-tint:     rgba(194, 65, 12, 0.14);  /* active nav bg, badge fill */
+  --accent-ring:     rgba(194, 65, 12, 0.38);  /* focus ring */
 
-  --focus-ring:      rgba(255, 122, 24, 0.42);
+  --focus-ring:      rgba(194, 65, 12, 0.48);
   --selection-bg:    var(--orange-400);
-  --selection-fg:    var(--neutral-950);
+  --selection-fg:    var(--white);
 
   /* severity semantic (same values, semantic name) */
   --severity-critical: var(--sev-critical);
@@ -101,13 +101,13 @@
   --text-faint:      #a3a3a3;
   --text-inverse:    #ffffff;
 
-  --accent:          #ea580c;   /* dark orange reads better on white */
-  --accent-dim:      #c2410c;
-  --accent-tint:     rgba(234, 88, 12, 0.10);
-  --accent-ring:     rgba(234, 88, 12, 0.30);
+  --accent:          #c2410c;   /* dark orange brand, strong contrast on white */
+  --accent-dim:      #9a3412;
+  --accent-tint:     rgba(194, 65, 12, 0.10);
+  --accent-ring:     rgba(194, 65, 12, 0.30);
 
-  --focus-ring:      rgba(234, 88, 12, 0.32);
-  --selection-bg:    #ea580c;
+  --focus-ring:      rgba(194, 65, 12, 0.32);
+  --selection-bg:    #c2410c;
   --selection-fg:    #ffffff;
 
   --severity-critical: #dc2626;
