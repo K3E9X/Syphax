@@ -124,3 +124,13 @@
 .poc-rehearsal__n { font-family: var(--font-mono); color: var(--text-faint); }
 .poc-rehearsal__st { font-family: var(--font-mono); color: var(--text-primary); }
 .poc-rehearsal__ex, .poc-rehearsal__d { color: var(--text-faint); }
+
+/* A chained exploit: one script running several findings in order, each step
+   fed the previous step's output. */
+.poc-origin--chain { color: var(--sev-critical, #ef4444); border-color: rgba(239,68,68,.4); }
+.poc-chain { margin: 12px 0; padding: 10px 12px; border: 1px solid var(--border); border-left: 2px solid var(--sev-critical, #ef4444); border-radius: var(--radius-sm); background: var(--surface); font-size: 12px; }
+.poc-chain__h { font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--text-secondary); margin-bottom: 6px; }
+.poc-chain__steps { margin: 0 0 4px; padding-left: 20px; }
+.poc-chain__steps li { color: var(--text-primary); padding: 2px 0; line-height: 1.5; }
+.poc-chain__f { color: var(--text-secondary); }
+.poc-chain__o { color: var(--term-ok, #22c55e); font-size: 11px; }

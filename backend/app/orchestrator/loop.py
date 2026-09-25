@@ -587,6 +587,19 @@ async def _finalize_engagement(engagement, run: Run, runs: RunRepository,
             logger.exception("[%s] memory update failed", run.id)
 
         chains = await build_chains(engagement.id)
+
+        # Chained exploitation: now that the chains are drawn and each finding
+        # has been exploited on its own, author one PoC per multi-step chain
+        # that runs the steps in order - feeding each step what the last one
+        # produced. Like run_campaign it only authors and stages (no target is
+        # touched until a human approves and runs it), so it runs regardless of
+        # allow_active_exploit; the run endpoint is where the gate bites.
+        try:
+            from app.exploit.chain_exploit import run_chain_campaign
+            await run_chain_campaign(engagement.id)
+        except Exception:  # noqa: BLE001 - one dead chain is not the run
+            logger.exception("[%s] chain-exploit campaign error", run.id)
+
         await audit(
             "engagement.validated",
             engagement_id=engagement.id, run_id=run.id, stats=stats,

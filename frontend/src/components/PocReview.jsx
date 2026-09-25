@@ -29,6 +29,9 @@ function Verdict({ verdict }) {
  * bug, and nothing else on this screen tells them which is which.
  */
 function Origin({ origin }) {
+  if (origin === 'chain') {
+    return <span className="poc-origin poc-origin--chain" title="Multi-step exploit chaining several findings">chain</span>;
+  }
   if (origin === 'authored') {
     return <span className="poc-origin poc-origin--authored" title="Written by the model for this finding">authored</span>;
   }
@@ -234,6 +237,27 @@ export default function PocReview({ engagementId }) {
                   ? ` (rewritten after ${open.inspection.attempts - 1} refusal)` : ''}.
                 It has never run. Read it as you would a stranger&apos;s.
               </p>
+            )}
+
+            {open.inspection?.chain && (
+              <div className="poc-chain">
+                <div className="poc-chain__h">
+                  Chained exploit — {open.inspection.chain.title || 'kill-chain'}
+                </div>
+                <ol className="poc-chain__steps">
+                  {(open.inspection.chain.steps || []).map((st, i) => (
+                    <li key={i}>
+                      {st.action || st.finding || 'step'}
+                      {st.finding && st.action ? <span className="poc-chain__f"> — {st.finding}</span> : null}
+                      {st.had_output && <span className="poc-chain__o"> · fed by the previous step&apos;s output</span>}
+                    </li>
+                  ))}
+                </ol>
+                <p className="poc-note">
+                  One script runs these in order, each step using what the last
+                  produced. You are still approving it before it runs.
+                </p>
+              </div>
             )}
 
             {open.inspection?.refine && (

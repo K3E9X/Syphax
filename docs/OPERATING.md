@@ -275,6 +275,28 @@ deciding whether to turn that on should be able to see what it would unlock.
 Executing a staged PoC is where the gate bites, and `/api/poc/{id}/run`
 re-checks every gate rather than trusting the approval it was given.
 
+### Chained exploitation
+
+The report links findings into kill-chains — an SSRF that reaches an internal
+endpoint, a leaked credential that unlocks an authenticated IDOR, a file read
+that discloses a secret that grants access. That used to be narrative only: the
+chain was drawn, but each finding was still exploited alone, so the thing that
+makes a chain a chain — step two using what step one produced — never happened.
+
+After the per-finding campaign and after the chains are drawn, each multi-step
+chain is exploited as **one** authored PoC. The model is given the ordered steps
+and, crucially, the **observed output** of exploiting the earlier ones: not
+"there is an SSRF here" but "this SSRF returned this internal URL, now reach it".
+A chained exploit written blind guesses what step one leaked; this one is told,
+from what the per-finding rehearsal or the proof replay actually printed.
+
+Same gates as any authored PoC: capabilities bound what it may do, the sandbox
+pins egress to scope, and a human reads and approves the final script. It is
+staged with origin `chain`, showing the steps and which ones were fed by a prior
+step's output. It is single-shot, not rehearsed — a multi-step chain executed
+and revised autonomously is a bigger step than per-finding rehearsal, so staging
+one for a human to read is the conservative default.
+
 ### The engagement declares what the client authorized
 
 Most exploitation needs no declaration at all. POST, PUT, writing a file on the
