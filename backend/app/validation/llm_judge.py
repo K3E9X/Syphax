@@ -67,9 +67,19 @@ async def judge_engagement(engagement_id: str) -> Dict[str, int]:
     if not client.configured:
         return {"skipped": 1, "reason": "no LLM configured"}
 
+    # The engagement's scope predicate, so a proposed proof can be replayed live
+    # against the target. A read-only GET/HEAD in scope - the same thing the
+    # oracles already do in this phase - is what turns the model's suggestion
+    # into a mechanical confirmation.
+    from app.engagements import EngagementRepository
+    from app.validation.proof_replay import replay_proof
+    eng = await EngagementRepository().get(engagement_id)
+    in_scope = eng.host_in_scope if eng is not None else None
+
     repo = ValidatedFindingRepository()
     findings = await repo.list(engagement_id)
     judged = downgraded = upgraded = proposed = 0
+    confirmed_by_replay = refuted_by_replay = 0
     for vf in findings:
         if judged >= MAX_JUDGE:
             break
@@ -95,6 +105,7 @@ async def judge_engagement(engagement_id: str) -> Dict[str, int]:
         # it. Stored whatever the verdict, including on a false positive, where
         # "here is the request that shows it is not there" is just as useful.
         proof = parse_proof(j.get("proof"), vf.target)
+        proof_outcome = None
         if proof:
             try:
                 await repo.set_metadata(vf.id, {"suggested_proof": proof})
@@ -102,8 +113,25 @@ async def judge_engagement(engagement_id: str) -> Dict[str, int]:
             except Exception:  # noqa: BLE001 - a proof is a bonus, never fatal
                 logger.exception("[%s] could not store proof for %s",
                                  engagement_id, vf.id)
+            # Replay it live. This is the only thing that can raise a finding to
+            # 'confirmed'; the model's word never does that on its own. Never
+            # fatal - a target problem leaves proof_outcome None, which caps the
+            # verdict at 'likely' rather than crashing the pass.
+            if in_scope is not None:
+                try:
+                    rp = await replay_proof(proof, in_scope)
+                    proof_outcome = rp.get("outcome")
+                    await repo.set_metadata(vf.id, {"proof_replay": rp})
+                    if proof_outcome == "held":
+                        confirmed_by_replay += 1
+                    elif proof_outcome == "did_not_hold":
+                        refuted_by_replay += 1
+                except Exception:  # noqa: BLE001 - a replay problem is not fatal
+                    logger.warning("[%s] proof replay failed for %s",
+                                   engagement_id, vf.id)
 
-        status, conf = reconcile(vf.status, vf.confidence, j, vf.evidence)
+        status, conf = reconcile(vf.status, vf.confidence, j, vf.evidence,
+                                 proof_outcome=proof_outcome)
         if status == vf.status and abs(conf - vf.confidence) < 0.01:
             continue
         if _rank(status) > _rank(vf.status):
@@ -112,10 +140,14 @@ async def judge_engagement(engagement_id: str) -> Dict[str, int]:
             upgraded += 1
         await repo.update_verdict(vf.id, status=status, confidence=conf,
                                   method=f"{vf.method} + LLM judge")
-    logger.info("[%s] llm-judge: judged=%d upgraded=%d downgraded=%d proofs=%d",
-                engagement_id, judged, upgraded, downgraded, proposed)
+    logger.info("[%s] llm-judge: judged=%d upgraded=%d downgraded=%d proofs=%d "
+                "confirmed_by_replay=%d refuted_by_replay=%d",
+                engagement_id, judged, upgraded, downgraded, proposed,
+                confirmed_by_replay, refuted_by_replay)
     return {"judged": judged, "upgraded": upgraded, "downgraded": downgraded,
-            "proofs_proposed": proposed}
+            "proofs_proposed": proposed,
+            "confirmed_by_replay": confirmed_by_replay,
+            "refuted_by_replay": refuted_by_replay}
 
 
 # --------------------------------------------------------------------------- #
@@ -194,17 +226,41 @@ def parse_proof(raw: Any, target: str) -> Optional[Dict[str, str]]:
 
 
 def reconcile(base_status: str, base_conf: float, judgment: Dict,
-              evidence: str) -> Tuple[str, float]:
+              evidence: str, *, proof_outcome: Optional[str] = None) -> Tuple[str, float]:
     """Apply the judge to the deterministic verdict, safely.
 
-    Downgrades are trusted. An upgrade to 'confirmed' is only honoured if the
-    judge quotes real evidence; otherwise it is capped at 'likely'.
+    The rule, made absolute: the model never confirms a finding on its own. It
+    proposes a read-only check; a LIVE replay of that check is the only thing
+    that produces 'confirmed'. A model is fluent and confident about things that
+    are not there, and a grounded quote proves only that a string appears in
+    evidence the same model is reading - not that the issue is real on the
+    target now.
+
+      proof held         -> confirmed. A mechanical, read-only replay found the
+                            observable the judge named. This is the one path in.
+      proof refuted       -> the judge claimed confirmed and a live check
+                            refutes the very observable it chose. Trust the
+                            check: drop to 'unconfirmed'.
+      no live confirmation-> capped at 'likely'. No proof was replayable, or the
+                            target did not answer. A grounded quote keeps the
+                            confidence up within 'likely'; an invented one drops
+                            it. Either way the verdict is not 'confirmed'.
+
+    Downgrades from the model are always honoured - skepticism is safe.
     """
     verdict = judgment["verdict"]
     conf = clamp_confidence(judgment["confidence"], base_conf)
-    if verdict == "confirmed" and not quote_is_grounded(judgment.get("quote", ""), evidence):
-        verdict = "likely"
-        conf = min(conf, 0.6)
+
+    if verdict == "confirmed":
+        if proof_outcome == "held":
+            conf = max(conf, 0.9)
+        elif proof_outcome == "did_not_hold":
+            verdict, conf = "unconfirmed", min(conf, 0.4)
+        else:
+            verdict = "likely"
+            if not quote_is_grounded(judgment.get("quote", ""), evidence):
+                conf = min(conf, 0.6)
+
     if verdict == "false_positive":
         conf = min(conf, 0.2)
     return verdict, conf

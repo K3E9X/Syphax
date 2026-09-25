@@ -55,11 +55,12 @@ def proof_verdict(expect: str, body: Optional[str],
 
 # --------------------------------------------------------------------------- #
 
-async def replay(finding, in_scope) -> Dict[str, Any]:
-    """Replay the finding's stored proof. Never raises on a target problem."""
-    proof = stored_proof(finding.metadata)
-    if proof is None:
-        return {"outcome": "none", "detail": "this finding carries no suggested proof"}
+async def replay_proof(proof: Dict[str, str], in_scope) -> Dict[str, Any]:
+    """Replay one proof dict against the target. Never raises on a target
+    problem. Shared by the on-demand endpoint and the judge pass, so a proof is
+    confirmed the same mechanical way whoever asks."""
+    if not proof or not proof.get("url") or not proof.get("expect"):
+        return {"outcome": "none", "detail": "no usable proof"}
 
     method = str(proof.get("method") or "GET").upper()
     url = str(proof["url"])
@@ -72,6 +73,9 @@ async def replay(finding, in_scope) -> Dict[str, Any]:
         # parse_proof vetted this when it was stored, but scope can change
         # between runs - so the live gate still has the last word.
         return {"outcome": "refused", "detail": str(exc), "proof": proof}
+    except Exception as exc:  # noqa: BLE001 - a target problem is inconclusive, not a crash
+        return {"outcome": "inconclusive", "detail": f"replay failed: {exc}",
+                "proof": proof}
 
     verdict = proof_verdict(expect, resp.text if resp else None,
                             resp.status_code if resp else None)
@@ -80,3 +84,11 @@ async def replay(finding, in_scope) -> Dict[str, Any]:
     if resp is not None:
         verdict["response_excerpt"] = (resp.text or "")[:400].replace("\n", " ")
     return verdict
+
+
+async def replay(finding, in_scope) -> Dict[str, Any]:
+    """Replay the finding's stored proof. Never raises on a target problem."""
+    proof = stored_proof(finding.metadata)
+    if proof is None:
+        return {"outcome": "none", "detail": "this finding carries no suggested proof"}
+    return await replay_proof(proof, in_scope)

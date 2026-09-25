@@ -853,6 +853,39 @@ the summary counts them apart and says whether any disagreement would have
 changed the report. On a finding's detail panel the second opinion sits next to
 the shipped verdict, labelled as recorded-for-comparison-only.
 
+## The model proposes; a replay confirms
+
+The rule is now absolute: **the LLM judge never confirms a finding on its own.**
+It reads a finding and its evidence and proposes a single read-only check - one
+GET or HEAD, and the exact substring whose presence would settle the question.
+A *live* replay of that check, through SafePoC (in-scope, read-only, capped), is
+the only thing that raises a finding to `confirmed`.
+
+* the replay finds the substring → `confirmed`. The one path in.
+* the replay refutes it (the model claimed it, the target disagrees) →
+  `unconfirmed`. Trust the check, not the claim.
+* no replay was possible - no proof, or the target did not answer → capped at
+  `likely`, however grounded the model's quote was.
+
+A model is fluent and confident about things that are not there, and a grounded
+quote proves only that a string appears in evidence the same model is reading.
+This makes `confirmed` mean *a machine checked it against the live target*. The
+judge only ever runs on `likely`/`unconfirmed` findings, so this can only tighten
+an upgrade — a tool-confirmed finding is never touched. The finding detail shows
+the replay outcome next to the verdict.
+
+## Choosing the right published exploit
+
+A CVE repository is rarely one file — the exploit, a detector, a helper, a PoC
+for a different CVE the author collected. Staging the first one a filename
+heuristic ranked stages the detector often enough to matter, and the reviewer
+then reads a script that was never going to demonstrate anything. The model now
+reads the candidate filenames against the finding (its CVE, its class) and picks
+the one most likely to be the working exploit, with a one-line reason shown on
+the Sandbox page. It chooses only among files already fetched — it cannot widen
+what gets pulled — and falls back to the heuristic on any problem. The chosen
+file is still inspected, vetted and approved unchanged.
+
 ## How a finding gets its verdict (and why the FP rate is what it is)
 
 Validation runs in two passes, and the report separates what the passes could

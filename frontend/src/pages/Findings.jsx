@@ -165,6 +165,22 @@ export default function Findings() {
                 <dt>Occurrences</dt><dd>{f.dup}</dd>
                 <dt>Last seen</dt><dd>{ago(f.last_seen)}</dd>
               </dl>
+              {f.proof_replay && (
+                <div className={'shadow ' + (f.proof_replay.outcome === 'held' ? 'shadow--agree'
+                  : f.proof_replay.outcome === 'did_not_hold' ? 'shadow--diff' : '')}>
+                  <div className="shadow__h">Live proof replay</div>
+                  <div className="shadow__row">
+                    {f.proof_replay.outcome === 'held' && <b>confirmed by a read-only replay</b>}
+                    {f.proof_replay.outcome === 'did_not_hold' && <b>the model claimed this; a replay refuted it</b>}
+                    {!['held', 'did_not_hold'].includes(f.proof_replay.outcome) && <span>{f.proof_replay.outcome}: {f.proof_replay.detail}</span>}
+                  </div>
+                  {f.proof_replay.request && <div className="shadow__reason mono">{f.proof_replay.request}</div>}
+                  <div className="shadow__note">
+                    A finding reaches &ldquo;confirmed&rdquo; only when a live replay finds the
+                    observable the judge named — the model never confirms on its own.
+                  </div>
+                </div>
+              )}
               {f.shadow_judge && (
                 <div className={'shadow ' + (f.shadow_judge.agreement === 'agree' ? 'shadow--agree' : 'shadow--diff')}>
                   <div className="shadow__h">

@@ -72,20 +72,33 @@ def test_build_hunt_tasks_grounds_assets_and_sanitizes_tags():
 
 
 # ---- #3 judge ----
-def test_judge_reconcile_caps_ungrounded_confirm():
+def test_judge_never_confirms_without_a_live_replay():
+    """The absolute rule: a grounded quote is no longer enough to confirm. Only
+    a live replay of the proposed check produces 'confirmed'."""
     from app.validation.llm_judge import parse_judgment, reconcile
     evidence = "HTTP/1.1 200 OK\nbody: id=1 returned admin row"
-    j = parse_judgment('{"verdict":"confirmed","confidence":0.95,"quote":"made up","reason":"x"}')
+
+    # Grounded quote, but no replay ran -> capped at 'likely', not 'confirmed'.
+    j = parse_judgment('{"verdict":"confirmed","confidence":0.9,"quote":"admin row","reason":"ok"}')
+    status, _ = reconcile("likely", 0.6, j, evidence, proof_outcome=None)
+    assert status == "likely"
+
+    # The live replay found the observable -> confirmed, and only now.
+    status, conf = reconcile("likely", 0.6, j, evidence, proof_outcome="held")
+    assert status == "confirmed" and conf >= 0.9
+
+    # The model claimed confirmed but the live check refutes its own chosen
+    # observable -> trust the check, drop to unconfirmed.
+    status, conf = reconcile("likely", 0.6, j, evidence, proof_outcome="did_not_hold")
+    assert status == "unconfirmed" and conf <= 0.4
+
+
+def test_judge_downgrades_are_always_honoured():
+    from app.validation.llm_judge import parse_judgment, reconcile
+    evidence = "HTTP/1.1 200 OK\nbody: id=1 returned admin row"
+    j = parse_judgment('{"verdict":"false_positive","confidence":0.8,"quote":"","reason":"benign"}')
     status, conf = reconcile("likely", 0.6, j, evidence)
-    assert status == "likely" and conf <= 0.6        # ungrounded confirm -> capped
-
-    j2 = parse_judgment('{"verdict":"confirmed","confidence":0.9,"quote":"admin row","reason":"ok"}')
-    status2, conf2 = reconcile("likely", 0.6, j2, evidence)
-    assert status2 == "confirmed"                    # grounded -> honoured
-
-    j3 = parse_judgment('{"verdict":"false_positive","confidence":0.8,"quote":"","reason":"benign"}')
-    status3, conf3 = reconcile("likely", 0.6, j3, evidence)
-    assert status3 == "false_positive" and conf3 <= 0.2
+    assert status == "false_positive" and conf <= 0.2
 
 
 # ---- #4 payload adaptation ----

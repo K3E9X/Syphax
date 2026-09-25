@@ -82,6 +82,10 @@ async def list_findings(severity: str = "", status: str = "", q: str = "",
                 # the operator sees where a candidate model disagreed with the
                 # verdict that actually shipped, on this finding.
                 "shadow_judge": meta.get("shadow_judge") or None,
+                # The live replay of the judge's proposed proof, when one ran.
+                # This is what actually confirmed the finding (or refuted the
+                # model's claim), so it belongs next to the verdict.
+                "proof_replay": meta.get("proof_replay") or None,
             }
             groups[key] = g
         else:

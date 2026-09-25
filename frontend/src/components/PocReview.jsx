@@ -269,6 +269,14 @@ export default function PocReview({ engagementId }) {
               </div>
             )}
 
+            {open.inspection?.selection && open.inspection.selection.of?.length > 1 && (
+              <p className="poc-note">
+                Chose <code>{open.inspection.selection.chose}</code> from{' '}
+                {open.inspection.selection.of.length} files in the repo
+                {open.inspection.selection.reason ? ` — ${open.inspection.selection.reason}` : ''}.
+              </p>
+            )}
+
             {open.inspection?.vetting && !open.inspection.vetting.allowed && (
               <div className="poc-refused">
                 <strong>This will not run.</strong> {open.inspection.vetting.summary}
