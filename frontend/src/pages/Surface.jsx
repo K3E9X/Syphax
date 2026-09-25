@@ -2,6 +2,9 @@ import { useEffect, useState } from 'react';
 import { api } from '../lib/api.js';
 import { useEngagements } from '../lib/useApi.js';
 import { Notice } from '../components/ui.jsx';
+import { Donut, Histogram, Legend } from '../components/Charts.jsx';
+
+const METHOD_HEX = { GET: '#22c55e', POST: '#22d3ee', PUT: '#eab308', PATCH: '#a78bfa', DELETE: '#ef4444', HEAD: '#737373', OPTIONS: '#525252' };
 
 export default function Surface() {
   const [loadError, setLoadError] = useState(null);
@@ -29,6 +32,23 @@ export default function Surface() {
   const totPorts = hosts.reduce((n, x) => n + openPorts(x), 0);
   const totTech = new Set(hosts.flatMap((x) => x.tech || [])).size;
 
+  // Chart data. Where the surface concentrates (endpoints per host, top 8) and
+  // the request-method mix across every discovered endpoint.
+  const hostBars = hosts
+    .map((x) => ({ label: x.host, value: (x.endpoints || []).length }))
+    .filter((b) => b.value > 0)
+    .sort((a, b) => b.value - a.value)
+    .slice(0, 8)
+    .map((b) => ({ ...b, color: '#22d3ee' }));
+  const methodCounts = {};
+  for (const x of hosts) for (const e of x.endpoints || []) {
+    const m = (e.m || 'GET').toUpperCase();
+    methodCounts[m] = (methodCounts[m] || 0) + 1;
+  }
+  const methodSegments = Object.entries(methodCounts)
+    .map(([m, n]) => ({ label: m, value: n, color: METHOD_HEX[m] || '#737373' }))
+    .sort((a, b) => b.value - a.value);
+
   return (
     <div className="page">
       <Notice kind="error" message={loadError} />
@@ -48,6 +68,26 @@ export default function Surface() {
         <div className="metric metric--alert"><div className="metric__l">Open ports</div><div className="metric__v">{totPorts}</div></div>
         <div className="metric"><div className="metric__l">Technologies</div><div className="metric__v">{totTech}</div></div>
       </div>
+
+      {(hostBars.length > 0 || methodSegments.length > 0) && (
+        <div className="viz-row" style={{ marginBottom: 16 }}>
+          {hostBars.length > 0 && (
+            <div className="viz">
+              <div className="viz__h">Endpoints per host (top 8)</div>
+              <div className="viz__body" style={{ width: '100%' }}><Histogram data={hostBars} /></div>
+            </div>
+          )}
+          {methodSegments.length > 0 && (
+            <div className="viz">
+              <div className="viz__h">Request-method mix</div>
+              <div className="viz__body">
+                <Donut segments={methodSegments} centerLabel="endpoints" />
+                <Legend segments={methodSegments} />
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       <div className="surf-layout">
         <div className="card">

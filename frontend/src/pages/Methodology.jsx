@@ -2,8 +2,10 @@ import { useEffect, useState } from 'react';
 import { api } from '../lib/api.js';
 import { useEngagements } from '../lib/useApi.js';
 import { Notice } from '../components/ui.jsx';
+import { COV_AXES, Donut, Legend, Radar } from '../components/Charts.jsx';
 
 const FILTERS = ['all', 'done', 'running', 'queued', 'skipped'];
+const STATUS_HEX = { done: '#22c55e', running: '#22d3ee', queued: '#737373', skipped: '#525252', error: '#ef4444' };
 
 export default function Methodology() {
   const [loadError, setLoadError] = useState(null);
@@ -54,6 +56,14 @@ export default function Methodology() {
   const hits = allItems.filter((i) => i.hit).length;
   const cov = allItems.length ? Math.round(done / allItems.length * 100) : 0;
 
+  // Chart data. The coverage radar comes from the engagement summary the list
+  // already carries; the donut is the live status mix of the catalog items.
+  const selected = engagements.find((e) => e.id === engId);
+  const radarValues = selected?.radar;
+  const statusSegments = FILTERS.filter((f) => f !== 'all')
+    .map((s) => ({ label: s, value: allItems.filter((i) => i.status === s).length, color: STATUS_HEX[s] }))
+    .filter((s) => s.value > 0);
+
   return (
     <div className="page">
       <Notice kind="error" message={loadError} />
@@ -73,6 +83,31 @@ export default function Methodology() {
         <div className="metric metric--alert"><div className="metric__l">Hits</div><div className="metric__v">{hits}</div></div>
         <div className="metric"><div className="metric__l">Queued</div><div className="metric__v">{allItems.filter((i) => i.status === 'queued').length}</div></div>
       </div>
+
+      {(radarValues || statusSegments.length > 0) && (
+        <div className="viz-row" style={{ marginBottom: 16 }}>
+          {radarValues && (
+            <div className="viz">
+              <div className="viz__h">Coverage by axis (WSTG)</div>
+              <div className="viz__body" style={{ flexDirection: 'column' }}>
+                <Radar values={radarValues} axes={COV_AXES} />
+                <div className="radar-axes">
+                  {COV_AXES.map((a, i) => <span key={a}>{a} <b>{radarValues[i]}%</b></span>)}
+                </div>
+              </div>
+            </div>
+          )}
+          {statusSegments.length > 0 && (
+            <div className="viz">
+              <div className="viz__h">Test status mix</div>
+              <div className="viz__body">
+                <Donut segments={statusSegments} centerLabel="tests" />
+                <Legend segments={statusSegments} />
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       <div className="meth-filters">
         <div className="meth-seg">
