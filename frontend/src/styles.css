@@ -30,5 +30,8 @@
 @import "./styles/pages/prerecon.css";
 @import "./styles/pages/command.css";
 
+/* Visual polish layer - loaded last so it enhances the shared primitives. */
+@import "./styles/pages/polish.css";
+
 /* App shell: the top nav is sticky; content scrolls under it. */
 #root { min-height: 100%; }

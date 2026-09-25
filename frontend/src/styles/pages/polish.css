@@ -1,0 +1,103 @@
+/* ============================================================
+   Syphax — visual polish layer.
+
+   Loaded last, on purpose. It enhances the SHARED primitives - nav, cards,
+   buttons, chips, stats, inputs - so a single file lifts all eleven pages at
+   once and they stay coherent by construction. No page markup changes.
+
+   The original chrome was deliberately flat ("no glow"). This is the owner's
+   call to open that up: a restrained phosphor treatment true to the terminal
+   theme - depth from soft shadows, motion on interaction, and a green/cyan glow
+   only where it carries meaning (live, active, severity). Effect, not
+   decoration: nothing here glows that is not telling you something.
+
+   Every transform and animation is disabled under prefers-reduced-motion.
+   ============================================================ */
+
+/* ---- depth: cards and panels lift off the background ---- */
+.card {
+  box-shadow: var(--shadow-md);
+  transition: box-shadow .16s ease, border-color .16s ease, transform .16s ease;
+  /* A barely-there sheen along the top edge, so a card reads as a raised
+     surface and not just an outlined rectangle. */
+  background-image: linear-gradient(var(--surface-raised), var(--surface) 64px);
+}
+.card:hover { border-color: var(--border-strong); }
+
+/* ---- top nav: sticky glass, sliding lit underline ---- */
+.topnav {
+  background: color-mix(in srgb, var(--bg) 82%, transparent);
+  backdrop-filter: blur(10px) saturate(1.1);
+  -webkit-backdrop-filter: blur(10px) saturate(1.1);
+}
+.topnav__wm { text-shadow: 0 0 12px var(--accent-tint); }
+.topnav__link { position: relative; transition: color .14s ease; padding-bottom: 6px; }
+.topnav__link::after {
+  content: ''; position: absolute; left: 0; right: 0; bottom: -1px; height: 1px;
+  background: var(--accent); transform: scaleX(0); transform-origin: left;
+  transition: transform .18s ease; box-shadow: 0 0 8px var(--accent);
+}
+.topnav__link:hover::after { transform: scaleX(.5); opacity: .5; }
+.topnav__link--active { color: var(--text-primary); border-bottom-color: transparent; }
+.topnav__link--active::after { transform: scaleX(1); opacity: 1; }
+
+/* ---- buttons: press feedback, a lit solid variant ---- */
+.btn { transition: background .12s, border-color .12s, color .12s, box-shadow .12s, transform .08s; }
+.btn:hover { transform: translateY(-1px); }
+.btn:active { transform: translateY(0); }
+.btn--solid {
+  background: var(--accent); color: var(--text-inverse); border-color: var(--accent);
+  box-shadow: 0 0 0 0 var(--accent-ring);
+}
+.btn--solid:hover {
+  background: var(--accent); border-color: var(--accent);
+  box-shadow: var(--shadow-glow);
+}
+.btn:focus-visible { box-shadow: 0 0 0 3px var(--accent-ring); outline: none; }
+
+/* ---- live and status signals: the phosphor pulse ---- */
+.live-dot, .step__dot, .run-meta .live-dot {
+  box-shadow: 0 0 8px currentColor, 0 0 2px currentColor;
+}
+.run-status--running, .vstatus--confirmed { text-shadow: 0 0 10px currentColor; }
+.live-dot, .run-meta .live-dot { animation: syphax-pulse 1.8s ease-in-out infinite; }
+@keyframes syphax-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .45; } }
+
+/* ---- severity chips: glow in their own colour ---- */
+.sev { transition: box-shadow .14s ease; }
+.sev::before { box-shadow: 0 0 6px currentColor; }
+.sev--critical { box-shadow: inset 0 0 0 1px transparent, 0 0 12px -6px var(--sev-critical); }
+.sev--high { box-shadow: 0 0 12px -6px var(--sev-high); }
+
+/* ---- stats and metrics: lift, and a lit number where it alerts ---- */
+.stat, .metric { transition: border-color .16s ease, transform .16s ease, box-shadow .16s ease; }
+.stat:hover, .metric:hover { border-color: var(--border-strong); transform: translateY(-1px); box-shadow: var(--shadow-md); }
+.stat--alert .stat__v, .metric--warn .metric__v { text-shadow: 0 0 12px currentColor; }
+
+/* ---- inputs: focus that glows instead of just outlining ---- */
+.input:focus, .textarea:focus, .select:focus {
+  box-shadow: 0 0 0 3px var(--accent-ring), 0 0 18px -8px var(--accent);
+}
+
+/* ---- tabs: the active one is lit ---- */
+.tab { transition: color .12s, background .12s, border-color .12s, box-shadow .12s; }
+.tab--active { box-shadow: inset 0 -2px 0 var(--accent); }
+
+/* ---- a richer scrollbar thumb (accent on hover) ---- */
+::-webkit-scrollbar-thumb:hover { background: var(--accent-dim); }
+
+/* ---- content settles in on navigation ---- */
+.page { animation: syphax-rise .22s ease-out; }
+@keyframes syphax-rise { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+
+/* ---- notices carry a faint edge glow in their severity colour ---- */
+.notice--error { box-shadow: 0 0 20px -12px var(--sev-critical); }
+.notice--warn { box-shadow: 0 0 20px -12px var(--sev-medium); }
+
+@media (prefers-reduced-motion: reduce) {
+  .btn, .btn:hover, .btn:active,
+  .stat:hover, .metric:hover,
+  .topnav__link::after,
+  .live-dot, .run-meta .live-dot,
+  .page { transition: none !important; animation: none !important; transform: none !important; }
+}
