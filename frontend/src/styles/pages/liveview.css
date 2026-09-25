@@ -1,0 +1,107 @@
+/* ============================================================
+   Syphax — Live view, the operations console.
+
+   The rework: the agent console is no longer a tab you leave to read a
+   finding. It is a permanent left rail, live while the run is, and the
+   drill-downs (findings, jobs, coverage…) sit to its right - so you watch the
+   stream and inspect a result at the same time, which is what running an
+   engagement actually needs. The header, phase rail and KPIs stay in view
+   above both.
+   ============================================================ */
+
+.lv2 { max-width: 1440px; }
+
+/* ---- control header ---- */
+.lv2-head {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 16px; flex-wrap: wrap; margin-bottom: 16px;
+}
+.lv2-head__id { display: flex; align-items: baseline; gap: 12px; min-width: 0; flex-wrap: wrap; }
+.lv2-head__h1 { font-size: 18px; font-weight: 600; margin: 0; }
+.lv2-head__host { font-size: 13px; color: var(--text-secondary); }
+.lv2-head__actions { display: flex; gap: 8px; flex-wrap: wrap; }
+
+.lv2-status {
+  display: inline-flex; align-items: center; gap: 7px;
+  font-family: var(--font-mono); font-size: 11px; text-transform: uppercase;
+  letter-spacing: .06em; padding: 3px 10px; border-radius: var(--radius-full);
+  border: 1px solid var(--border);
+}
+.lv2-status--run { color: var(--term-ok); border-color: rgba(74,222,128,.4); }
+.lv2-status--stopped { color: var(--text-secondary); }
+.lv2-status--idle { color: var(--text-faint); }
+
+/* ---- phase rail: connected track with a lit fill up to the active step ---- */
+.lv2-rail { display: flex; align-items: center; gap: 0; margin-bottom: 10px; }
+.lv2-phase {
+  flex: 1; display: flex; align-items: center; gap: 8px; position: relative;
+  padding: 8px 4px;
+}
+.lv2-phase::after {
+  content: ''; position: absolute; left: 0; right: 0; bottom: 0; height: 2px;
+  background: var(--border);
+}
+.lv2-phase--done::after { background: var(--term-ok); opacity: .5; }
+.lv2-phase--active::after { background: var(--accent); box-shadow: 0 0 10px var(--accent); }
+.lv2-phase__dot { width: 8px; height: 8px; border-radius: 50%; background: var(--border-strong); flex: none; }
+.lv2-phase--done .lv2-phase__dot { background: var(--term-ok); }
+.lv2-phase--active .lv2-phase__dot { background: var(--accent); box-shadow: 0 0 8px var(--accent); }
+.lv2-phase__name { font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--text-faint); }
+.lv2-phase--done .lv2-phase__name { color: var(--text-secondary); }
+.lv2-phase--active .lv2-phase__name { color: var(--text-primary); font-weight: 600; }
+
+.lv2-meta { display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  font-family: var(--font-mono); font-size: 12px; color: var(--text-secondary); margin-bottom: 18px; }
+.lv2-meta b { color: var(--text-primary); font-weight: 500; }
+.lv2-meta .sep { color: var(--border-strong); }
+.lv2-meta .run-reason { color: var(--accent); }
+
+/* ---- KPI strip ---- */
+.lv2-kpis {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(96px, 1fr));
+  gap: 10px; margin-bottom: 18px;
+}
+.lv2-kpis .stat { padding: 11px 13px; }
+.lv2-kpis .stat__v { font-size: 20px; }
+
+/* ---- approvals banner ---- */
+.approval--banner { border-color: rgba(234,179,8,.5); box-shadow: 0 0 24px -10px var(--severity-medium); }
+
+/* ---- split body ---- */
+.lv2-body {
+  display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
+  gap: 18px; align-items: start;
+}
+.lv2-body > * { min-width: 0; }
+
+/* Left rail sticks so the stream stays with you as the right side scrolls. */
+.lv2-console-col { position: sticky; top: 62px; }
+.lv2-console-card { margin-bottom: 12px; }
+.lv2-console { max-height: 56vh; min-height: 320px; overflow-y: auto; }
+
+.lv2-verbose { border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface); }
+.lv2-verbose > summary {
+  cursor: pointer; padding: 10px 16px; font-size: 11px; text-transform: uppercase;
+  letter-spacing: .05em; color: var(--text-secondary); list-style: none;
+}
+.lv2-verbose > summary::-webkit-details-marker { display: none; }
+.lv2-verbose > summary::before { content: '▸ '; color: var(--text-faint); }
+.lv2-verbose[open] > summary::before { content: '▾ '; }
+.lv2-verbose .console--verbose { margin: 0 12px 12px; max-height: 260px; }
+
+.lv2-tabs { margin-top: 0; }
+
+/* A left severity accent on each finding card - triage by glance. */
+.finding { border-left: 2px solid var(--border); }
+.finding--critical { border-left-color: var(--severity-critical); }
+.finding--high { border-left-color: var(--severity-high); }
+.finding--medium { border-left-color: var(--severity-medium); }
+.finding--low { border-left-color: var(--severity-low); }
+
+/* On a narrow viewport the two columns stack; the console goes on top and
+   stops being sticky so it does not eat the screen. */
+@media (max-width: 1040px) {
+  .lv2-body { grid-template-columns: minmax(0, 1fr); }
+  .lv2-console-col { position: static; }
+  .lv2-console { max-height: 40vh; }
+}
