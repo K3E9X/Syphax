@@ -28,6 +28,7 @@
 @import "./styles/pages/settings.css";
 @import "./styles/pages/auth.css";
 @import "./styles/pages/prerecon.css";
+@import "./styles/pages/command.css";
 
 /* App shell: the top nav is sticky; content scrolls under it. */
 #root { min-height: 100%; }

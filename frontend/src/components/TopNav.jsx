@@ -79,6 +79,16 @@ export default function TopNav() {
         })}
       </div>
       {user && (
+        <button
+          type="button"
+          className="topnav__cmdk"
+          title="Command palette"
+          onClick={() => window.dispatchEvent(new CustomEvent('syphax:command-palette'))}
+        >
+          <span>⌘K</span>
+        </button>
+      )}
+      {user && (
         <div className="topnav__who">
           <span className="topnav__user" title={`signed in as ${user.username} (${user.role})`}>
             {user.username}

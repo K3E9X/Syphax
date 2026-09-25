@@ -3,6 +3,15 @@
 What the README leaves out: running an engagement day to day, authenticated
 testing, proof of impact, platform specifics, and wiping state.
 
+## Getting around
+
+Press **⌘K** (Ctrl-K on Linux/Windows) anywhere to open the command palette. It
+reaches every page, every engagement and every finding in one keystroke, ranked
+so the obvious hit is first — type `sqli` and the SQL-injection finding is at
+the top, `settings` and you are there. It navigates only: gated actions like
+starting a run or approving a PoC live on their pages, and the palette takes you
+to them rather than firing them. The `⌘K` chip in the top nav opens it too.
+
 ## Signing in
 
 There is no anonymous mode. The first visit creates the operator account, and
