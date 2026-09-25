@@ -165,6 +165,33 @@ export default function Findings() {
                 <dt>Occurrences</dt><dd>{f.dup}</dd>
                 <dt>Last seen</dt><dd>{ago(f.last_seen)}</dd>
               </dl>
+              {f.shadow_judge && (
+                <div className={'shadow ' + (f.shadow_judge.agreement === 'agree' ? 'shadow--agree' : 'shadow--diff')}>
+                  <div className="shadow__h">
+                    Second opinion ({f.shadow_judge.backend})
+                    <span className="shadow__tag">
+                      {f.shadow_judge.agreement === 'agree' ? 'agreed'
+                        : f.shadow_judge.agreement === 'shadow_looser'
+                          ? 'would ship this (looser)' : 'would drop this (stricter)'}
+                    </span>
+                  </div>
+                  <div className="shadow__row">
+                    <span>shipped verdict</span>
+                    <b>{f.shadow_judge.base?.status}</b>
+                    <span>· {f.shadow_judge.backend} said</span>
+                    <b>{f.shadow_judge.shadow?.status}</b>
+                    {f.shadow_judge.shadow?.confidence != null && (
+                      <span className="shadow__conf">p={f.shadow_judge.shadow.confidence}</span>
+                    )}
+                  </div>
+                  {f.shadow_judge.shadow?.reason && (
+                    <div className="shadow__reason">{f.shadow_judge.shadow.reason}</div>
+                  )}
+                  <div className="shadow__note">
+                    Recorded for comparison only — it did not affect the verdict above.
+                  </div>
+                </div>
+              )}
               {f.evidence && <><div className="detail__block-t">Evidence</div><div className="detail__pre">{f.evidence}</div></>}
               {f.poc && <><div className="detail__block-t">Proof of concept</div><div className="detail__pre poc">{f.poc}</div></>}
               {f.req && <><div className="detail__block-t">Request</div><div className="detail__pre">{f.req}</div></>}

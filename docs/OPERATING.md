@@ -786,6 +786,43 @@ The verdict is a substring test, not a second opinion - the judge already chose
 the observable. No response at all is reported as `inconclusive`, never as a
 refutation: the target may simply have been down.
 
+## Trying a new judge without trusting it yet
+
+A model that decides whether a finding is real cannot be a model you have had
+for ten days. But you can run it in the dark, next to the judge you already
+trust, and measure whether it would have agreed - which is what you need before
+you would ever switch.
+
+Set `SHADOW_JUDGE_BACKEND` and, after the real judge finishes, a second opinion
+runs over the same findings. It writes its verdict into each finding's metadata
+and emits one summary line into the run's events. **It never moves a verdict** -
+it only calls `set_metadata` - so the report ships exactly what the real judge
+decided, and the shadow is pure evaluation. A shadow backend that errors is
+caught; the model under evaluation cannot fail the run it is being evaluated
+against.
+
+Two backends:
+
+* `llm` — the validator model, re-read at a higher temperature. Needs no new
+  service. Use it first: it proves the harness runs and gives you a baseline
+  agreement number to compare a real candidate against.
+* `jev` — [TypeSafe AI's Jev](https://typesafe.ai), a *System One* model that
+  returns a typed verdict with a probability rather than generated text. A
+  four-way verdict with a confidence is exactly the bounded, typed choice Jev is
+  built for, and a native probability is better calibrated than a number an LLM
+  writes into JSON. Needs `JEV_BASE_URL` / `JEV_API_KEY`. The request shape is
+  written against TypeSafe's published description and has **not** been verified
+  against a live endpoint — confirm it before trusting the numbers.
+
+The comparison names the *direction* of each disagreement, because the two
+directions have opposite costs: a shadow ruling `false_positive` where the base
+said `likely` would have **dropped** a finding (stricter); one ruling
+`confirmed` where the base said `unconfirmed` would have **shipped** one
+(looser). A single agreement percentage hides which error a candidate makes, so
+the summary counts them apart and says whether any disagreement would have
+changed the report. On a finding's detail panel the second opinion sits next to
+the shipped verdict, labelled as recorded-for-comparison-only.
+
 ## How a finding gets its verdict (and why the FP rate is what it is)
 
 Validation runs in two passes, and the report separates what the passes could

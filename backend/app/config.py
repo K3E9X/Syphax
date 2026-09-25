@@ -39,6 +39,13 @@ class Settings(BaseSettings):
     validator_api_key: str = ""
     validator_model: str = ""
 
+    # Shadow judge: run a SECOND judge alongside the real one and record where
+    # they disagree, without ever letting it move a verdict. Empty = off. "llm"
+    # re-reads with the validator model at a higher temperature (a baseline that
+    # needs no new service); "jev" evaluates TypeSafe AI's Jev, which also needs
+    # JEV_BASE_URL / JEV_API_KEY. See app/validation/shadow.py.
+    shadow_judge_backend: str = ""
+
     # Optional cost accounting. Comma-separated 'model=IN/OUT' where IN/OUT are
     # USD per 1M tokens, e.g. "glm-4.6=0.6/2.2,kimi-k2-0905-preview=0.6/2.5".
     # Models not listed (e.g. OpenRouter :free) cost 0; tokens are still tracked.

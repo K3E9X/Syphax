@@ -78,6 +78,10 @@ async def list_findings(severity: str = "", status: str = "", q: str = "",
                 "desc": meta.get("description") or "", "evidence": f.evidence,
                 "poc": f.poc, "req": meta.get("req") or "", "resp": meta.get("resp") or "",
                 "confidence": f.confidence,
+                # The shadow judge's second opinion, when one ran. Surfaced so
+                # the operator sees where a candidate model disagreed with the
+                # verdict that actually shipped, on this finding.
+                "shadow_judge": meta.get("shadow_judge") or None,
             }
             groups[key] = g
         else:

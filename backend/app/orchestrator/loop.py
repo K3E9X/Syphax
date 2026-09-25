@@ -547,6 +547,27 @@ async def _finalize_engagement(engagement, run: Run, runs: RunRepository,
             await judge_engagement(engagement.id)
         except Exception:  # noqa: BLE001 - judging never fails the run
             logger.exception("[%s] llm-judge error", run.id)
+
+        # Shadow judge: opt-in, runs a second opinion alongside the real one and
+        # records where they disagree. It CANNOT move a verdict - it only calls
+        # set_metadata - so it runs after the real judge has finished and is
+        # pure evaluation. Off unless SHADOW_JUDGE_BACKEND is set. Kept entirely
+        # inside its own try: a model under evaluation must not be able to fail
+        # the run it is being evaluated against.
+        from app.config import settings as _settings
+        _shadow_backend = (_settings.shadow_judge_backend or "").strip()
+        if _shadow_backend:
+            try:
+                from app.validation.second_opinion import resolve
+                from app.validation.shadow import run_shadow_judge
+                fn, label = resolve(_shadow_backend)
+                if fn is None:
+                    logger.info("[%s] shadow judge not run: %s", run.id, label)
+                else:
+                    await run_shadow_judge(engagement.id, second_opinion=fn,
+                                           backend=label)
+            except Exception:  # noqa: BLE001 - the shadow never fails the run
+                logger.exception("[%s] shadow-judge error", run.id)
         # Intelligence #5: settle what is still 'likely' by firing an
         # adaptive, oracle-backed probe at the target. Active, so it obeys
         # the same gate + denial suppression as the exploitation block.

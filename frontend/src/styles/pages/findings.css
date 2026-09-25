@@ -58,3 +58,16 @@
 .fnd-chain:last-child { border-bottom: none; }
 .fnd-chain__t { flex: 1; color: var(--text-primary); }
 .fnd-chain__s { color: var(--text-faint); font-family: var(--font-mono); font-size: 11px; }
+
+/* Second opinion from the shadow judge, when one ran. Recorded for comparison
+   only - it never moved the verdict shown above it. */
+.shadow { margin: 10px 0; padding: 10px 12px; border: 1px solid var(--border); border-left-width: 2px; border-radius: var(--radius-sm); background: var(--surface); font-size: 12px; }
+.shadow--agree { border-left-color: var(--term-ok, #22c55e); }
+.shadow--diff { border-left-color: var(--sev-high, #f59e0b); }
+.shadow__h { display: flex; align-items: center; gap: 8px; font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--text-secondary); margin-bottom: 6px; }
+.shadow__tag { font-family: var(--font-mono); text-transform: none; letter-spacing: 0; color: var(--text-primary); }
+.shadow__row { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px; color: var(--text-secondary); }
+.shadow__row b { color: var(--text-primary); font-family: var(--font-mono); }
+.shadow__conf { font-family: var(--font-mono); color: var(--text-faint); }
+.shadow__reason { margin-top: 5px; color: var(--text-secondary); line-height: 1.5; }
+.shadow__note { margin-top: 6px; font-size: 10px; color: var(--text-faint); }
