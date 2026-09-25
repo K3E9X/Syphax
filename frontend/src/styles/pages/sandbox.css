@@ -97,7 +97,7 @@
 /* Where a staged PoC came from, and whether it may run. Two different
    questions, two different columns. */
 .poc-origin { font-family: var(--font-mono); font-size: 10px; text-transform: uppercase; letter-spacing: .05em; padding: 1px 6px; border-radius: 3px; border: 1px solid var(--border-strong); color: var(--text-faint); }
-.poc-origin--authored { color: var(--accent, #22d3ee); border-color: rgba(34,211,238,.35); }
+.poc-origin--authored { color: var(--accent, #ff7a18); border-color: rgba(255,122,24,.35); }
 .poc-origin--public { color: var(--text-secondary); }
 
 .poc-fit { font-family: var(--font-mono); font-size: 11px; color: var(--text-faint); }

@@ -1,8 +1,10 @@
 /* ============================================================
    Syphax — Color tokens
-   Dark-first "Mr. Robot" terminal palette. Deep blacks, a single
-   muted-cyan accent, and a 5-step severity scale for findings.
-   Source of truth: frontend/src/index.css (:root + .dark).
+   Dark-first terminal palette. Deep blacks, a single orange accent
+   (bright orange + dark orange for depth/pressed), and a 5-step
+   severity scale for findings. The severity scale, the success green
+   and the error red are semantic and stay as they are - only the
+   brand accent is orange, so a live dot never reads as a link.
    ============================================================ */
 
 :root {
@@ -21,11 +23,17 @@
   --neutral-100:  #e5e5e5;   /* primary text on dark */
   --white:        #ffffff;
 
-  /* ---- Brand accent: muted cyan (terminal phosphor) ---- */
-  --cyan-400:     #22d3ee;   /* dark-theme accent */
-  --cyan-500:     #06b6d4;   /* accent pressed / dim */
-  --blue-500:     #3b82f6;   /* light-theme accent */
-  --blue-600:     #2563eb;
+  /* ---- Brand accent: orange (bright) + dark orange (depth) ---- */
+  --orange-300:   #ffa657;   /* soft highlight / hover text */
+  --orange-400:   #ff7a18;   /* dark-theme accent (bright orange) */
+  --orange-500:   #ea580c;   /* accent pressed / dim (dark orange) */
+  --orange-700:   #c2410c;   /* deepest orange - gradients, depth */
+  /* legacy names kept so any stray reference still resolves to the
+     brand accent instead of breaking. */
+  --cyan-400:     var(--orange-400);
+  --cyan-500:     var(--orange-500);
+  --blue-500:     #ea580c;   /* light-theme accent (dark orange) */
+  --blue-600:     #c2410c;
 
   /* ---- Severity scale (vuln findings) ---- */
   --sev-critical: #ef4444;
@@ -57,13 +65,13 @@
   --text-faint:      var(--neutral-500);  /* timestamps, ghost text */
   --text-inverse:    var(--neutral-950);  /* text on accent/white fills */
 
-  --accent:          var(--cyan-400);
-  --accent-dim:      var(--cyan-500);
-  --accent-tint:     rgba(34, 211, 238, 0.10);  /* active nav bg, badge fill */
-  --accent-ring:     rgba(34, 211, 238, 0.30);  /* focus ring */
+  --accent:          var(--orange-400);
+  --accent-dim:      var(--orange-500);
+  --accent-tint:     rgba(255, 122, 24, 0.10);  /* active nav bg, badge fill */
+  --accent-ring:     rgba(255, 122, 24, 0.32);  /* focus ring */
 
-  --focus-ring:      rgba(34, 211, 238, 0.40);
-  --selection-bg:    var(--cyan-400);
+  --focus-ring:      rgba(255, 122, 24, 0.42);
+  --selection-bg:    var(--orange-400);
   --selection-fg:    var(--neutral-950);
 
   /* severity semantic (same values, semantic name) */
@@ -93,13 +101,13 @@
   --text-faint:      #a3a3a3;
   --text-inverse:    #ffffff;
 
-  --accent:          var(--blue-500);
-  --accent-dim:      var(--blue-600);
-  --accent-tint:     rgba(59, 130, 246, 0.10);
-  --accent-ring:     rgba(59, 130, 246, 0.30);
+  --accent:          #ea580c;   /* dark orange reads better on white */
+  --accent-dim:      #c2410c;
+  --accent-tint:     rgba(234, 88, 12, 0.10);
+  --accent-ring:     rgba(234, 88, 12, 0.30);
 
-  --focus-ring:      rgba(59, 130, 246, 0.30);
-  --selection-bg:    var(--blue-500);
+  --focus-ring:      rgba(234, 88, 12, 0.32);
+  --selection-bg:    #ea580c;
   --selection-fg:    #ffffff;
 
   --severity-critical: #dc2626;

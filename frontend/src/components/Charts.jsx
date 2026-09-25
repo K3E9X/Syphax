@@ -13,7 +13,7 @@ export const SEV_HEX = { critical: '#ef4444', high: '#f97316', medium: '#eab308'
 
 // ---- Radar ---------------------------------------------------------------- //
 // values: number[] in 0..100, one per axis. axes: string[] labels.
-export function Radar({ values = [], axes = COV_AXES, size = 176, accent = '#22d3ee' }) {
+export function Radar({ values = [], axes = COV_AXES, size = 176, accent = '#ff7a18' }) {
   const n = axes.length || 1;
   const c = size / 2, r = c - 28;
   const pt = (i, rad) => {
@@ -78,7 +78,7 @@ export function Legend({ segments = [], suffix = '' }) {
 
 // ---- Histogram (vertical bars) -------------------------------------------- //
 // data: [{ label, value, color }]. Baseline at the bottom, value on each bar.
-export function Histogram({ data = [], height = 132, accent = '#22d3ee' }) {
+export function Histogram({ data = [], height = 132, accent = '#ff7a18' }) {
   const max = Math.max(...data.map((d) => d.value || 0), 1);
   return (
     <div className="chart-hist" style={{ height }}>
