@@ -237,6 +237,36 @@ script whose only job is to make the client unable to argue.
 A finding with no route is recorded **with the reason**, because "nothing was
 tried here" and "this was tried and held" look identical otherwise.
 
+### The model can rehearse the exploit before you read it
+
+By default an authored PoC is written blind: the model gets the finding and
+returns a script that either works on the first try or does not, and you read a
+v1 that may never have run. Set `EXPLOIT_REFINE_ITERATIONS` above 0 and the loop
+closes — the model runs its script in the isolated sandbox, reads the output,
+and revises, a few bounded rounds, until it demonstrates the issue or gives up
+with a reason. You then read the **final** version, next to the output that made
+it final.
+
+Running model-written code before you have approved it is a real shift, and it
+is bounded by where it runs and what is checked on the way:
+
+* it only runs when the engagement authorizes active exploitation. A sandbox run
+  reaches the live target, so rehearsing *is* active exploitation, gated the
+  same way every other active step is. Without the grant the model still writes
+  a PoC — it just does not rehearse it.
+* every revision is re-vetted against the engagement's capabilities **before**
+  it runs. A later version that reaches for something the engagement did not
+  authorize is refused and never reaches the sandbox — the same check that gates
+  the first version, on every one after it.
+* the sandbox pins egress to the engagement scope, so even a hostile revision
+  can only ever reach the target you are authorized to test.
+
+The human approval gate does not move. The loop produces a staged PoC; you still
+read it and approve it before it runs as the operator's explicit act. What
+changed is that the thing you read has already been shown to work, with its
+transcript attached — "here is a proof, and here is what it printed" instead of
+"here is a script, good luck".
+
 ### Staging is not running
 
 Fetching a repository and asking a model both happen without touching the

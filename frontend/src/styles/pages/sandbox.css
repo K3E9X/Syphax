@@ -108,3 +108,19 @@
 .poc-refused ul { margin: 8px 0; padding-left: 18px; }
 .poc-refused li { margin: 4px 0; display: flex; flex-wrap: wrap; gap: 8px; align-items: baseline; }
 .poc-refused code { flex-basis: 100%; font-family: var(--font-mono); font-size: 11px; color: var(--text-secondary); overflow-wrap: anywhere; }
+
+/* An authored PoC that was rehearsed in the sandbox before staging: the model
+   ran it, read the output and revised until it worked. The reviewer still
+   approves the final version. */
+.poc-rehearsal { margin: 12px 0; padding: 10px 12px; border: 1px solid var(--border); border-left-width: 2px; border-radius: var(--radius-sm); background: var(--surface); font-size: 12px; }
+.poc-rehearsal--ok { border-left-color: var(--term-ok, #22c55e); }
+.poc-rehearsal--no { border-left-color: var(--sev-high, #f59e0b); }
+.poc-rehearsal__h { font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--text-secondary); margin-bottom: 6px; }
+.poc-rehearsal__lbl { font-size: 10px; text-transform: uppercase; letter-spacing: .05em; color: var(--text-faint); margin: 6px 0 3px; }
+.poc-rehearsal__out { margin: 0; padding: 8px 10px; max-height: 180px; overflow: auto; background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius-sm); font-family: var(--font-mono); font-size: 11px; line-height: 1.5; color: var(--text-secondary); white-space: pre-wrap; }
+.poc-rehearsal__trail { margin-top: 8px; font-size: 11px; }
+.poc-rehearsal__trail summary { cursor: pointer; color: var(--text-secondary); }
+.poc-rehearsal__step { display: flex; flex-wrap: wrap; gap: 8px; align-items: baseline; padding: 3px 0; }
+.poc-rehearsal__n { font-family: var(--font-mono); color: var(--text-faint); }
+.poc-rehearsal__st { font-family: var(--font-mono); color: var(--text-primary); }
+.poc-rehearsal__ex, .poc-rehearsal__d { color: var(--text-faint); }

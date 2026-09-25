@@ -39,6 +39,15 @@ class Settings(BaseSettings):
     validator_api_key: str = ""
     validator_model: str = ""
 
+    # Exploit rehearsal. When > 0 and the engagement authorizes active
+    # exploitation and the sandbox is up, an authored PoC is run in the sandbox
+    # and the model revises it - up to this many rounds - until it demonstrates
+    # the issue, before a human reads the final version. 0 = off: the model
+    # still writes a PoC, it just does not get to rehearse it. See
+    # app/exploit/refine.py. The rehearsal reaches the live target, so it is
+    # gated behind allow_active_exploit exactly like every other active step.
+    exploit_refine_iterations: int = 0
+
     # Shadow judge: run a SECOND judge alongside the real one and record where
     # they disagree, without ever letting it move a verdict. Empty = off. "llm"
     # re-reads with the validator model at a higher temperature (a baseline that

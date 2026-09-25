@@ -69,6 +69,49 @@ describe('the queue', () => {
   });
 });
 
+describe('a rehearsed PoC', () => {
+  const REHEARSED = {
+    id: 'p3', repo: 'authored + rehearsed', path: 'idor.py', language: 'python',
+    status: 'staged',
+    inspection: {
+      verdict: 'review', summary: 'ok', origin: 'authored',
+      signals: [],
+      vetting: { allowed: true, summary: 'Allowed.', blocking: [], warnings: [],
+                 requires: [], missing: [] },
+      refine: {
+        iterations: 2, demonstrated: true, stopped_because: 'demonstrated the issue',
+        final_output: 'invoice #2 belongs to another user',
+        transcript: [
+          { iteration: 1, status: 'not_demonstrated', exit_code: 1, detail: '403 Forbidden' },
+          { iteration: 2, status: 'demonstrated', exit_code: 0, detail: 'exited 0 with output' },
+        ],
+      },
+    },
+  };
+
+  it('shows it was run in the sandbox and what the final version printed', async () => {
+    vi.spyOn(api.poc, 'list').mockResolvedValue({ items: [REHEARSED] });
+    vi.spyOn(api.poc, 'get').mockResolvedValue({ ...REHEARSED, code: 'import requests' });
+    await mount();
+    await waitFor(() => screen.getByText('idor.py'));
+    await userEvent.click(screen.getByText('idor.py'));
+    await waitFor(() => expect(screen.getByText(/demonstrated the issue in 2 attempt/i)).toBeTruthy());
+    expect(screen.getByText(/invoice #2 belongs to another user/)).toBeTruthy();
+    // Still a human decision on the final version.
+    expect(screen.getByText(/you are still approving the final version/i)).toBeTruthy();
+  });
+
+  it('does not also show the never-run note for a rehearsed one', async () => {
+    vi.spyOn(api.poc, 'list').mockResolvedValue({ items: [REHEARSED] });
+    vi.spyOn(api.poc, 'get').mockResolvedValue({ ...REHEARSED, code: 'x' });
+    await mount();
+    await waitFor(() => screen.getByText('idor.py'));
+    await userEvent.click(screen.getByText('idor.py'));
+    await waitFor(() => screen.getByText(/demonstrated the issue/i));
+    expect(screen.queryByText(/it has never run/i)).toBeNull();
+  });
+});
+
 describe('opening one', () => {
   it('names the offending line and says approving will not override it', async () => {
     vi.spyOn(api.poc, 'list').mockResolvedValue({ items: [PUBLIC_BAD] });

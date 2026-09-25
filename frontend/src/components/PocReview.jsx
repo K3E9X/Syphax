@@ -227,13 +227,46 @@ export default function PocReview({ engagementId }) {
           <div className="card__body">
             <p className="poc-summary">{open.inspection?.summary}</p>
 
-            {open.inspection?.origin === 'authored' && (
+            {open.inspection?.origin === 'authored' && !open.inspection?.refine && (
               <p className="poc-note">
                 Written by the model for this finding
                 {open.inspection?.attempts > 1
                   ? ` (rewritten after ${open.inspection.attempts - 1} refusal)` : ''}.
                 It has never run. Read it as you would a stranger&apos;s.
               </p>
+            )}
+
+            {open.inspection?.refine && (
+              <div className={'poc-rehearsal ' + (open.inspection.refine.demonstrated
+                ? 'poc-rehearsal--ok' : 'poc-rehearsal--no')}>
+                <div className="poc-rehearsal__h">
+                  {open.inspection.refine.demonstrated
+                    ? `Rehearsed in the sandbox — demonstrated the issue in ${open.inspection.refine.iterations} attempt(s)`
+                    : `Rehearsed in the sandbox — did not demonstrate it (${open.inspection.refine.stopped_because})`}
+                </div>
+                {open.inspection.refine.final_output && (
+                  <>
+                    <div className="poc-rehearsal__lbl">What the final version printed</div>
+                    <pre className="poc-rehearsal__out">{open.inspection.refine.final_output}</pre>
+                  </>
+                )}
+                <details className="poc-rehearsal__trail">
+                  <summary>{(open.inspection.refine.transcript || []).length} attempt(s) — full trail</summary>
+                  {(open.inspection.refine.transcript || []).map((a, i) => (
+                    <div key={i} className="poc-rehearsal__step">
+                      <span className="poc-rehearsal__n">#{a.iteration}</span>
+                      <span className="poc-rehearsal__st">{a.status}</span>
+                      {a.exit_code != null && <span className="poc-rehearsal__ex">exit {a.exit_code}</span>}
+                      {a.detail && <span className="poc-rehearsal__d">{a.detail}</span>}
+                    </div>
+                  ))}
+                </details>
+                <p className="poc-note">
+                  The model wrote and ran this in the isolated sandbox before you
+                  saw it. You are still approving the final version — read it as
+                  you would a stranger&apos;s.
+                </p>
+              </div>
             )}
 
             {open.inspection?.vetting && !open.inspection.vetting.allowed && (
