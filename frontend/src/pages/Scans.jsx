@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { api } from '../lib/api.js';
+import { Notice } from '../components/ui.jsx';
 
 const SEV_ORDER = { critical: 0, high: 1, medium: 2, low: 3, info: 4 };
 function Sev({ s }) { return <span className={'sev sev--' + s}>{s}</span>; }
@@ -82,6 +83,7 @@ export default function Scans() {
 
   return (
     <div className="page">
+      <Notice kind="error" message={error} onRetry={() => setError(null)} />
       <div className="card">
         <div className="card__head"><span className="card__title">Launch a scan</span></div>
         <div className="card__body">
@@ -113,7 +115,6 @@ export default function Scans() {
             </div>
             <button type="submit" className="btn btn--solid">Run</button>
           </form>
-          {error && <div className="scan-error">{error}</div>}
           <div className="scan-note">{avail}/{tools.length} tools available in this container.</div>
         </div>
       </div>

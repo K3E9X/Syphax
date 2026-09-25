@@ -50,13 +50,17 @@ it('is closed until the shortcut opens it', async () => {
 
 it('toggles shut on a second ⌘K and on Escape', async () => {
   await mount();
+  // Open, and wait for it to actually be on screen before toggling - two
+  // synchronous keydowns raced the open effect and made this flaky.
   await act(async () => { openPalette(); });
+  await waitFor(() => expect(screen.getByRole('dialog')).toBeTruthy());
   await act(async () => { openPalette(); });
-  expect(screen.queryByRole('dialog')).toBeNull();
+  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
 
   await act(async () => { openPalette(); });
+  await waitFor(() => expect(screen.getByRole('dialog')).toBeTruthy());
   await userEvent.keyboard('{Escape}');
-  expect(screen.queryByRole('dialog')).toBeNull();
+  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
 });
 
 it('opens on the custom event the nav chip dispatches', async () => {

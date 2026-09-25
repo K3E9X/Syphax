@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { api } from '../lib/api.js';
 import { useApi } from '../lib/useApi.js';
 import { Notice, UsageRow, fmtTokens, fmtUsd } from '../components/ui.jsx';
@@ -175,29 +176,29 @@ export default function Home() {
       )}
 
       <div className="metrics">
-        <div className="metric">
+        <Link className="metric metric--link" to="/engagements">
           <div className="metric__l">Active engagements</div>
           <div className="metric__v">{dash?.active_engagements ?? '-'}</div>
-          <div className="metric__sub">authorized</div>
-        </div>
-        <div className="metric metric--ok">
+          <div className="metric__sub">authorized →</div>
+        </Link>
+        <Link className="metric metric--link metric--ok" to="/scans">
           <div className="metric__l">Jobs running</div>
           <div className="metric__v">{dash?.running_jobs ?? '-'}</div>
-          <div className="metric__sub">queued + running</div>
-        </div>
-        <div className="metric metric--alert">
+          <div className="metric__sub">queued + running →</div>
+        </Link>
+        <Link className="metric metric--link metric--alert" to="/findings">
           <div className="metric__l">Confirmed findings</div>
           <div className="metric__v">{confTotal}</div>
-          <div className="metric__sub">{conf.critical || 0} critical &middot; {conf.high || 0} high</div>
-        </div>
-        <div className="metric">
+          <div className="metric__sub">{conf.critical || 0} critical &middot; {conf.high || 0} high →</div>
+        </Link>
+        <Link className="metric metric--link" to="/settings">
           <div className="metric__l">API spend</div>
           <div className="metric__v"><small>$</small>{(usage.cost_usd || 0).toFixed(2)}</div>
           <div className="metric__sub">
             {((usage.total_tokens || 0) / 1e6).toFixed(2)}M tokens &middot; {usage.calls} calls
             {budget?.monthly_limit_usd ? ` · ${budget.pct}% of budget` : ''}
           </div>
-        </div>
+        </Link>
       </div>
 
       <div className="dash-grid">

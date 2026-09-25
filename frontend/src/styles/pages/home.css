@@ -87,3 +87,11 @@
   .ident { grid-template-columns: 1fr; }
   .ident__arrow { transform: rotate(90deg); justify-self: center; }
 }
+
+/* The four headline metrics are jump-off points to their pages - the dashboard
+   as a launchpad, matching the clickable severity tiles on Findings. */
+.metric--link { display: block; text-decoration: none; color: inherit; cursor: pointer;
+  transition: border-color .14s ease, transform .12s ease, box-shadow .14s ease; }
+.metric--link:hover { border-color: var(--accent); transform: translateY(-1px); box-shadow: var(--shadow-glow); }
+.metric--link .metric__sub { transition: color .14s ease; }
+.metric--link:hover .metric__sub { color: var(--accent); }
