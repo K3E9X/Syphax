@@ -43,3 +43,20 @@
 
 .ops__you { font-family: var(--font-sans); font-size: 10px; color: var(--text-faint); text-transform: uppercase; letter-spacing: .05em; }
 .ops__add { margin-top: 10px; }
+
+/* Password strength meter on the create-account form. Segments fill and shift
+   from red -> amber -> cyan -> green as length and variety improve. It never
+   reads above "fair" while a blocking rule is unmet (see strength()), so it
+   cannot contradict the rule list below it. */
+.pw-meter { display: flex; align-items: center; gap: 10px; margin: -6px 0 14px; }
+.pw-meter__bars { display: flex; gap: 4px; flex: 1; }
+.pw-meter__seg { flex: 1; height: 4px; border-radius: 2px; background: var(--border); transition: background .2s ease; }
+.pw-meter__label { font-family: var(--font-mono); font-size: 10px; text-transform: uppercase; letter-spacing: .06em; color: var(--text-faint); min-width: 44px; text-align: right; }
+.pw-meter[data-score="1"] .pw-meter__seg.on { background: var(--severity-critical, #ef4444); }
+.pw-meter[data-score="2"] .pw-meter__seg.on { background: var(--severity-medium, #eab308); }
+.pw-meter[data-score="3"] .pw-meter__seg.on { background: var(--severity-low, #06b6d4); }
+.pw-meter[data-score="4"] .pw-meter__seg.on { background: var(--term-ok, #22c55e); }
+.pw-meter[data-score="1"] .pw-meter__label { color: var(--severity-critical, #ef4444); }
+.pw-meter[data-score="4"] .pw-meter__label { color: var(--term-ok, #22c55e); }
+
+@media (prefers-reduced-motion: reduce) { .pw-meter__seg { transition: none; } }

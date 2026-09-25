@@ -19,6 +19,20 @@ function localProblems(username, password, confirm) {
   return out;
 }
 
+// A four-step strength read for the create-account form. It never claims more
+// than "fair" while a blocking rule is still unmet, so the meter and the rule
+// list can never contradict each other. Above the floor it rewards the two
+// things that actually make a passphrase strong: length and variety.
+const STRENGTH_LABELS = ['weak', 'fair', 'good', 'strong'];
+export function strength(password, hasProblems) {
+  if (!password) return { score: 0, label: '' };
+  if (hasProblems) return { score: 1, label: 'weak' };
+  let score = 2;
+  if (password.length >= 16 || new Set(password).size >= 10) score = 3;
+  if (password.length >= 20 && new Set(password).size >= 12) score = 4;
+  return { score, label: STRENGTH_LABELS[score - 1] };
+}
+
 /**
  * The sign-in screen, and - on a fresh install - the screen that creates the
  * first account.
@@ -41,6 +55,7 @@ export default function Login() {
   useEffect(() => { setError(''); }, [setupRequired]);
 
   const problems = setupRequired ? localProblems(username, password, confirm) : [];
+  const pw = strength(password, problems.length > 0);
   const canSubmit = username.trim() && password && !busy
     && (!setupRequired || problems.length === 0);
 
@@ -128,6 +143,15 @@ export default function Login() {
               value={confirm}
               onChange={(e) => setConfirm(e.target.value)}
             />
+          </div>
+        )}
+
+        {setupRequired && password && (
+          <div className="pw-meter" data-score={pw.score} aria-hidden="true">
+            <div className="pw-meter__bars">
+              {[1, 2, 3, 4].map((n) => <span key={n} className={'pw-meter__seg' + (n <= pw.score ? ' on' : '')} />)}
+            </div>
+            <span className="pw-meter__label">{pw.label}</span>
           </div>
         )}
 
