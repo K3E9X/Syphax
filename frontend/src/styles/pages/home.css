@@ -52,11 +52,6 @@
 
 /* Budget guardrail banners. --warn is the softer case: spend is simply not
    being measured, which is a config gap rather than an overrun. */
-.budget-alert { border-color: rgba(239,68,68,.45); background: rgba(239,68,68,.06); }
-.budget-alert .card__body { font-size: 13px; line-height: 1.5; color: var(--text-secondary); }
-.budget-alert strong { color: var(--sev-critical); }
-.budget-alert--warn { border-color: rgba(234,179,8,.4); background: rgba(234,179,8,.05); }
-.budget-alert--warn strong { color: var(--sev-medium); }
 
 /* ---- Exit route identity: before / after ------------------------------- */
 /* Read left to right: the IP you really have, then the one the target sees.

@@ -50,7 +50,6 @@
 .attest .check__txt b { color: var(--text-primary); }
 
 .form-actions { display: flex; align-items: center; gap: 14px; }
-.form-error { font-family: var(--font-mono); font-size: 12px; color: var(--severity-critical); }
 .btn--solid { background: var(--text-primary); color: var(--bg); border-color: var(--text-primary); font-weight: 600; }
 .btn--solid:hover { background: var(--neutral-200); border-color: var(--neutral-200); }
 

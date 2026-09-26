@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { api, getApiKey } from '../lib/api.js';
 import { useApi, usePoll } from '../lib/useApi.js';
 import TokenPanel from '../components/TokenPanel.jsx';
+import { Notice } from '../components/ui.jsx';
 import KnowledgeMap from '../components/KnowledgeMap.jsx';
 import { mapFromFindings } from '../lib/knowledgeMap.js';
 import { AuditTrail, ChainList, CoverageMatrix } from '../components/live/Panels.jsx';
@@ -39,6 +40,7 @@ export default function LiveView() {
   const [proofs, setProofs] = useState({});
   const [memory, setMemory] = useState([]);
   const [busy, setBusy] = useState(false);
+  const [loadError, setLoadError] = useState(null);
   const [toast, setToast] = useState(null);
   const wsRef = useRef(null);
   const lastIdRef = useRef(0);
@@ -51,10 +53,11 @@ export default function LiveView() {
       const [s, a] = await Promise.all([api.engagements.state(id), api.engagements.approvals(id)]);
       setState(s);
       setApprovals((a.items || []).filter((x) => x.decision === null));
+      setLoadError(null);
     } catch (e) {
-      // A backend 500 used to look exactly like "no data": the panels just
-      // kept their last values while the header still said running.
-      console.error('live state refresh failed', e);
+      // A backend 500 used to look exactly like "no data": the panels kept
+      // their last values while the header still said running. Surface it.
+      setLoadError(e.message);
     }
   }, [id]);
 
@@ -244,6 +247,7 @@ export default function LiveView() {
 
   return (
     <div className="page lv2">
+      <Notice kind="error" title="Live state refresh failed" message={loadError} onRetry={loadState} />
       {/* ---- control header: identity, status, primary actions ---- */}
       <header className="lv2-head">
         <div className="lv2-head__id">
@@ -523,7 +527,7 @@ function FragmentRow({ j, open, detail, onClick }) {
               <>
                 <div className="io-label">Command</div>
                 <div className="io-block"><span className="p">$</span> {[detail.tool, ...(detail.args || [])].join(' ')} {detail.target && !detail.target.startsWith('(') ? detail.target : ''}</div>
-                {detail.error && <div style={{ color: 'var(--severity-critical)', fontFamily: 'var(--font-mono)', fontSize: 11, marginTop: 8 }}>error: {detail.error}</div>}
+                {detail.error && <div style={{ marginTop: 8 }}><Notice kind="error" message={detail.error} /></div>}
                 {detail.stdout_tail && <><div className="io-label">stdout {detail.exit_code != null ? `· exit ${detail.exit_code}` : ''}</div><div className="io-block">{detail.stdout_tail}</div></>}
                 {detail.stderr_tail && <><div className="io-label">stderr</div><div className="io-block">{detail.stderr_tail}</div></>}
               </>

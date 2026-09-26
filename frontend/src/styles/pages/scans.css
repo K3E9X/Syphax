@@ -21,7 +21,6 @@
 .scan-form { display: grid; grid-template-columns: 1.1fr 1fr 1.6fr 1fr auto; gap: 14px; align-items: end; }
 .scan-form .btn { height: 37px; }
 .scan-note { margin-top: 14px; font-family: var(--font-mono); font-size: 11px; color: var(--text-faint); }
-.scan-error { margin-top: 12px; font-family: var(--font-mono); font-size: 12px; color: var(--severity-critical); }
 
 /* job inspector */
 .inspect-head { padding: 14px 16px; border-bottom: 1px solid var(--border); }

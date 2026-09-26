@@ -33,7 +33,8 @@ export default function Proxy() {
     try {
       const r = await api.proxy.flows({ host: host || undefined, method: method || undefined, search: search || undefined, limit: 200 });
       setFlows(r.items || r || []);
-    } catch (e) { flash(e.message); }
+      setLoadError(null);
+    } catch (e) { setLoadError(e.message); }
   }, [host, method, search]);
 
   useEffect(() => {

@@ -193,7 +193,7 @@ export default function Scans() {
               <span>{dur(job.duration_ms)}</span>
               {(job.args || []).length ? <><span className="sep">|</span><span>args: {job.args.join(' ')}</span></> : null}
             </div>
-            {job.error && <div style={{ marginTop: 6, fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--severity-critical)' }}>error: {job.error}</div>}
+            {job.error && <div style={{ marginTop: 6 }}><Notice kind="error" message={job.error} /></div>}
           </div>
 
           <div style={{ padding: '12px 16px 0' }}>

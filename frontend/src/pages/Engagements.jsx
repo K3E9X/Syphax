@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { api } from '../lib/api.js';
 import { COV_AXES, Radar } from '../components/Charts.jsx';
+import { Notice } from '../components/ui.jsx';
 import KnowledgeMap from '../components/KnowledgeMap.jsx';
 import { mapFromEngagements } from '../lib/knowledgeMap.js';
 
@@ -146,6 +147,7 @@ export default function Engagements() {
 
   return (
     <div className="page">
+      <Notice kind="error" message={error} onRetry={() => setError(null)} />
       {kmCats.length > 0 && (
         <div style={{ marginBottom: 16 }}>
           <KnowledgeMap categories={kmCats} confidence={kmConfidence}
@@ -298,7 +300,6 @@ export default function Engagements() {
 
             <div className="form-actions">
               <button type="submit" className="btn btn--solid">Create engagement</button>
-              {error && <span className="form-error">{error}</span>}
             </div>
           </form>
         </div>

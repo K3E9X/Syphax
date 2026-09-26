@@ -19,6 +19,7 @@ export default function Settings() {
   const [loadError, setLoadError] = useState(null);
   const [s, setS] = useState(null);
   const [saved, setSaved] = useState(null);
+  const [saveError, setSaveError] = useState(null);
   const [apiKeyInput, setApiKeyInput] = useState(getApiKey());
   const apiKey = apiKeyInput;
 
@@ -44,8 +45,8 @@ export default function Settings() {
         safety: s.safety, scope: s.scope,
         oob_server: s.oob_server || '', budget: s.budget,
       });
-      setS(res); setSaved('Saved');
-    } catch (e) { setSaved('Error: ' + e.message); }
+      setS(res); setSaveError(null); setSaved('Saved');
+    } catch (e) { setSaveError(e.message); setSaved(null); }
     setTimeout(() => setSaved(null), 2500);
   }
 
@@ -140,6 +141,7 @@ export default function Settings() {
         </div>
       </div>
 
+      <Notice kind="error" title="Could not save settings" message={saveError} onRetry={() => setSaveError(null)} />
       <div className="set-actions">
         <button className="btn btn--solid" onClick={save}>Save settings</button>
         {saved && <span className="set-actions__msg">{saved}</span>}

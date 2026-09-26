@@ -180,22 +180,12 @@ export default function Home() {
       <Notice kind="error" title="Backend unreachable" message={loadError}
               onRetry={() => { cfg.reload(); dashboard.reload(); toolList.reload(); }} />
       {budget?.over && (
-        <div className="card budget-alert">
-          <div className="card__body">
-            <strong>LLM budget exceeded</strong> — ${(budget.month_spend_usd || 0).toFixed(2)} spent
-            this month against a ${(budget.monthly_limit_usd || 0).toFixed(2)} limit ({budget.pct || 0}%).
-            Raise or clear the limit in Settings.
-          </div>
-        </div>
+        <Notice kind="error" title="LLM budget exceeded"
+                message={`$${(budget.month_spend_usd || 0).toFixed(2)} spent this month against a $${(budget.monthly_limit_usd || 0).toFixed(2)} limit (${budget.pct || 0}%). Raise or clear the limit in Settings.`} />
       )}
       {budget && !budget.priced && (usage.total_tokens > 0) && (
-        <div className="card budget-alert budget-alert--warn">
-          <div className="card__body">
-            <strong>Spend is not being measured</strong> — {((usage.total_tokens || 0) / 1e6).toFixed(2)}M
-            tokens used but LLM_PRICING is unset, so every model is costed at $0.
-            Set it in .env to get a real figure.
-          </div>
-        </div>
+        <Notice kind="warn" title="Spend is not being measured"
+                message={`${((usage.total_tokens || 0) / 1e6).toFixed(2)}M tokens used but LLM_PRICING is unset, so every model is costed at $0. Set it in .env to get a real figure.`} />
       )}
 
       {kmCats.length > 0 && (
@@ -368,10 +358,7 @@ export default function Home() {
               </div>
 
               {ident && ident.mode !== 'off' && !ident.ip_changed && (
-                <p className="ping-result ping-result--err">
-                  Same IP on both sides: traffic is NOT going through the tunnel. Scans run
-                  from your real IP unless REQUIRE_VPN is on, in which case they are blocked.
-                </p>
+                <Notice kind="warn" message="Same IP on both sides: traffic is NOT going through the tunnel. Scans run from your real IP unless REQUIRE_VPN is on, in which case they are blocked." />
               )}
               {ident && ident.mode === 'off' && (
                 <p className="ident__note">
@@ -443,7 +430,7 @@ export default function Home() {
                 <button className="btn" onClick={setBaseline} disabled={netBusy} title="Record the current IP as your real one. Use before connecting a tunnel.">This is my real IP</button>
                 <button className="btn" onClick={dropTunnel} disabled={netBusy}>Direct</button>
               </div>
-              {netError && <p className="ping-result ping-result--err">{netError}</p>}
+              {netError && <Notice kind="error" message={netError} />}
               <p className="home-intro" style={{ marginTop: 8 }}>
                 Turn this on before creating an engagement. A proxy needs no privileges;
                 for WireGuard/OpenVPN set VPN_CONFIG_PATH in .env.
