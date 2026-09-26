@@ -28,7 +28,8 @@ export default function Settings() {
     api.settings.get().then(setS).catch((e) => { setS(null); setLoadError(e.message); });
   }, []);
 
-  if (!s) return <div className="page"><div className="card"><div className="card__body"><div className="empty">Loading settings...</div></div></div></div>;
+  if (!s) return <div className="page">
+      <h1 className="sr-only">Settings</h1><div className="card"><div className="card__body"><div className="empty">Loading settings...</div></div></div></div>;
 
   const safety = s.safety || {};
   const scope = s.scope || {};

@@ -38,6 +38,7 @@ export default function Sandbox() {
 
   return (
     <div className="page">
+      <h1 className="sr-only">PoC sandbox</h1>
       <Notice kind="error" message={loadError} />
       <div style={{ marginBottom: 16 }}>
         <KnowledgeMap categories={[]} confidence={out?.verdict === 'error' || out?.verdict === 'refused' ? 0 : (out ? 100 : 0)}

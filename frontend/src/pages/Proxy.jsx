@@ -107,6 +107,7 @@ export default function Proxy() {
 
   return (
     <div className="page">
+      <h1 className="sr-only">Proxy capture</h1>
       <Notice kind="error" message={loadError} />
       <div className="card">
         <div className="card__head"><span className="card__title">Proxy capture</span>

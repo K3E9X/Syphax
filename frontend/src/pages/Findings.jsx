@@ -137,6 +137,7 @@ export default function Findings() {
 
   return (
     <div className="page fnd">
+      <h1 className="sr-only">Findings</h1>
       <Notice kind="error" message={loadError} />
 
       {km.categories.length > 0 && (

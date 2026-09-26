@@ -147,6 +147,7 @@ export default function Engagements() {
 
   return (
     <div className="page">
+      <h1 className="sr-only">Engagements</h1>
       <Notice kind="error" message={error} onRetry={() => setError(null)} />
       {kmCats.length > 0 && (
         <div style={{ marginBottom: 16 }}>

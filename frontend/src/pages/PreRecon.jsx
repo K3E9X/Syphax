@@ -169,6 +169,7 @@ export default function PreRecon() {
 
   return (
     <div className="page">
+      <h1 className="sr-only">Pre-recon</h1>
       <form className="pre-bar" onSubmit={run}>
         <input
           className="input pre-bar__input"

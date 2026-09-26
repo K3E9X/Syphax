@@ -102,6 +102,7 @@ export default function Scans() {
 
   return (
     <div className="page">
+      <h1 className="sr-only">Scans</h1>
       <Notice kind="error" message={error} onRetry={() => setError(null)} />
 
       {kmCats.length > 0 && (

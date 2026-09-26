@@ -177,6 +177,7 @@ export default function Home() {
 
   return (
     <div className="page">
+      <h1 className="sr-only">Dashboard</h1>
       <Notice kind="error" title="Backend unreachable" message={loadError}
               onRetry={() => { cfg.reload(); dashboard.reload(); toolList.reload(); }} />
       {budget?.over && (

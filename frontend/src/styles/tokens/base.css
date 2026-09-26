@@ -81,3 +81,11 @@ body {
 @media (prefers-reduced-motion: reduce) {
   .blink, .pulse, .spin, .cursor::after, .loading-dots::after { animation: none; }
 }
+
+/* Screen-reader-only: gives each page view a single programmatic <h1> for
+   assistive tech and document outline, without adding a visible header band
+   that would duplicate the top nav and the leading card/map titles. */
+.sr-only {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0;
+}
