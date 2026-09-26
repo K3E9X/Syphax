@@ -129,7 +129,7 @@ export default function Surface() {
         <div className="card">
           <div className="card__head"><span className="card__title">Discovered hosts</span><span className="card__meta">click a host for ports &amp; endpoints</span></div>
           <div className="card__body" style={{ paddingBottom: 0, paddingTop: 14 }}>
-            <input className="surf-search" placeholder="filter hosts..." value={q} onChange={(e) => setQ(e.target.value)} />
+            <input className="surf-search" aria-label="Filter hosts" placeholder="filter hosts..." value={q} onChange={(e) => setQ(e.target.value)} />
           </div>
           <div>
             {shown.map((x) => (

@@ -118,29 +118,29 @@ export default function Scans() {
         <div className="card__body">
           <form className="scan-form" onSubmit={onSubmit}>
             <div className="field">
-              <label className="field__label">Engagement</label>
+              <label className="field__label" htmlFor="scan-eng">Engagement</label>
               <div className="select-box">
-                <select className="select" value={form.engagement_id} onChange={(e) => set({ engagement_id: e.target.value })}>
+                <select id="scan-eng" className="select" value={form.engagement_id} onChange={(e) => set({ engagement_id: e.target.value })}>
                   {engagements.length === 0 && <option value="">no engagements</option>}
                   {engagements.map((e) => <option key={e.id} value={e.id}>{e.target_host || e.target_url}</option>)}
                 </select>
               </div>
             </div>
             <div className="field">
-              <label className="field__label">Tool</label>
+              <label className="field__label" htmlFor="scan-tool">Tool</label>
               <div className="select-box">
-                <select className="select" value={form.tool} onChange={(e) => set({ tool: e.target.value })}>
+                <select id="scan-tool" className="select" value={form.tool} onChange={(e) => set({ tool: e.target.value })}>
                   {tools.map((t) => <option key={t.name} value={t.name} disabled={!t.available}>{t.name}{t.available ? '' : ' (not installed)'}</option>)}
                 </select>
               </div>
             </div>
             <div className="field">
-              <label className="field__label">Target URL or host</label>
-              <input className="input" placeholder="https://example.com  (ffuf: use FUZZ)" value={form.target} onChange={(e) => set({ target: e.target.value })} />
+              <label className="field__label" htmlFor="scan-target">Target URL or host</label>
+              <input id="scan-target" className="input" placeholder="https://example.com  (ffuf: use FUZZ)" value={form.target} onChange={(e) => set({ target: e.target.value })} />
             </div>
             <div className="field">
-              <label className="field__label">Extra CLI options</label>
-              <input className="input" placeholder="--level=3 --risk=3" value={form.options} onChange={(e) => set({ options: e.target.value })} />
+              <label className="field__label" htmlFor="scan-opts">Extra CLI options</label>
+              <input id="scan-opts" className="input" placeholder="--level=3 --risk=3" value={form.options} onChange={(e) => set({ options: e.target.value })} />
             </div>
             <button type="submit" className="btn btn--solid">Run</button>
           </form>

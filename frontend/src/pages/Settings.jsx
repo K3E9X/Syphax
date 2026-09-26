@@ -69,8 +69,8 @@ export default function Settings() {
           <div className="card__head"><span className="card__title">Machine credential</span><span className="card__meta">this browser only &middot; never sent to the server settings</span></div>
           <div className="card__body">
             <div className="field">
-              <label className="field__label">X-API-Key sent with every request</label>
-              <input className="input" type="password" placeholder="leave empty — you are signed in with an account"
+              <label className="field__label" htmlFor="set-apikey">X-API-Key sent with every request</label>
+              <input id="set-apikey" className="input" type="password" placeholder="leave empty — you are signed in with an account"
                      value={apiKey} onChange={(e) => setApiKeyInput(e.target.value)} />
             </div>
             <div className="scan-note">
@@ -112,13 +112,13 @@ export default function Settings() {
           <div className="card__head"><span className="card__title">LLM budget</span><span className="card__meta">0 = no limit</span></div>
           <div className="card__body">
             <div className="field">
-              <label className="field__label">Monthly cap (USD)</label>
-              <input className="input" type="number" min="0" step="1" value={budget.monthly_usd ?? 0}
+              <label className="field__label" htmlFor="set-monthly">Monthly cap (USD)</label>
+              <input id="set-monthly" className="input" type="number" min="0" step="1" value={budget.monthly_usd ?? 0}
                      onChange={(e) => setBudget('monthly_usd', Number(e.target.value))} />
             </div>
             <div className="field">
-              <label className="field__label">Per-engagement cap (USD)</label>
-              <input className="input" type="number" min="0" step="1" value={budget.per_engagement_usd ?? 0}
+              <label className="field__label" htmlFor="set-pereng">Per-engagement cap (USD)</label>
+              <input id="set-pereng" className="input" type="number" min="0" step="1" value={budget.per_engagement_usd ?? 0}
                      onChange={(e) => setBudget('per_engagement_usd', Number(e.target.value))} />
             </div>
             <p className="home-intro">
@@ -133,10 +133,10 @@ export default function Settings() {
           <div className="card__body">
             <div className="router-row">
               <div className="router-row__role">limits</div>
-              <div className="field"><label className="field__label">Rate (req/s)</label><input className="input" type="number" value={scope.rate ?? 10} onChange={(e) => setScope('rate', Number(e.target.value))} /></div>
-              <div className="field"><label className="field__label">Concurrency</label><input className="input" type="number" value={scope.concurrency ?? 4} onChange={(e) => setScope('concurrency', Number(e.target.value))} /></div>
+              <div className="field"><label className="field__label" htmlFor="set-rate">Rate (req/s)</label><input id="set-rate" className="input" type="number" value={scope.rate ?? 10} onChange={(e) => setScope('rate', Number(e.target.value))} /></div>
+              <div className="field"><label className="field__label" htmlFor="set-conc">Concurrency</label><input id="set-conc" className="input" type="number" value={scope.concurrency ?? 4} onChange={(e) => setScope('concurrency', Number(e.target.value))} /></div>
             </div>
-            <div className="field"><label className="field__label">OOB / interactsh server <span style={{ textTransform: 'none', color: 'var(--text-faint)', fontWeight: 400 }}>blank = public servers</span></label><input className="input" placeholder="https://oob.yourdomain.com" value={s.oob_server || ''} onChange={(e) => setS((x) => ({ ...x, oob_server: e.target.value }))} /></div>
+            <div className="field"><label className="field__label" htmlFor="set-oob">OOB / interactsh server <span style={{ textTransform: 'none', color: 'var(--text-faint)', fontWeight: 400 }}>blank = public servers</span></label><input id="set-oob" className="input" placeholder="https://oob.yourdomain.com" value={s.oob_server || ''} onChange={(e) => setS((x) => ({ ...x, oob_server: e.target.value }))} /></div>
           </div>
         </div>
       </div>

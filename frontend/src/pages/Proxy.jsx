@@ -159,9 +159,9 @@ export default function Proxy() {
       <div className="card">
         <div className="card__body" style={{ paddingBottom: 14 }}>
           <div className="px-filters">
-            <div className="select-box"><select className="select" value={host} onChange={(e) => setHost(e.target.value)}><option value="">All hosts</option>{hosts.map((h) => <option key={h} value={h}>{h}</option>)}</select></div>
-            <div className="select-box"><select className="select" value={method} onChange={(e) => setMethod(e.target.value)}><option value="">All methods</option>{METHODS.map((m) => <option key={m} value={m}>{m}</option>)}</select></div>
-            <input className="px-search" placeholder="filter URL..." value={search} onChange={(e) => setSearch(e.target.value)} />
+            <div className="select-box"><select className="select" aria-label="Filter by host" value={host} onChange={(e) => setHost(e.target.value)}><option value="">All hosts</option>{hosts.map((h) => <option key={h} value={h}>{h}</option>)}</select></div>
+            <div className="select-box"><select className="select" aria-label="Filter by method" value={method} onChange={(e) => setMethod(e.target.value)}><option value="">All methods</option>{METHODS.map((m) => <option key={m} value={m}>{m}</option>)}</select></div>
+            <input className="px-search" aria-label="Filter by URL" placeholder="filter URL..." value={search} onChange={(e) => setSearch(e.target.value)} />
           </div>
         </div>
         <div className="tbl-scroll">

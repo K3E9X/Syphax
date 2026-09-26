@@ -51,27 +51,27 @@ export default function Sandbox() {
           <p className="intro">Re-run a generated or pasted proof-of-concept against an in-scope target inside an isolated, egress-restricted container. The engagement scope allow-list is enforced; out-of-scope targets are refused.</p>
           <div className="scan-form">
             <div className="field">
-              <label className="field__label">Engagement</label>
-              <div className="select-box"><select className="select" value={form.engagement_id} onChange={(e) => set({ engagement_id: e.target.value })}>
+              <label className="field__label" htmlFor="sb-eng">Engagement</label>
+              <div className="select-box"><select id="sb-eng" className="select" value={form.engagement_id} onChange={(e) => set({ engagement_id: e.target.value })}>
                 {engagements.length === 0 && <option value="">no engagements</option>}
                 {engagements.map((e) => <option key={e.id} value={e.id}>{e.target_host || e.target_url}</option>)}
               </select></div>
             </div>
             <div className="field">
-              <label className="field__label">Type</label>
-              <div className="select-box"><select className="select" value={form.type} onChange={(e) => set({ type: e.target.value })}>
+              <label className="field__label" htmlFor="sb-type">Type</label>
+              <div className="select-box"><select id="sb-type" className="select" value={form.type} onChange={(e) => set({ type: e.target.value })}>
                 {TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
               </select></div>
             </div>
             <div className="field">
-              <label className="field__label">Target</label>
-              <input className="input" placeholder="https://example.com/endpoint" value={form.target} onChange={(e) => set({ target: e.target.value })} />
+              <label className="field__label" htmlFor="sb-target">Target</label>
+              <input id="sb-target" className="input" placeholder="https://example.com/endpoint" value={form.target} onChange={(e) => set({ target: e.target.value })} />
             </div>
             <button className="btn btn--solid" onClick={run} disabled={busy || !form.engagement_id}>{busy ? 'Running...' : 'Run PoC'}</button>
           </div>
           <div className="field" style={{ marginTop: 12 }}>
-            <label className="field__label">PoC code</label>
-            <textarea className="textarea" rows={8} style={{ fontFamily: 'var(--font-mono)' }} placeholder={"curl -s 'https://example.com/?p=1'"} value={form.code} onChange={(e) => set({ code: e.target.value })}></textarea>
+            <label className="field__label" htmlFor="sb-code">PoC code</label>
+            <textarea id="sb-code" className="textarea" rows={8} style={{ fontFamily: 'var(--font-mono)' }} placeholder={"curl -s 'https://example.com/?p=1'"} value={form.code} onChange={(e) => set({ code: e.target.value })}></textarea>
           </div>
         </div>
       </div>

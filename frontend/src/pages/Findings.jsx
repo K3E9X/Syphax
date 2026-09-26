@@ -173,7 +173,7 @@ export default function Findings() {
             ))}
           </select>
         </div>
-        <input ref={searchRef} className="filter-search" placeholder="search title / target / class…"
+        <input ref={searchRef} className="filter-search" aria-label="Search findings" placeholder="search title / target / class…"
                value={q} onChange={(e) => setQ(e.target.value)} />
       </div>
 

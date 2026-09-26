@@ -374,7 +374,7 @@ export default function Reports() {
               <p className="rfind__txt">Compare this engagement with an earlier one on the same target: what the client fixed, what came back, and what is new.</p>
               <div className="row" style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginTop: 8 }}>
                 <div className="select-box">
-                  <select id="diff-against" className="select" value={against} onChange={(e) => setAgainst(e.target.value)}>
+                  <select id="diff-against" aria-label="Compare against an earlier engagement" className="select" value={against} onChange={(e) => setAgainst(e.target.value)}>
                     <option value="">earlier engagement…</option>
                     {engagements.filter((e) => e.id !== engId).map((e) => (
                       <option key={e.id} value={e.id}>{e.target_host || e.target_url} — {e.id.slice(0, 8)}</option>
