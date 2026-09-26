@@ -25,7 +25,7 @@ from app.findings_util import (
     dedup as _dedup,
     h1_markdown,
 )
-from app.reporting.mappings import for_class
+from app.reporting.mappings import category_for_class, for_class
 from app.validation import ValidatedFindingRepository, build_chains, validate_engagement
 
 router = APIRouter(tags=["findings"])
@@ -71,6 +71,9 @@ async def list_findings(severity: str = "", status: str = "", q: str = "",
                 "id": f.id, "dedup": key, "severity": f.severity,
                 "cvss": _CVSS.get((f.severity or "info").lower(), 1.0),
                 "title": f.title, "target": f.target, "cls": f.vuln_class,
+                # Coarse family (injection / access_control / …) so the UI can
+                # group findings into the knowledge map without re-deriving it.
+                "category": category_for_class(f.vuln_class),
                 "tool": f.tool, "tools": {f.tool}, "validation_status": f.status,
                 "status": triage.get(key, "new"),
                 "engagement": (engs.get(f.engagement_id).target_host if engs.get(f.engagement_id) else f.engagement_id),

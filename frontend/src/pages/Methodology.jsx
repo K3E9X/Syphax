@@ -3,6 +3,7 @@ import { api } from '../lib/api.js';
 import { useEngagements } from '../lib/useApi.js';
 import { Notice } from '../components/ui.jsx';
 import { COV_AXES, Donut, Legend, Radar } from '../components/Charts.jsx';
+import KnowledgeMap from '../components/KnowledgeMap.jsx';
 
 const FILTERS = ['all', 'done', 'running', 'queued', 'skipped'];
 const STATUS_HEX = { done: '#22c55e', running: '#22d3ee', queued: '#737373', skipped: '#525252', error: '#ef4444' };
@@ -64,6 +65,22 @@ export default function Methodology() {
     .map((s) => ({ label: s, value: allItems.filter((i) => i.status === s).length, color: STATUS_HEX[s] }))
     .filter((s) => s.value > 0);
 
+  // Knowledge map over the WSTG categories: items covered = quality (done high,
+  // running medium, queued/skipped low), confidence = overall coverage.
+  const kmCats = cats
+    .map((c) => {
+      const items = c.items || [];
+      return {
+        key: c.cat, label: c.cat, icon: (c.cat[0] || '?').toUpperCase() + (c.cat.split(' ')[1]?.[0] || c.cat[1] || '').toUpperCase(),
+        count: items.length,
+        high: items.filter((i) => i.status === 'done').length,
+        med: items.filter((i) => i.status === 'running').length,
+        low: items.filter((i) => i.status !== 'done' && i.status !== 'running').length,
+      };
+    })
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 5);
+
   return (
     <div className="page">
       <Notice kind="error" message={loadError} />
@@ -83,6 +100,13 @@ export default function Methodology() {
         <div className="metric metric--alert"><div className="metric__l">Hits</div><div className="metric__v">{hits}</div></div>
         <div className="metric"><div className="metric__l">Queued</div><div className="metric__v">{allItems.filter((i) => i.status === 'queued').length}</div></div>
       </div>
+
+      {kmCats.length > 0 && (
+        <div style={{ marginBottom: 16 }}>
+          <KnowledgeMap categories={kmCats} confidence={cov}
+                        title="Coverage map" subtitle={`${allItems.length} checks · ${cov}% completed`} />
+        </div>
+      )}
 
       {(radarValues || statusSegments.length > 0) && (
         <div className="viz-row" style={{ marginBottom: 16 }}>

@@ -4,6 +4,7 @@ import { api } from '../lib/api.js';
 import { useApi } from '../lib/useApi.js';
 import { Notice, UsageRow, fmtTokens, fmtUsd } from '../components/ui.jsx';
 import { COV_AXES, Donut, Histogram, Legend, Radar, SEV_HEX } from '../components/Charts.jsx';
+import KnowledgeMap from '../components/KnowledgeMap.jsx';
 
 const PHASE_ORDER = ['Reconnaissance', 'Scanning & enumeration', 'Exploitation', 'Capture & analysis', 'Other'];
 const LLM_ROLES = ['planner', 'executor', 'validator'];
@@ -162,6 +163,26 @@ export default function Home() {
   const roleBars = (usage.by_role || [])
     .map((r) => ({ label: r.role, value: Math.round((r.tokens || 0) / 1000), color: ROLE_HEX[r.role] || '#c2410c' }));
 
+  // Fleet knowledge map: each engagement is a category, its confirmed findings
+  // are the count, severity rolls up into the quality ring, and confidence is
+  // the average testing progress across engagements.
+  const kmCats = engItems
+    .map((e) => {
+      const sc = e.severity_counts || {};
+      const count = (sc.critical || 0) + (sc.high || 0) + (sc.medium || 0) + (sc.low || 0);
+      const host = e.target_host || e.target_url || e.id;
+      return {
+        key: e.id, label: host, icon: (host.replace(/^www\./, '')[0] || '?').toUpperCase() + (host[1] || '').toUpperCase(),
+        count, high: (sc.critical || 0) + (sc.high || 0), med: sc.medium || 0, low: sc.low || 0,
+        progress: e.progress || 0,
+      };
+    })
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 5);
+  const kmConfidence = engItems.length
+    ? Math.round(engItems.reduce((n, e) => n + (e.progress || 0), 0) / engItems.length)
+    : 0;
+
   const byPhase = {};
   for (const t of tools) (byPhase[t.phase] = byPhase[t.phase] || []).push(t);
   const phases = PHASE_ORDER.filter((p) => byPhase[p]);
@@ -189,6 +210,14 @@ export default function Home() {
             tokens used but LLM_PRICING is unset, so every model is costed at $0.
             Set it in .env to get a real figure.
           </div>
+        </div>
+      )}
+
+      {kmCats.length > 0 && (
+        <div style={{ marginBottom: 16 }}>
+          <KnowledgeMap categories={kmCats} confidence={kmConfidence}
+                        title="Engagements map"
+                        subtitle={`${engItems.length} engagement(s) · avg coverage ${kmConfidence}%`} />
         </div>
       )}
 

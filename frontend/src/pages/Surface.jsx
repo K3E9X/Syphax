@@ -3,6 +3,7 @@ import { api } from '../lib/api.js';
 import { useEngagements } from '../lib/useApi.js';
 import { Notice } from '../components/ui.jsx';
 import { Donut, Histogram, Legend } from '../components/Charts.jsx';
+import KnowledgeMap from '../components/KnowledgeMap.jsx';
 
 const METHOD_HEX = { GET: '#22c55e', POST: '#22d3ee', PUT: '#eab308', PATCH: '#a78bfa', DELETE: '#ef4444', HEAD: '#737373', OPTIONS: '#525252' };
 
@@ -49,6 +50,31 @@ export default function Surface() {
     .map(([m, n]) => ({ label: m, value: n, color: METHOD_HEX[m] || '#737373' }))
     .sort((a, b) => b.value - a.value);
 
+  // Knowledge map over hosts: endpoints are the count, and "quality" is how
+  // attackable they look - parameterised (high), a mutating method without
+  // params (medium), the rest (low). Confidence = share of endpoints with
+  // parameters across the whole surface.
+  const MUT = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
+  let totalEp = 0, totalParam = 0;
+  const kmCats = hosts
+    .map((x) => {
+      const eps = x.endpoints || [];
+      let high = 0, med = 0, low = 0;
+      for (const e of eps) {
+        if ((e.params || []).length) high += 1;
+        else if (MUT.has((e.m || 'GET').toUpperCase())) med += 1;
+        else low += 1;
+      }
+      totalEp += eps.length; totalParam += high;
+      const host = x.host || '?';
+      return { key: host, label: host, icon: (host[0] || '?').toUpperCase() + (host[1] || '').toUpperCase(),
+               count: eps.length, high, med, low };
+    })
+    .filter((c) => c.count > 0)
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 5);
+  const kmConfidence = totalEp ? Math.round((totalParam / totalEp) * 100) : 0;
+
   return (
     <div className="page">
       <Notice kind="error" message={loadError} />
@@ -68,6 +94,13 @@ export default function Surface() {
         <div className="metric metric--alert"><div className="metric__l">Open ports</div><div className="metric__v">{totPorts}</div></div>
         <div className="metric"><div className="metric__l">Technologies</div><div className="metric__v">{totTech}</div></div>
       </div>
+
+      {kmCats.length > 0 && (
+        <div style={{ marginBottom: 16 }}>
+          <KnowledgeMap categories={kmCats} confidence={kmConfidence}
+                        title="Surface map" subtitle={`${totalEp} endpoint(s) · ${kmConfidence}% parameterised`} />
+        </div>
+      )}
 
       {(hostBars.length > 0 || methodSegments.length > 0) && (
         <div className="viz-row" style={{ marginBottom: 16 }}>

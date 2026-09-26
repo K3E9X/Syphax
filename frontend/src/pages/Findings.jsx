@@ -2,6 +2,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { api } from '../lib/api.js';
 import { useEngagements } from '../lib/useApi.js';
 import { Notice } from '../components/ui.jsx';
+import KnowledgeMap from '../components/KnowledgeMap.jsx';
+import { mapFromFindings } from '../lib/knowledgeMap.js';
 
 // Sentinel for the opt-in cross-engagement view; '' would be indistinguishable
 // from "nothing selected yet", which is what made aggregating the default.
@@ -82,6 +84,7 @@ export default function Findings() {
   // their meaning while one severity is selected - the severity filter is a
   // client-side view, not another query.
   const counts = SEVS.reduce((o, s) => ((o[s] = rows.filter((f) => f.severity === s).length), o), {});
+  const km = mapFromFindings(rows);
   const visible = sevFilter === 'all' ? rows : rows.filter((r) => r.severity === sevFilter);
   const f = rows.find((x) => x.id === sel) || null;
 
@@ -132,6 +135,12 @@ export default function Findings() {
   return (
     <div className="page fnd">
       <Notice kind="error" message={loadError} />
+
+      {km.categories.length > 0 && (
+        <KnowledgeMap categories={km.categories} confidence={km.confidence}
+                      title="Findings map"
+                      subtitle={`${rows.length} finding(s) · ${km.confidence}% confirmed`} />
+      )}
 
       {/* Severity is the primary axis of triage, so the counts ARE the filter -
           click a tile to narrow, click it again to clear. */}

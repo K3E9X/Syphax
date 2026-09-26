@@ -3,6 +3,8 @@ import { api } from '../lib/api.js';
 import { useApi, useEngagements } from '../lib/useApi.js';
 import { Async, Notice } from '../components/ui.jsx';
 import { COV_AXES, Donut, Histogram, Legend, Radar, SEV_HEX } from '../components/Charts.jsx';
+import KnowledgeMap from '../components/KnowledgeMap.jsx';
+import { mapFromFindings } from '../lib/knowledgeMap.js';
 
 const SEV_ORDER = { critical: 0, high: 1, medium: 2, low: 3, info: 4 };
 const SEV_BARS = ['critical', 'high', 'medium', 'low'];
@@ -64,6 +66,7 @@ export default function Reports() {
   const statusBars = ['confirmed', 'likely', 'unconfirmed']
     .map((k) => ({ label: k, value: vsum[k] || 0, color: STATUS_HEX[k] }))
     .filter((b) => b.value > 0);
+  const km = mapFromFindings(findings, { confirmed: (f) => f.status === 'confirmed' });
 
   // The TOC is built from what the report actually contains, so it never
   // points at an empty section.
@@ -182,6 +185,13 @@ export default function Reports() {
                 <dt>Engagement</dt><dd>{eng.id}</dd>
               </dl>
               <p style={{ marginTop: 16 }}>The autonomous assessment of <strong>{eng.target_url}</strong> identified <strong>{total} validated finding(s)</strong>, including <strong>{dist.critical || 0} critical</strong> and <strong>{dist.high || 0} high</strong>-severity issues. <strong>{confirmed}</strong> were confirmed with a safe, read-only proof.</p>
+
+              {km.categories.length > 0 && (
+                <div style={{ marginTop: 18 }}>
+                  <KnowledgeMap categories={km.categories} confidence={km.confidence}
+                                title="Findings map" subtitle={`${total} finding(s) by category`} />
+                </div>
+              )}
 
               <div className="viz-row" style={{ marginTop: 18 }}>
                 <div className="viz">

@@ -8,11 +8,9 @@
 
 /* ---- Orb ---- */
 .km__orb { position: relative; width: 140px; height: 140px; display: grid; place-items: center; }
-.km__dots { position: absolute; inset: 8px; border-radius: 50%;
-  background: radial-gradient(circle, transparent 58%, var(--accent-tint) 59%, transparent 62%);
+.km__dots { position: absolute; inset: 8px; border-radius: 50%; background: var(--border-strong); opacity: .5;
   -webkit-mask: radial-gradient(circle 1.1px at center, #000 99%, transparent) 0 0 / 9px 9px;
-  mask: radial-gradient(circle 1.1px at center, #000 99%, transparent) 0 0 / 9px 9px;
-  background: var(--border-strong); opacity: .5; }
+  mask: radial-gradient(circle 1.1px at center, #000 99%, transparent) 0 0 / 9px 9px; }
 .km__band { position: absolute; inset: 0; border-radius: 50%;
   background: conic-gradient(from 0deg, transparent 0deg, var(--accent) 40deg, transparent 90deg);
   -webkit-mask: radial-gradient(circle, transparent 62px, #000 63px, #000 69px, transparent 70px);

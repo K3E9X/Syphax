@@ -30,6 +30,6 @@ it('renders the coverage radar and status-mix donut', async () => {
   expect(screen.getByText('Test status mix')).toBeTruthy();
   // The radar axis readout shows the Recon percentage from the engagement.
   expect(screen.getByText('80%')).toBeTruthy();
-  // The category is still listed.
-  expect(screen.getByText('Authentication')).toBeTruthy();
+  // The category matrix still lists the WSTG group (also appears in the map).
+  expect(document.querySelector('.cat__name').textContent).toBe('Authentication');
 });
