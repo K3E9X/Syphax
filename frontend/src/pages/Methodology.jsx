@@ -104,7 +104,11 @@ export default function Methodology() {
       {kmCats.length > 0 && (
         <div style={{ marginBottom: 16 }}>
           <KnowledgeMap categories={kmCats} confidence={cov}
-                        title="Coverage map" subtitle={`${allItems.length} checks · ${cov}% completed`} />
+                        title="Coverage map" subtitle={`${allItems.length} checks · ${cov}% completed · click a category to open it`}
+                        onSelect={(cat) => {
+                          setOpen((o) => (o.includes(cat) ? o : [...o, cat]));
+                          requestAnimationFrame(() => document.getElementById('cat-' + cat)?.scrollIntoView?.({ behavior: 'smooth', block: 'start' }));
+                        }} />
         </div>
       )}
 
@@ -156,7 +160,7 @@ export default function Methodology() {
         const chits = c.items.filter((i) => i.hit).length;
         const isOpen = open.includes(c.cat);
         return (
-          <div key={c.cat} className="card cat">
+          <div key={c.cat} id={"cat-" + c.cat} className="card cat">
             <div className="cat__head" onClick={() => toggle(c.cat)}>
               <div><div className="cat__name">{c.cat}</div><div className="cat__wstg">{c.wstg}</div></div>
               <div className="cat__bar">

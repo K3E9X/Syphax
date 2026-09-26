@@ -4,7 +4,8 @@
  * histogram and the request-method donut render from the discovered hosts,
  * and selecting a host still shows its detail.
  */
-import { act, render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { beforeEach, expect, it, vi } from 'vitest';
 import Surface from '../Surface.jsx';
 import { api } from '../../lib/api.js';
@@ -35,4 +36,14 @@ it('renders the surface charts from discovered hosts', async () => {
   // Three endpoints total across both hosts -> donut centre total.
   const donut = document.querySelector('.chart--donut');
   expect(donut.textContent).toContain('3');
+});
+
+it('clicking a host in the surface map selects it in the detail panel', async () => {
+  await act(async () => { render(<Surface />); });
+  await waitFor(() => expect(screen.getByText('Surface map')).toBeTruthy());
+  // app.acme.com is selected first; its detail heading shows it.
+  expect(screen.getByRole('heading', { name: 'app.acme.com' })).toBeTruthy();
+  const map = screen.getByRole('radiogroup', { name: 'Surface map' });
+  await userEvent.click(within(map).getByRole('radio', { name: /api\.acme\.com/ }));
+  await waitFor(() => expect(screen.getByRole('heading', { name: 'api.acme.com' })).toBeTruthy());
 });

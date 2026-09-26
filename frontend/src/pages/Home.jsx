@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { api } from '../lib/api.js';
 import { useApi } from '../lib/useApi.js';
 import { Notice, UsageRow, fmtTokens, fmtUsd } from '../components/ui.jsx';
@@ -12,6 +12,7 @@ const ROLE_HEX = { planner: '#c2410c', executor: '#a78bfa', validator: '#34d399'
 const SEV_BARS = ['critical', 'high', 'medium', 'low', 'info'];
 
 export default function Home() {
+  const navigate = useNavigate();
   // These four used to be `.then(set).catch(() => {})`. A dead backend, a
   // wrong API key or a refused VPN all rendered as "-" with no explanation,
   // which for a security tool is the worst failure mode there is: "I see no
@@ -217,7 +218,8 @@ export default function Home() {
         <div style={{ marginBottom: 16 }}>
           <KnowledgeMap categories={kmCats} confidence={kmConfidence}
                         title="Engagements map"
-                        subtitle={`${engItems.length} engagement(s) · avg coverage ${kmConfidence}%`} />
+                        subtitle={`${engItems.length} engagement(s) · avg coverage ${kmConfidence}% · click to open live view`}
+                        onSelect={(id) => navigate(`/engagements/${id}/live`)} />
         </div>
       )}
 

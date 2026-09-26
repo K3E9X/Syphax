@@ -39,6 +39,7 @@ function Block({ title, children, poc = false, defaultOpen = true }) {
 export default function Findings() {
   const [rows, setRows] = useState([]);
   const [sevFilter, setSevFilter] = useState('all');
+  const [catFilter, setCatFilter] = useState(null);
   const [statusFilter, setStatusFilter] = useState('all');
   const [q, setQ] = useState('');
   const [sel, setSel] = useState(null);
@@ -85,7 +86,9 @@ export default function Findings() {
   // client-side view, not another query.
   const counts = SEVS.reduce((o, s) => ((o[s] = rows.filter((f) => f.severity === s).length), o), {});
   const km = mapFromFindings(rows);
-  const visible = sevFilter === 'all' ? rows : rows.filter((r) => r.severity === sevFilter);
+  const visible = rows.filter((r) =>
+    (sevFilter === 'all' || r.severity === sevFilter)
+    && (!catFilter || (r.category || 'other') === catFilter));
   const f = rows.find((x) => x.id === sel) || null;
 
   // ↑/↓ moves the selection through the list, so triage is a keyboard loop and
@@ -139,7 +142,11 @@ export default function Findings() {
       {km.categories.length > 0 && (
         <KnowledgeMap categories={km.categories} confidence={km.confidence}
                       title="Findings map"
-                      subtitle={`${rows.length} finding(s) · ${km.confidence}% confirmed`} />
+                      subtitle={catFilter
+                        ? `filtering ${km.categories.find((c) => c.key === catFilter)?.label || catFilter} · click again to clear`
+                        : `${rows.length} finding(s) · ${km.confidence}% confirmed · click a category to filter`}
+                      activeKey={catFilter || km.categories[0].key}
+                      onSelect={(k) => setCatFilter((cur) => (cur === k ? null : k))} />
       )}
 
       {/* Severity is the primary axis of triage, so the counts ARE the filter -

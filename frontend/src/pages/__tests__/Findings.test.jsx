@@ -14,11 +14,11 @@ import { api } from '../../lib/api.js';
 const ITEMS = [
   { id: 'f1', severity: 'critical', cvss: 9.8, title: 'SQL injection on /login',
     target: 'https://app.acme.com/login', status: 'confirmed', engagement: 'app.acme.com',
-    dup: 2, last_seen: Date.now() / 1000, cls: 'sql_injection', tool: 'sqlmap',
+    dup: 2, last_seen: Date.now() / 1000, cls: 'sql_injection', category: 'injection', tool: 'sqlmap',
     desc: 'Boolean-based blind SQLi.', evidence: 'error: syntax near', poc: "' OR 1=1--" },
   { id: 'f2', severity: 'low', cvss: 3.1, title: 'Missing security header',
     target: 'https://app.acme.com/', status: 'new', engagement: 'app.acme.com',
-    dup: 1, last_seen: Date.now() / 1000, cls: 'config', tool: 'nuclei' },
+    dup: 1, last_seen: Date.now() / 1000, cls: 'config', category: 'config', tool: 'nuclei' },
 ];
 
 beforeEach(() => {
@@ -82,4 +82,17 @@ it('surfaces a load error instead of an empty table', async () => {
   vi.spyOn(api.engagements, 'findings').mockRejectedValue(new Error('backend down'));
   await mount();
   await waitFor(() => expect(screen.getByRole('alert').textContent).toMatch(/backend down/));
+});
+
+it('clicking a category in the knowledge map filters the table', async () => {
+  await mount();
+  await waitFor(() => screen.getByText('SQL injection on /login'));
+  // Both findings are listed to begin with.
+  expect(screen.getByText('Missing security header')).toBeTruthy();
+  // Click the "Injection" category card in the map's radiogroup.
+  const map = screen.getByRole('radiogroup', { name: 'Findings map' });
+  await userEvent.click(within(map).getByRole('radio', { name: /Injection/ }));
+  // The config finding drops; the injection one stays.
+  await waitFor(() => expect(screen.queryByText('Missing security header')).toBeNull());
+  expect(screen.getByText('SQL injection on /login')).toBeTruthy();
 });

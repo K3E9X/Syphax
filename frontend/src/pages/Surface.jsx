@@ -98,7 +98,8 @@ export default function Surface() {
       {kmCats.length > 0 && (
         <div style={{ marginBottom: 16 }}>
           <KnowledgeMap categories={kmCats} confidence={kmConfidence}
-                        title="Surface map" subtitle={`${totalEp} endpoint(s) · ${kmConfidence}% parameterised`} />
+                        title="Surface map" subtitle={`${totalEp} endpoint(s) · ${kmConfidence}% parameterised · click a host to inspect`}
+                        activeKey={sel || kmCats[0].key} onSelect={setSel} />
         </div>
       )}
 

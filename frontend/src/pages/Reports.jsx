@@ -189,7 +189,8 @@ export default function Reports() {
               {km.categories.length > 0 && (
                 <div style={{ marginTop: 18 }}>
                   <KnowledgeMap categories={km.categories} confidence={km.confidence}
-                                title="Findings map" subtitle={`${total} finding(s) by category`} />
+                                title="Findings map" subtitle={`${total} finding(s) by category · click to jump to findings`}
+                                onSelect={() => goto('findings')} />
                 </div>
               )}
 
