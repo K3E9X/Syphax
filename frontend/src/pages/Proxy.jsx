@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { api } from '../lib/api.js';
-import { Notice } from '../components/ui.jsx';
+import { Notice, activateOnKey } from '../components/ui.jsx';
 import { Donut, Histogram, Legend } from '../components/Charts.jsx';
 import KnowledgeMap from '../components/KnowledgeMap.jsx';
 import { hostIcon } from '../lib/knowledgeMap.js';
@@ -169,7 +169,7 @@ export default function Proxy() {
             <thead><tr><th>Time</th><th>Method</th><th>Status</th><th>Host</th><th>Path</th><th>Size</th><th>ms</th></tr></thead>
             <tbody>
               {flows.map((fl) => (
-                <tr key={fl.id} className={'clickable' + (fl.id === sel ? ' selected' : '')} onClick={() => select(fl.id)}>
+                <tr key={fl.id} className={'clickable' + (fl.id === sel ? ' selected' : '')} tabIndex={0} onClick={() => select(fl.id)} onKeyDown={activateOnKey(() => select(fl.id))}>
                   <td className="mono" style={{ color: 'var(--text-faint)' }}>{timeOf(fl.timestamp)}</td>
                   <td><span className={'method m-' + fl.method}>{fl.method}</span></td>
                   <td><span className={'mono ' + scClass(fl.status_code || 0)}>{fl.status_code ?? '-'}</span></td>

@@ -70,6 +70,13 @@ export function StatusChip({ status, confidence }) {
  * `kind` is 'error' | 'warn' | 'info'. Rendering nothing for an empty message
  * lets a caller write `<Notice message={error} />` unconditionally.
  */
+// Keyboard activation for clickable rows/cells that stay <tr>/<div> (so they
+// keep table semantics) but need to be operable without a mouse. Spread the
+// result alongside onClick, with tabIndex={0}.
+export const activateOnKey = (fn) => (e) => {
+  if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); fn(); }
+};
+
 export function Notice({ kind = 'error', title, message, children, onRetry }) {
   if (!message && !children) return null;
   return (

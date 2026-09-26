@@ -342,7 +342,9 @@ export default function Reports() {
                 const isOpen = open.includes(f.id);
                 return (
                   <div key={f.id} className={'rfind rfind--' + f.severity}>
-                    <div className="rfind__head" onClick={() => toggle(f.id)}>
+                    <div className="rfind__head" role="button" tabIndex={0} aria-expanded={isOpen}
+                         onClick={() => toggle(f.id)}
+                         onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(f.id); } }}>
                       <span className={'sev sev--' + f.severity}>{f.severity}</span>
                       <span className="rfind__title">{f.title}</span>
                       {f.proven && <span className="rfind__proven" title="Confirmed by an oracle, not a scanner pattern">proven</span>}

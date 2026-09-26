@@ -162,7 +162,9 @@ export default function Methodology() {
         const isOpen = open.includes(c.cat);
         return (
           <div key={c.cat} id={"cat-" + c.cat} className="card cat">
-            <div className="cat__head" onClick={() => toggle(c.cat)}>
+            <div className="cat__head" role="button" tabIndex={0} aria-expanded={isOpen}
+                 onClick={() => toggle(c.cat)}
+                 onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(c.cat); } }}>
               <div><div className="cat__name">{c.cat}</div><div className="cat__wstg">{c.wstg}</div></div>
               <div className="cat__bar">
                 <span className="cat__seg cat__seg--done" style={{ width: (d / c.items.length * 100) + '%' }}></span>

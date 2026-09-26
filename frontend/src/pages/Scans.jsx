@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { api } from '../lib/api.js';
-import { Notice } from '../components/ui.jsx';
+import { Notice, activateOnKey } from '../components/ui.jsx';
 import KnowledgeMap from '../components/KnowledgeMap.jsx';
 
 const SEV_ORDER = { critical: 0, high: 1, medium: 2, low: 3, info: 4 };
@@ -158,7 +158,7 @@ export default function Scans() {
             <thead><tr><th>ID</th><th>Tool</th><th>Target</th><th>Status</th><th>Findings</th><th>Duration</th></tr></thead>
             <tbody>
               {jobs.map((j) => (
-                <tr key={j.id} className={'clickable' + (j.id === selectedId ? ' selected' : '')} onClick={() => select(j.id)}>
+                <tr key={j.id} className={'clickable' + (j.id === selectedId ? ' selected' : '')} tabIndex={0} onClick={() => select(j.id)} onKeyDown={activateOnKey(() => select(j.id))}>
                   <td className="mono" style={{ color: 'var(--text-secondary)' }}>{j.id}</td>
                   <td className="mono">{j.tool}</td>
                   <td className="mono truncate" style={{ maxWidth: 240, color: 'var(--text-secondary)' }} title={j.target}>{j.target}</td>

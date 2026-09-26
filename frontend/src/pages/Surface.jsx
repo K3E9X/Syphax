@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api } from '../lib/api.js';
 import { useEngagements } from '../lib/useApi.js';
-import { Notice } from '../components/ui.jsx';
+import { Notice, activateOnKey } from '../components/ui.jsx';
 import { Donut, Histogram, Legend } from '../components/Charts.jsx';
 import KnowledgeMap from '../components/KnowledgeMap.jsx';
 import { hostIcon } from '../lib/knowledgeMap.js';
@@ -133,7 +133,7 @@ export default function Surface() {
           </div>
           <div>
             {shown.map((x) => (
-              <div key={x.host} className={'host-row' + (x.host === sel ? ' sel' : '')} onClick={() => setSel(x.host)}>
+              <div key={x.host} className={'host-row' + (x.host === sel ? ' sel' : '')} role="button" tabIndex={0} onClick={() => setSel(x.host)} onKeyDown={activateOnKey(() => setSel(x.host))}>
                 <div><div className="host-row__name">{x.host}</div><div className="host-row__sub">{(x.tech || []).slice(0, 2).join(' · ') || 'unknown'} · via {x.source || 'discovery'}</div></div>
                 <div className={'host-row__n' + (openPorts(x) > 1 ? ' hit' : '')}>{openPorts(x)}<small> ports</small></div>
                 <div className="host-row__n">{(x.endpoints || []).length}<small> ep</small></div>

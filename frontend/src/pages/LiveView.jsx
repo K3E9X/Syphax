@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { api, getApiKey } from '../lib/api.js';
 import { useApi, usePoll } from '../lib/useApi.js';
 import TokenPanel from '../components/TokenPanel.jsx';
-import { Notice } from '../components/ui.jsx';
+import { Notice, activateOnKey } from '../components/ui.jsx';
 import KnowledgeMap from '../components/KnowledgeMap.jsx';
 import { mapFromFindings } from '../lib/knowledgeMap.js';
 import { AuditTrail, ChainList, CoverageMatrix } from '../components/live/Panels.jsx';
@@ -513,7 +513,7 @@ function FragmentRow({ j, open, detail, onClick }) {
   const dur = j.duration_ms != null ? (j.duration_ms / 1000).toFixed(1) + 's' : '-';
   return (
     <>
-      <tr className={'clickable' + (open ? ' selected' : '')} onClick={onClick}>
+      <tr className={'clickable' + (open ? ' selected' : '')} tabIndex={0} onClick={onClick} onKeyDown={activateOnKey(onClick)}>
         <td><span className="mono">{j.tool}</span></td>
         <td className="mono truncate" style={{ maxWidth: 320, color: 'var(--text-secondary)' }} title={j.target}>{j.target}</td>
         <td><span className={'st st--' + j.status}>{j.status === 'running' ? <span className="blink">{j.status}</span> : j.status}</span></td>

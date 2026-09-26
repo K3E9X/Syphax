@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { api } from '../lib/api.js';
 import { COV_AXES, Radar } from '../components/Charts.jsx';
-import { Notice } from '../components/ui.jsx';
+import { Notice, activateOnKey } from '../components/ui.jsx';
 import KnowledgeMap from '../components/KnowledgeMap.jsx';
 import { mapFromEngagements } from '../lib/knowledgeMap.js';
 
@@ -317,7 +317,7 @@ export default function Engagements() {
             <thead><tr><th>ID</th><th>Target</th><th>Status</th><th>Progress</th><th>Findings</th><th></th></tr></thead>
             <tbody>
               {items.map((e) => (
-                <tr key={e.id} className={'clickable' + (e.id === selectedId ? ' selected' : '')} onClick={() => setSelectedId(e.id)}>
+                <tr key={e.id} className={'clickable' + (e.id === selectedId ? ' selected' : '')} tabIndex={0} onClick={() => setSelectedId(e.id)} onKeyDown={activateOnKey(() => setSelectedId(e.id))}>
                   <td className="mono" style={{ color: 'var(--text-secondary)' }}>{e.id}</td>
                   <td className="mono truncate" style={{ maxWidth: 220 }} title={e.target_url}>{e.target_url}</td>
                   <td><span className={'st eng-' + e.status}>{e.status}</span></td>

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { api } from '../lib/api.js';
 import { useEngagements } from '../lib/useApi.js';
-import { Notice } from '../components/ui.jsx';
+import { Notice, activateOnKey } from '../components/ui.jsx';
 import KnowledgeMap from '../components/KnowledgeMap.jsx';
 import { mapFromFindings } from '../lib/knowledgeMap.js';
 
@@ -208,7 +208,7 @@ export default function Findings() {
                 {visible.map((r) => (
                   <tr key={r.id}
                       className={'clickable fnd-row fnd-row--' + r.severity + (r.id === sel ? ' selected' : '')}
-                      onClick={() => setSel(r.id)}>
+                      tabIndex={0} onClick={() => setSel(r.id)} onKeyDown={activateOnKey(() => setSel(r.id))}>
                     <td><span className={'sev sev--' + r.severity}>{r.severity}</span></td>
                     <td><span className={'cvss cvss--' + CVSS_CLASS(r.cvss)}>{(r.cvss || 0).toFixed(1)}</span></td>
                     <td className="col-title">{r.title}{r.dup > 1 ? <span className="dedup"> · <b>{r.dup}×</b></span> : null}</td>
