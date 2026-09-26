@@ -28,6 +28,11 @@
 
 /* Key/value rows that wrap instead of overflowing — a TXT record or a SAN list
    is long, and truncating it here would hide the interesting half. */
+/* The recon key/value list. A plain vertical stack: each .pre-row is itself a
+   label|value grid. It must NOT reuse the shared .kv (a 160px 1fr grid), or the
+   rows get distributed across those two columns and every other value collapses
+   to ~1 character wide (rendering one letter per line). */
+.pre-rows { display: block; margin: 0; }
 .pre-row { display: grid; grid-template-columns: minmax(0, 150px) minmax(0, 1fr); gap: 12px; padding: 5px 0; border-bottom: 1px solid var(--border); }
 .pre-row:last-child { border-bottom: none; }
 .pre-row > * { min-width: 0; }

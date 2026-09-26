@@ -29,7 +29,7 @@ function Rows({ items }) {
     && !(Array.isArray(v) && v.length === 0));
   if (!present.length) return <Empty>Nothing returned.</Empty>;
   return (
-    <dl className="kv">
+    <dl className="pre-rows">
       {present.map(([k, v]) => (
         <div key={k} className="pre-row">
           <dt>{k}</dt>
