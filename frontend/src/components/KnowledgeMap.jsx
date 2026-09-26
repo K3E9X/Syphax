@@ -39,7 +39,7 @@ function QualityRing({ high = 0, med = 0, low = 0, size = 46, thickness = 6 }) {
         if (v <= 0) return null;
         const len = (v / total) * C;
         const el = (
-          <circle key={i} cx={cx} cy={cx} r={r} fill="none" stroke={QUALITY[i].color} strokeWidth={thickness}
+          <circle key={QUALITY[i].k} cx={cx} cy={cx} r={r} fill="none" stroke={QUALITY[i].color} strokeWidth={thickness}
                   strokeDasharray={`${len} ${C - len}`} strokeDashoffset={-acc}
                   transform={`rotate(-90 ${cx} ${cx})`} strokeLinecap="butt" />
         );

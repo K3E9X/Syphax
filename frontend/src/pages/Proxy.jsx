@@ -130,7 +130,7 @@ export default function Proxy() {
                         title="Traffic map"
                         subtitle={`${flows.length} flow(s) · ${kmConfidence}% 2xx · click a host to filter`}
                         metricLabel="2xx"
-                        activeKey={kmCats.some((c) => c.key === host) ? host : kmCats[0].key}
+                        activeKey={host || null}
                         onSelect={(h) => setHost((cur) => (cur === h ? '' : h))} />
         </div>
       )}

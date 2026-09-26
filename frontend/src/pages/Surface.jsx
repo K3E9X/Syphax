@@ -101,7 +101,7 @@ export default function Surface() {
           <KnowledgeMap categories={kmCats} confidence={kmConfidence}
                         title="Surface map" subtitle={`${totalEp} endpoint(s) · ${kmConfidence}% parameterised · click a host to inspect`}
                         metricLabel="params"
-                        activeKey={kmCats.some((c) => c.key === sel) ? sel : kmCats[0].key} onSelect={setSel} />
+                        activeKey={sel} onSelect={setSel} />
         </div>
       )}
 

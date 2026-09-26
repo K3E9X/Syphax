@@ -152,7 +152,7 @@ export default function Engagements() {
                         title="Engagements map"
                         subtitle={`${items.length} engagement(s) · avg coverage ${kmConfidence}% · click to inspect`}
                         metricLabel="coverage"
-                        activeKey={kmCats.some((c) => c.key === selectedId) ? selectedId : kmCats[0].key}
+                        activeKey={selectedId}
                         onSelect={setSelectedId} />
         </div>
       )}

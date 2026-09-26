@@ -24,13 +24,13 @@ export function Radar({ values = [], axes = COV_AXES, size = 176, accent = '#c24
   const poly = axes.map((_, i) => pt(i, (r * (values[i] || 0)) / 100).join(',')).join(' ');
   return (
     <svg className="chart chart--radar" width={size} height={size} viewBox={`0 0 ${size} ${size}`} role="img" aria-label="Testing coverage radar">
-      {[0.33, 0.66, 1].map((rg, k) => (
-        <polygon key={k} points={ring(rg)} fill="none" stroke="var(--border-strong)" strokeWidth="1" />
+      {[0.33, 0.66, 1].map((rg) => (
+        <polygon key={rg} points={ring(rg)} fill="none" stroke="var(--border-strong)" strokeWidth="1" />
       ))}
-      {axes.map((_, i) => { const [x, y] = pt(i, r); return <line key={i} x1={c} y1={c} x2={x} y2={y} stroke="var(--border-strong)" strokeWidth="1" />; })}
+      {axes.map((lab, i) => { const [x, y] = pt(i, r); return <line key={lab} x1={c} y1={c} x2={x} y2={y} stroke="var(--border-strong)" strokeWidth="1" />; })}
       <polygon points={poly} fill={accent} fillOpacity="0.15" stroke={accent} strokeWidth="1.5" />
-      {axes.map((_, i) => { const [x, y] = pt(i, (r * (values[i] || 0)) / 100); return <circle key={i} cx={x} cy={y} r="2.5" fill={accent} />; })}
-      {axes.map((lab, i) => { const [x, y] = pt(i, r + 15); return <text key={i} x={x} y={y} fill="var(--text-faint)" fontSize="9" fontFamily="var(--font-mono)" textAnchor="middle" dominantBaseline="middle">{lab}</text>; })}
+      {axes.map((lab, i) => { const [x, y] = pt(i, (r * (values[i] || 0)) / 100); return <circle key={lab} cx={x} cy={y} r="2.5" fill={accent} />; })}
+      {axes.map((lab, i) => { const [x, y] = pt(i, r + 15); return <text key={lab} x={x} y={y} fill="var(--text-faint)" fontSize="9" fontFamily="var(--font-mono)" textAnchor="middle" dominantBaseline="middle">{lab}</text>; })}
     </svg>
   );
 }
@@ -45,10 +45,10 @@ export function Donut({ segments = [], size = 148, thickness = 22, center, cente
   return (
     <svg className="chart chart--donut" width={size} height={size} viewBox={`0 0 ${size} ${size}`} role="img" aria-label="Distribution">
       <circle cx={cx} cy={cx} r={r} fill="none" stroke="var(--border)" strokeWidth={thickness} />
-      {total > 0 && segments.filter((s) => (s.value || 0) > 0).map((s, i) => {
+      {total > 0 && segments.filter((s) => (s.value || 0) > 0).map((s) => {
         const len = ((s.value || 0) / total) * C;
         const el = (
-          <circle key={i} cx={cx} cy={cx} r={r} fill="none" stroke={s.color} strokeWidth={thickness}
+          <circle key={s.label} cx={cx} cy={cx} r={r} fill="none" stroke={s.color} strokeWidth={thickness}
                   strokeDasharray={`${len} ${C - len}`} strokeDashoffset={-acc}
                   transform={`rotate(-90 ${cx} ${cx})`} />
         );
@@ -65,8 +65,8 @@ export function Donut({ segments = [], size = 148, thickness = 22, center, cente
 export function Legend({ segments = [], suffix = '' }) {
   return (
     <div className="chart-legend">
-      {segments.map((s, i) => (
-        <div key={i} className="chart-legend__row">
+      {segments.map((s) => (
+        <div key={s.label} className="chart-legend__row">
           <span className="chart-legend__dot" style={{ background: s.color }} />
           <span className="chart-legend__l">{s.label}</span>
           <span className="chart-legend__v">{s.value}{suffix}</span>
@@ -82,10 +82,10 @@ export function Histogram({ data = [], height = 132, accent = '#c2410c' }) {
   const max = Math.max(...data.map((d) => d.value || 0), 1);
   return (
     <div className="chart-hist" style={{ height }}>
-      {data.map((d, i) => {
+      {data.map((d) => {
         const h = Math.round(((d.value || 0) / max) * 100);
         return (
-          <div key={i} className="chart-hist__col" title={`${d.label}: ${d.value}`}>
+          <div key={d.label} className="chart-hist__col" title={`${d.label}: ${d.value}`}>
             <div className="chart-hist__val">{d.value}</div>
             <div className="chart-hist__track">
               <div className="chart-hist__bar" style={{ height: h + '%', background: d.color || accent }} />
