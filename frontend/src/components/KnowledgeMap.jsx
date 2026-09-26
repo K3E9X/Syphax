@@ -54,7 +54,7 @@ function QualityRing({ high = 0, med = 0, low = 0, size = 46, thickness = 6 }) {
 
 export default function KnowledgeMap({
   categories = [], confidence = 0, activeKey, defaultActiveKey,
-  onSelect, title = 'Knowledge map', subtitle,
+  onSelect, title = 'Knowledge map', subtitle, idleNote,
 }) {
   const cats = categories.slice(0, 5);
   const [internal, setInternal] = useState(defaultActiveKey || (cats[0] && cats[0].key) || null);
@@ -111,7 +111,7 @@ export default function KnowledgeMap({
 
         {/* Category cards */}
         <div className="km__cards" role="radiogroup" aria-label={title} ref={listRef} onKeyDown={onKey}>
-          {cats.length === 0 && <div className="empty">No data to map yet.</div>}
+          {cats.length === 0 && <div className="km__idle">{idleNote || 'No data to map yet.'}</div>}
           {cats.map((c) => {
             const on = c.key === active;
             return (

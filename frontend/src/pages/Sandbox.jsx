@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { api } from '../lib/api.js';
 import { Notice } from '../components/ui.jsx';
 import PocReview from '../components/PocReview.jsx';
+import KnowledgeMap from '../components/KnowledgeMap.jsx';
 
 // PoC sandbox. The isolated, scope-enforced, read-only runner
 // (POST /api/sandbox/run) is wired in the sandbox milestone. The console here
@@ -38,6 +39,10 @@ export default function Sandbox() {
   return (
     <div className="page">
       <Notice kind="error" message={loadError} />
+      <div style={{ marginBottom: 16 }}>
+        <KnowledgeMap categories={[]} confidence={out?.verdict === 'error' || out?.verdict === 'refused' ? 0 : (out ? 100 : 0)}
+                      title="Sandbox" idleNote="Isolated, scope-enforced PoC runner. Run a proof below to see its request, response and verdict." />
+      </div>
       <PocReview engagementId={form.engagement_id} />
 
       <div className="card">

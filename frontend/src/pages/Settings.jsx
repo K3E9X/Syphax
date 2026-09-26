@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api, getApiKey, setApiKey } from '../lib/api.js';
 import { Notice } from '../components/ui.jsx';
+import KnowledgeMap from '../components/KnowledgeMap.jsx';
 import AccountCard from '../components/AccountCard.jsx';
 import ModelRouter from '../components/ModelRouter.jsx';
 import OperatorsCard from '../components/OperatorsCard.jsx';
@@ -51,6 +52,12 @@ export default function Settings() {
   return (
     <div className="page">
       <Notice kind="error" message={loadError} />
+      <div style={{ marginBottom: 16 }}>
+        <KnowledgeMap categories={[]} confidence={s.llm?.ready ? 100 : 0}
+                      title="Settings"
+                      subtitle={s.llm?.ready ? 'model router ready' : (s.llm?.summary || 'model router not configured')}
+                      idleNote="Configuration — safety, budget, scope and the model router. No run data to map here." />
+      </div>
       <div className="set-grid">
         <AccountCard />
 

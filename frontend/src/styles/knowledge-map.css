@@ -65,3 +65,8 @@
   .km-card__comet { animation: none; opacity: 0; }
   .km__fan-fill { transition: none; }
 }
+
+/* Idle state: the map's orb and frame stay for a consistent look on pages with
+   no categorical data, with an honest note instead of fabricated cards. */
+.km__idle { display: flex; align-items: center; min-height: 88px; padding: 0 4px;
+  font-family: var(--font-mono); font-size: 12px; line-height: 1.5; color: var(--text-faint); }
