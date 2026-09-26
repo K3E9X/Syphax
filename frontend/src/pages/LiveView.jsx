@@ -358,7 +358,8 @@ export default function LiveView() {
             <>
               <div style={{ marginBottom: 12 }}>
                 <KnowledgeMap categories={km.categories} confidence={km.confidence}
-                              title="Findings map"
+                              title="Findings map" metricLabel="confirmed"
+                              idleNote="No findings yet — the run populates this as it validates."
                               subtitle={findingsAll.length
                                 ? `${findingsAll.length} finding(s) · ${km.confidence}% confirmed · click a category`
                                 : 'no findings yet — the run populates this'}

@@ -109,6 +109,7 @@ export default function Scans() {
           <KnowledgeMap categories={kmCats} confidence={kmConfidence}
                         title="Scan map"
                         subtitle={`${jobs.length} job(s) · ${kmConfidence}% completed · click a tool to launch it`}
+                        metricLabel="completed"
                         onSelect={(tool) => set({ tool })} />
         </div>
       )}

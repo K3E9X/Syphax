@@ -146,6 +146,7 @@ export default function Findings() {
                         ? `filtering ${km.categories.find((c) => c.key === catFilter)?.label || catFilter} · click again to clear`
                         : `${rows.length} finding(s) · ${km.confidence}% confirmed · click a category to filter`}
                       activeKey={catFilter || km.categories[0].key}
+                      metricLabel="confirmed"
                       onSelect={(k) => setCatFilter((cur) => (cur === k ? null : k))} />
       )}
 

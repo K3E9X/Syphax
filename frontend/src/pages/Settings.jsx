@@ -56,6 +56,7 @@ export default function Settings() {
         <KnowledgeMap categories={[]} confidence={s.llm?.ready ? 100 : 0}
                       title="Settings"
                       subtitle={s.llm?.ready ? 'model router ready' : (s.llm?.summary || 'model router not configured')}
+                      metricLabel="router"
                       idleNote="Configuration — safety, budget, scope and the model router. No run data to map here." />
       </div>
       <div className="set-grid">

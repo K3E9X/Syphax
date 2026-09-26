@@ -4,8 +4,9 @@ import { useEngagements } from '../lib/useApi.js';
 import { Notice } from '../components/ui.jsx';
 import { Donut, Histogram, Legend } from '../components/Charts.jsx';
 import KnowledgeMap from '../components/KnowledgeMap.jsx';
+import { hostIcon } from '../lib/knowledgeMap.js';
 
-const METHOD_HEX = { GET: '#22c55e', POST: '#22d3ee', PUT: '#eab308', PATCH: '#a78bfa', DELETE: '#ef4444', HEAD: '#737373', OPTIONS: '#525252' };
+const METHOD_HEX = { GET: '#22c55e', POST: '#38bdf8', PUT: '#eab308', PATCH: '#a78bfa', DELETE: '#ef4444', HEAD: '#737373', OPTIONS: '#525252' };
 
 export default function Surface() {
   const [loadError, setLoadError] = useState(null);
@@ -67,7 +68,7 @@ export default function Surface() {
       }
       totalEp += eps.length; totalParam += high;
       const host = x.host || '?';
-      return { key: host, label: host, icon: (host[0] || '?').toUpperCase() + (host[1] || '').toUpperCase(),
+      return { key: host, label: host, icon: hostIcon(host),
                count: eps.length, high, med, low };
     })
     .filter((c) => c.count > 0)
@@ -99,7 +100,8 @@ export default function Surface() {
         <div style={{ marginBottom: 16 }}>
           <KnowledgeMap categories={kmCats} confidence={kmConfidence}
                         title="Surface map" subtitle={`${totalEp} endpoint(s) · ${kmConfidence}% parameterised · click a host to inspect`}
-                        activeKey={sel || kmCats[0].key} onSelect={setSel} />
+                        metricLabel="params"
+                        activeKey={kmCats.some((c) => c.key === sel) ? sel : kmCats[0].key} onSelect={setSel} />
         </div>
       )}
 

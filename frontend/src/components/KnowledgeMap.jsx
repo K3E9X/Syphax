@@ -54,21 +54,25 @@ function QualityRing({ high = 0, med = 0, low = 0, size = 46, thickness = 6 }) {
 
 export default function KnowledgeMap({
   categories = [], confidence = 0, activeKey, defaultActiveKey,
-  onSelect, title = 'Knowledge map', subtitle, idleNote,
+  onSelect, title = 'Knowledge map', subtitle, idleNote, metricLabel = 'confidence',
 }) {
   const cats = categories.slice(0, 5);
   const [internal, setInternal] = useState(defaultActiveKey || (cats[0] && cats[0].key) || null);
   const active = activeKey !== undefined ? activeKey : internal;
   const select = (k) => { if (onSelect) onSelect(k); if (activeKey === undefined) setInternal(k); };
-  const activeIdx = Math.max(0, cats.findIndex((c) => c.key === active));
-  const activeCat = cats[activeIdx];
+  // A controlled activeKey can point outside the top-5 shown here (a page whose
+  // selection is drawn from a wider list). Don't mis-highlight card 0 in that
+  // case: -1 means "nothing here is the active one", so no radio is falsely
+  // checked and the fan-out is hidden rather than showing the wrong category.
+  const activeIdx = cats.findIndex((c) => c.key === active);
+  const activeCat = activeIdx >= 0 ? cats[activeIdx] : undefined;
 
   // Keyboard paging over the cards (radiogroup semantics).
   const listRef = useRef(null);
   function onKey(e) {
     if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(e.key)) return;
     e.preventDefault();
-    let i = activeIdx;
+    let i = activeIdx >= 0 ? activeIdx : 0;
     if (e.key === 'ArrowDown') i = Math.min(cats.length - 1, i + 1);
     else if (e.key === 'ArrowUp') i = Math.max(0, i - 1);
     else if (e.key === 'Home') i = 0;
@@ -83,7 +87,9 @@ export default function KnowledgeMap({
   // Confidence ring geometry.
   const R = 34, C = 2 * Math.PI * R;
   const conf = Math.max(0, Math.min(100, Math.round(confidence)));
-  const total = cats.reduce((n, c) => n + (c.count || 0), 0);
+  // Total spans ALL categories, not just the shown top-5, so "X of total" in
+  // the fan-out matches the page's own count.
+  const total = categories.reduce((n, c) => n + (c.count || 0), 0);
 
   return (
     <div className="km">
@@ -105,7 +111,7 @@ export default function KnowledgeMap({
             <text x="44" y="40" fill="var(--text-primary)" fontSize="19" fontFamily="var(--font-mono)"
                   fontWeight="600" textAnchor="middle" dominantBaseline="central">{conf}<tspan fontSize="11">%</tspan></text>
             <text x="44" y="56" fill="var(--text-faint)" fontSize="8" fontFamily="var(--font-mono)"
-                  textAnchor="middle" dominantBaseline="central" style={{ letterSpacing: '.06em' }}>CONFIDENCE</text>
+                  textAnchor="middle" dominantBaseline="central" style={{ letterSpacing: '.06em', textTransform: 'uppercase' }}>{metricLabel}</text>
           </svg>
         </div>
 

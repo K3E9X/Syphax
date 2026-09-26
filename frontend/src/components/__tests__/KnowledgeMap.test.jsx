@@ -46,3 +46,19 @@ it('arrow keys page through the cards', async () => {
   await act(async () => { await userEvent.keyboard('{ArrowDown}'); });
   expect(screen.getByRole('radio', { checked: true }).textContent).toContain('Auth');
 });
+
+it('an activeKey outside the shown cards checks nothing and hides the fan-out', () => {
+  // Controlled with a key that is not among the categories (a page whose
+  // selection is drawn from a wider list). Must not mis-highlight card 0.
+  render(<KnowledgeMap categories={CATS} confidence={40} activeKey="not-a-key" />);
+  expect(screen.queryByRole('radio', { checked: true })).toBeNull();
+  // Fan-out (which shows "<label> · N of M") is not rendered for a missing key.
+  expect(screen.queryByText(/ of /)).toBeNull();
+});
+
+it('totals across all categories even when more than five are given', () => {
+  const six = Array.from({ length: 6 }, (_, i) => ({ key: 'k' + i, label: 'C' + i, count: 10, high: 10, med: 0, low: 0 }));
+  render(<KnowledgeMap categories={six} confidence={0} defaultActiveKey="k0" />);
+  // Only 5 cards shown, but the fan-out total reflects all six (60), not 50.
+  expect(screen.getByText(/of 60/)).toBeTruthy();
+});

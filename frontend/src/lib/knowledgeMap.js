@@ -21,6 +21,34 @@ export const CATEGORY_ICONS = {
 };
 const ORDER = ['injection', 'access_control', 'auth_secrets', 'config', 'enumeration', 'recon', 'other'];
 
+// Two-letter monogram for a host, used as a category card icon.
+export function hostIcon(host) {
+  const h = String(host || '').replace(/^www\./, '');
+  return ((h[0] || '?') + (h[1] || '')).toUpperCase();
+}
+
+// Fleet roll-up: one category per engagement, confirmed findings as the count,
+// severity into the quality ring, average testing progress as the confidence.
+// Shared by Home and Engagements, which built this identically.
+export function mapFromEngagements(items) {
+  const categories = items
+    .map((e) => {
+      const sc = e.severity_counts || {};
+      const host = e.target_host || e.target_url || e.id;
+      return {
+        key: e.id, label: host, icon: hostIcon(host),
+        count: (sc.critical || 0) + (sc.high || 0) + (sc.medium || 0) + (sc.low || 0),
+        high: (sc.critical || 0) + (sc.high || 0), med: sc.medium || 0, low: sc.low || 0,
+      };
+    })
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 5);
+  const confidence = items.length
+    ? Math.round(items.reduce((n, e) => n + (e.progress || 0), 0) / items.length)
+    : 0;
+  return { categories, confidence };
+}
+
 export function qualityForSeverity(severity) {
   const s = (severity || '').toLowerCase();
   if (s === 'critical' || s === 'high') return 'high';

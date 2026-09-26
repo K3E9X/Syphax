@@ -197,7 +197,7 @@ export default function PreRecon() {
           and the ring is a header-hygiene score (fewer missing security headers
           = higher). */}
       <div style={{ marginBottom: 16 }}>
-        <KnowledgeMap categories={[]} title="Exposure"
+        <KnowledgeMap categories={[]} title="Exposure" metricLabel="hygiene"
                       confidence={report ? Math.max(0, 100 - (counts.missing_headers || 0) * 15) : 0}
                       idleNote={report
                         ? `${counts.addresses ?? 0} address(es) · ${counts.technologies ?? 0} technology(ies) · ${counts.certificate_names ?? 0} cert name(s) · ${counts.names_in_ct ?? 0} in CT · ${counts.missing_headers ?? 0} missing header(s)`

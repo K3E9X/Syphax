@@ -3,6 +3,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { api } from '../lib/api.js';
 import { COV_AXES, Radar } from '../components/Charts.jsx';
 import KnowledgeMap from '../components/KnowledgeMap.jsx';
+import { mapFromEngagements } from '../lib/knowledgeMap.js';
 
 /* custom checkbox - square + CSS check, no icon */
 function Check({ checked, onChange, children, className = '' }) {
@@ -139,19 +140,9 @@ export default function Engagements() {
   const radarOf = (e) => e.radar || [0, 0, 0, 0, 0, 0];
   const sevOf = (e) => e.severity_counts || {};
 
-  // Fleet knowledge map: each engagement is a category, confirmed findings the
-  // count, severity the quality ring, average coverage the confidence. Clicking
+  // Fleet knowledge map (shared derivation, also used by Home). Clicking a card
   // opens that engagement in the inspector below.
-  const kmCats = items
-    .map((e) => {
-      const sc = e.severity_counts || {};
-      const count = (sc.critical || 0) + (sc.high || 0) + (sc.medium || 0) + (sc.low || 0);
-      const host = e.target_host || e.target_url || e.id;
-      return { key: e.id, label: host, icon: (host.replace(/^www\./, '')[0] || '?').toUpperCase() + (host[1] || '').toUpperCase(),
-               count, high: (sc.critical || 0) + (sc.high || 0), med: sc.medium || 0, low: sc.low || 0 };
-    })
-    .sort((a, b) => b.count - a.count).slice(0, 5);
-  const kmConfidence = items.length ? Math.round(items.reduce((n, e) => n + (e.progress || 0), 0) / items.length) : 0;
+  const { categories: kmCats, confidence: kmConfidence } = mapFromEngagements(items);
 
   return (
     <div className="page">
@@ -160,7 +151,8 @@ export default function Engagements() {
           <KnowledgeMap categories={kmCats} confidence={kmConfidence}
                         title="Engagements map"
                         subtitle={`${items.length} engagement(s) · avg coverage ${kmConfidence}% · click to inspect`}
-                        activeKey={selectedId || kmCats[0].key}
+                        metricLabel="coverage"
+                        activeKey={kmCats.some((c) => c.key === selectedId) ? selectedId : kmCats[0].key}
                         onSelect={setSelectedId} />
         </div>
       )}

@@ -6,7 +6,7 @@ import { COV_AXES, Donut, Legend, Radar } from '../components/Charts.jsx';
 import KnowledgeMap from '../components/KnowledgeMap.jsx';
 
 const FILTERS = ['all', 'done', 'running', 'queued', 'skipped'];
-const STATUS_HEX = { done: '#22c55e', running: '#22d3ee', queued: '#737373', skipped: '#525252', error: '#ef4444' };
+const STATUS_HEX = { done: '#22c55e', running: '#38bdf8', queued: '#737373', skipped: '#525252', error: '#ef4444' };
 
 export default function Methodology() {
   const [loadError, setLoadError] = useState(null);
@@ -105,6 +105,7 @@ export default function Methodology() {
         <div style={{ marginBottom: 16 }}>
           <KnowledgeMap categories={kmCats} confidence={cov}
                         title="Coverage map" subtitle={`${allItems.length} checks · ${cov}% completed · click a category to open it`}
+                        metricLabel="coverage"
                         onSelect={(cat) => {
                           setOpen((o) => (o.includes(cat) ? o : [...o, cat]));
                           requestAnimationFrame(() => document.getElementById('cat-' + cat)?.scrollIntoView?.({ behavior: 'smooth', block: 'start' }));

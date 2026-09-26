@@ -3,10 +3,11 @@ import { api } from '../lib/api.js';
 import { Notice } from '../components/ui.jsx';
 import { Donut, Histogram, Legend } from '../components/Charts.jsx';
 import KnowledgeMap from '../components/KnowledgeMap.jsx';
+import { hostIcon } from '../lib/knowledgeMap.js';
 
 const METHODS = ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS', 'HEAD'];
-const METHOD_HEX = { GET: '#22c55e', POST: '#22d3ee', PUT: '#eab308', PATCH: '#a78bfa', DELETE: '#ef4444', HEAD: '#737373', OPTIONS: '#525252' };
-const SC_HEX = { '2xx': '#22c55e', '3xx': '#22d3ee', '4xx': '#eab308', '5xx': '#ef4444' };
+const METHOD_HEX = { GET: '#22c55e', POST: '#38bdf8', PUT: '#eab308', PATCH: '#a78bfa', DELETE: '#ef4444', HEAD: '#737373', OPTIONS: '#525252' };
+const SC_HEX = { '2xx': '#22c55e', '3xx': '#38bdf8', '4xx': '#eab308', '5xx': '#ef4444' };
 const scBucket = (c) => c >= 500 ? '5xx' : c >= 400 ? '4xx' : c >= 300 ? '3xx' : c >= 200 ? '2xx' : null;
 const fmtBytes = (n) => n == null ? '-' : n < 1024 ? n + ' B' : (n / 1024).toFixed(1) + ' KB';
 const scClass = (c) => c >= 500 ? 'sc-5xx' : c >= 400 ? 'sc-4xx' : c >= 300 ? 'sc-3xx' : 'sc-2xx';
@@ -93,7 +94,7 @@ export default function Proxy() {
   let okN = 0;
   for (const fl of flows) {
     const h = fl.host || '(none)';
-    const b = hostBuckets[h] || (hostBuckets[h] = { key: h, label: h, icon: (h.replace(/^www\./, '')[0] || '?').toUpperCase() + (h[1] || '').toUpperCase(), count: 0, high: 0, med: 0, low: 0 });
+    const b = hostBuckets[h] || (hostBuckets[h] = { key: h, label: h, icon: hostIcon(h), count: 0, high: 0, med: 0, low: 0 });
     b.count += 1;
     const c = fl.status_code || 0;
     if (c >= 200 && c < 300) { b.high += 1; okN += 1; }
@@ -128,7 +129,8 @@ export default function Proxy() {
           <KnowledgeMap categories={kmCats} confidence={kmConfidence}
                         title="Traffic map"
                         subtitle={`${flows.length} flow(s) · ${kmConfidence}% 2xx · click a host to filter`}
-                        activeKey={host || kmCats[0].key}
+                        metricLabel="2xx"
+                        activeKey={kmCats.some((c) => c.key === host) ? host : kmCats[0].key}
                         onSelect={(h) => setHost((cur) => (cur === h ? '' : h))} />
         </div>
       )}

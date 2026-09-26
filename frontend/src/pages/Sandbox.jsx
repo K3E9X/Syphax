@@ -41,7 +41,7 @@ export default function Sandbox() {
       <Notice kind="error" message={loadError} />
       <div style={{ marginBottom: 16 }}>
         <KnowledgeMap categories={[]} confidence={out?.verdict === 'error' || out?.verdict === 'refused' ? 0 : (out ? 100 : 0)}
-                      title="Sandbox" idleNote="Isolated, scope-enforced PoC runner. Run a proof below to see its request, response and verdict." />
+                      title="Sandbox" metricLabel="last run" idleNote="Isolated, scope-enforced PoC runner. Run a proof below to see its request, response and verdict." />
       </div>
       <PocReview engagementId={form.engagement_id} />
 

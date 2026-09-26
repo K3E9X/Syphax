@@ -38,7 +38,7 @@ export default function LlmSetup({ onReady }) {
         </p>
 
         <div style={{ margin: '16px 0' }}>
-          <KnowledgeMap categories={[]} title="Model router" confidence={0}
+          <KnowledgeMap categories={[]} title="Model router" confidence={0} metricLabel="router"
                         idleNote="No model connected yet. Configure the three roles below — planner, executor and validator — to bring the router online." />
         </div>
 
