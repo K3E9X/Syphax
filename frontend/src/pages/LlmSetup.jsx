@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom';
 import ModelRouter from '../components/ModelRouter.jsx';
+import KnowledgeMap from '../components/KnowledgeMap.jsx';
 import { useAuth } from '../lib/auth.jsx';
 import logoMark from '../assets/logo-mark.svg';
 
@@ -35,6 +36,11 @@ export default function LlmSetup({ onReady }) {
           finding. Any OpenAI-compatible endpoint works. You can change all of
           this later in Settings.
         </p>
+
+        <div style={{ margin: '16px 0' }}>
+          <KnowledgeMap categories={[]} title="Model router" confidence={0}
+                        idleNote="No model connected yet. Configure the three roles below — planner, executor and validator — to bring the router online." />
+        </div>
 
         <ModelRouter compact onSaved={onReady} />
 

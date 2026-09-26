@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../lib/api.js';
 import { Card, Empty, Metric, Notice } from '../components/ui.jsx';
+import KnowledgeMap from '../components/KnowledgeMap.jsx';
 
 /**
  * Pre-recon: the look taken before an engagement exists.
@@ -190,6 +191,18 @@ export default function PreRecon() {
 
       <ScopeNotice scope={scope} />
       <Notice kind="error" message={error} />
+
+      {/* Idle-style header for visual consistency. No categorical severity data
+          here, so no fabricated rings: the note carries the real signal counts
+          and the ring is a header-hygiene score (fewer missing security headers
+          = higher). */}
+      <div style={{ marginBottom: 16 }}>
+        <KnowledgeMap categories={[]} title="Exposure"
+                      confidence={report ? Math.max(0, 100 - (counts.missing_headers || 0) * 15) : 0}
+                      idleNote={report
+                        ? `${counts.addresses ?? 0} address(es) · ${counts.technologies ?? 0} technology(ies) · ${counts.certificate_names ?? 0} cert name(s) · ${counts.names_in_ct ?? 0} in CT · ${counts.missing_headers ?? 0} missing header(s)`
+                        : 'Run a passive pre-recon to map the target’s public exposure. Nothing here is an authorized test.'} />
+      </div>
 
       {!report && !busy && !error && (
         <Card title="Before the engagement">
