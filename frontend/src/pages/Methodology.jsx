@@ -5,7 +5,7 @@ import { Notice } from '../components/ui.jsx';
 import { COV_AXES, Donut, Legend, Radar } from '../components/Charts.jsx';
 import KnowledgeMap from '../components/KnowledgeMap.jsx';
 
-const FILTERS = ['all', 'done', 'running', 'queued', 'skipped'];
+const FILTERS = ['all', 'done', 'running', 'queued', 'skipped', 'error'];
 const STATUS_HEX = { done: '#22c55e', running: '#38bdf8', queued: '#737373', skipped: '#525252', error: '#ef4444' };
 
 export default function Methodology() {
