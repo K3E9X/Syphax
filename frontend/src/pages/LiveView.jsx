@@ -3,6 +3,8 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { api, getApiKey } from '../lib/api.js';
 import { useApi, usePoll } from '../lib/useApi.js';
 import TokenPanel from '../components/TokenPanel.jsx';
+import KnowledgeMap from '../components/KnowledgeMap.jsx';
+import { mapFromFindings } from '../lib/knowledgeMap.js';
 import { AuditTrail, ChainList, CoverageMatrix } from '../components/live/Panels.jsx';
 
 const PHASES = ['recon', 'mapping', 'vuln_analysis', 'exploitation', 'validation'];
@@ -204,6 +206,7 @@ export default function LiveView() {
   const coverage = s.coverage || [];
   const covSummary = s.coverage_summary || {};
   const findingsAll = s.validated_findings || [];
+  const km = mapFromFindings(findingsAll, { confirmed: (f) => f.status === 'confirmed' });
   const chains = s.chains || [];
   const active = run0.status === 'running' || run0.status === 'queued';
 
@@ -352,6 +355,15 @@ export default function LiveView() {
           </div>
 
           {tab === 'overview' && (
+            <>
+              <div style={{ marginBottom: 12 }}>
+                <KnowledgeMap categories={km.categories} confidence={km.confidence}
+                              title="Findings map"
+                              subtitle={findingsAll.length
+                                ? `${findingsAll.length} finding(s) · ${km.confidence}% confirmed · click a category`
+                                : 'no findings yet — the run populates this'}
+                              onSelect={(k) => { setCat(k); setTab('findings'); }} />
+              </div>
             <div className="card">
               <div className="card__head"><span className="card__title">Surface</span></div>
               <div className="card__body">
@@ -373,6 +385,7 @@ export default function LiveView() {
                   )}
               </div>
             </div>
+            </>
           )}
 
           {tab === 'assets' && (

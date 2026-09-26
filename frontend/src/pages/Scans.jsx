@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { api } from '../lib/api.js';
 import { Notice } from '../components/ui.jsx';
+import KnowledgeMap from '../components/KnowledgeMap.jsx';
 
 const SEV_ORDER = { critical: 0, high: 1, medium: 2, low: 3, info: 4 };
 function Sev({ s }) { return <span className={'sev sev--' + s}>{s}</span>; }
@@ -49,6 +50,24 @@ export default function Scans() {
 
   const avail = tools.filter((t) => t.available).length;
 
+  // Knowledge map over the jobs: tools are the categories, job status is the
+  // quality (done high, running/queued medium, failed low), confidence is the
+  // share of jobs that completed. Clicking a tool pre-selects it to launch.
+  const DONE = new Set(['done', 'succeeded', 'completed']);
+  const PENDING = new Set(['running', 'queued']);
+  const jobBuckets = {};
+  let doneN = 0;
+  for (const j of jobs) {
+    const b = jobBuckets[j.tool] || (jobBuckets[j.tool] = { key: j.tool, label: j.tool, icon: (j.tool || '?').slice(0, 2).toUpperCase(), count: 0, high: 0, med: 0, low: 0 });
+    b.count += 1;
+    const st = (j.status || '').toLowerCase();
+    if (DONE.has(st)) { b.high += 1; doneN += 1; }
+    else if (PENDING.has(st)) b.med += 1;
+    else b.low += 1;
+  }
+  const kmCats = Object.values(jobBuckets).sort((a, b) => b.count - a.count).slice(0, 5);
+  const kmConfidence = jobs.length ? Math.round((doneN / jobs.length) * 100) : 0;
+
   async function onSubmit(e) {
     e.preventDefault();
     setError(null);
@@ -84,6 +103,15 @@ export default function Scans() {
   return (
     <div className="page">
       <Notice kind="error" message={error} onRetry={() => setError(null)} />
+
+      {kmCats.length > 0 && (
+        <div style={{ marginBottom: 16 }}>
+          <KnowledgeMap categories={kmCats} confidence={kmConfidence}
+                        title="Scan map"
+                        subtitle={`${jobs.length} job(s) · ${kmConfidence}% completed · click a tool to launch it`}
+                        onSelect={(tool) => set({ tool })} />
+        </div>
+      )}
       <div className="card">
         <div className="card__head"><span className="card__title">Launch a scan</span></div>
         <div className="card__body">

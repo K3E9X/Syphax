@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { api } from '../lib/api.js';
 import { Notice } from '../components/ui.jsx';
 import { Donut, Histogram, Legend } from '../components/Charts.jsx';
+import KnowledgeMap from '../components/KnowledgeMap.jsx';
 
 const METHODS = ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS', 'HEAD'];
 const METHOD_HEX = { GET: '#22c55e', POST: '#22d3ee', PUT: '#eab308', PATCH: '#a78bfa', DELETE: '#ef4444', HEAD: '#737373', OPTIONS: '#525252' };
@@ -85,6 +86,23 @@ export default function Proxy() {
     .map(([m, n]) => ({ label: m, value: n, color: METHOD_HEX[m] || '#737373' }))
     .sort((a, b) => b.value - a.value);
 
+  // Knowledge map over captured flows: hosts are the categories, flows the
+  // count, response class the quality (2xx high, 3xx medium, 4xx/5xx low),
+  // confidence the share of 2xx. Clicking a host filters the flow table.
+  const hostBuckets = {};
+  let okN = 0;
+  for (const fl of flows) {
+    const h = fl.host || '(none)';
+    const b = hostBuckets[h] || (hostBuckets[h] = { key: h, label: h, icon: (h.replace(/^www\./, '')[0] || '?').toUpperCase() + (h[1] || '').toUpperCase(), count: 0, high: 0, med: 0, low: 0 });
+    b.count += 1;
+    const c = fl.status_code || 0;
+    if (c >= 200 && c < 300) { b.high += 1; okN += 1; }
+    else if (c >= 300 && c < 400) b.med += 1;
+    else b.low += 1;
+  }
+  const kmCats = Object.values(hostBuckets).sort((a, b) => b.count - a.count).slice(0, 5);
+  const kmConfidence = flows.length ? Math.round((okN / flows.length) * 100) : 0;
+
   return (
     <div className="page">
       <Notice kind="error" message={loadError} />
@@ -104,6 +122,16 @@ export default function Proxy() {
           </div>
         </div>
       </div>
+
+      {kmCats.length > 0 && (
+        <div style={{ marginBottom: 16 }}>
+          <KnowledgeMap categories={kmCats} confidence={kmConfidence}
+                        title="Traffic map"
+                        subtitle={`${flows.length} flow(s) · ${kmConfidence}% 2xx · click a host to filter`}
+                        activeKey={host || kmCats[0].key}
+                        onSelect={(h) => setHost((cur) => (cur === h ? '' : h))} />
+        </div>
+      )}
 
       {flows.length > 0 && (scSegments.length > 0 || methodBars.length > 0) && (
         <div className="viz-row" style={{ marginBottom: 16 }}>
