@@ -119,13 +119,32 @@ export default function ModelRouter({ onSaved, compact = false }) {
   }
 
   async function ping(role) {
+    const provider = providerOf(role);
+    const cfg = settings?.model_router?.[role] || {};
+    const typedKey = (keys[provider] || '').trim();
+    const savedKey = settings?.provider_keys?.[provider] === 'set';
+    // Honest, not misleading: with no key at all the saved config silently
+    // falls back to OpenRouter (qwen) and would report a green success for the
+    // wrong model. Say what is actually missing instead.
+    if (!typedKey && !savedKey) {
+      setPings((p) => ({ ...p, [role]: { state: 'fail',
+        text: `no API key for ${provider || 'this provider'} — paste it in API Keys below, then test` } }));
+      return;
+    }
     setPings((p) => ({ ...p, [role]: { state: 'running' } }));
     try {
-      const r = await api.llmPing(role);
-      setPings((p) => ({
-        ...p,
-        [role]: { state: 'ok', text: `${r.model_used} · ${r.latency_ms} ms` },
-      }));
+      // A key typed here (not yet saved) tests the exact form values now;
+      // otherwise the saved role config is pinged.
+      const override = typedKey
+        ? { base_url: cfg.base_url, model: cfg.model, api_key: typedKey }
+        : undefined;
+      const r = await api.llmPing(role, override);
+      if (r.fallback_used) {
+        setPings((p) => ({ ...p, [role]: { state: 'warn',
+          text: `no usable key for ${provider} — fell back to ${r.model_used}. Add the key and Save.` } }));
+      } else {
+        setPings((p) => ({ ...p, [role]: { state: 'ok', text: `${r.model_used} · ${r.latency_ms} ms` } }));
+      }
     } catch (e) {
       setPings((p) => ({ ...p, [role]: { state: 'fail', text: e.message } }));
     }
@@ -206,6 +225,7 @@ export default function ModelRouter({ onSaved, compact = false }) {
                   {p?.state === 'running' ? 'Testing…' : 'Test this role'}
                 </button>
                 {p?.state === 'ok' && <span className="key-status ok">{p.text}</span>}
+                {p?.state === 'warn' && <span className="key-status" style={{ color: 'var(--sev-high)' }}>{p.text}</span>}
                 {p?.state === 'fail' && <span className="key-status" style={{ color: 'var(--sev-critical)' }}>{p.text}</span>}
               </div>
             )}

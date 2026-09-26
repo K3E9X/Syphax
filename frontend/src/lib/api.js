@@ -87,7 +87,10 @@ function safeJson(text) {
 export const api = {
   config: () => request('/api/config'),
   health: () => request('/api/health'),
-  llmPing: (role) => request(`/api/llm/ping${role ? `?role=${role}` : ''}`, { method: 'POST' }),
+  llmPing: (role, override) => request(`/api/llm/ping${role ? `?role=${role}` : ''}`, {
+    method: 'POST',
+    ...(override ? { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(override) } : {}),
+  }),
   dashboard: () => request('/api/dashboard'),
   tools: () => request('/api/tools'),
 

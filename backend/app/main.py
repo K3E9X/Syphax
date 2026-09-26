@@ -9,9 +9,12 @@ from __future__ import annotations
 import time
 from contextlib import asynccontextmanager
 
+from typing import Optional
+
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from pydantic import BaseModel
 
 # Importing the storage modules registers their CREATE TABLE statements with
 # app.db; init_db() then runs them all in lifespan startup.
@@ -160,15 +163,35 @@ async def config() -> dict:
     }
 
 
+class PingBody(BaseModel):
+    # Optional overrides so "Test this role" checks exactly what the operator
+    # typed in the form, before saving. When an api_key is given the test runs
+    # against that provider with NO fallback, so a wrong key/model fails loudly
+    # instead of silently falling back to OpenRouter and reporting a green qwen.
+    base_url: Optional[str] = None
+    model: Optional[str] = None
+    api_key: Optional[str] = None
+
+
 @app.post("/api/llm/ping")
-async def llm_ping(role: str = "planner") -> dict:
+async def llm_ping(role: str = "planner", body: Optional[PingBody] = None) -> dict:
     """Sanity-check the LLM client for a given role.
 
-    `role` is one of: planner, executor, validator. Defaults to planner.
-    Unknown roles fall back to the legacy single-client behaviour (the
-    OpenRouter default) so the Phase 0-3 UI keeps working unmodified.
+    `role` is one of: planner, executor, validator. Defaults to planner. With a
+    body carrying an api_key, the exact (base_url, model, api_key) on screen is
+    tested with fallback disabled; otherwise the saved role config is used
+    (which may fall back to OpenRouter, reported via `fallback_used`).
     """
-    if role in iter_roles():
+    if body is not None and (body.api_key or "").strip():
+        from app.llm.client import LLMClient
+        llm = LLMClient(
+            api_key=body.api_key.strip(),
+            model=(body.model or None),
+            base_url=(body.base_url or None),
+            fallback_models=[],  # test THIS model, never a silent substitute
+            role=role,
+        )
+    elif role in iter_roles():
         llm = get_router().get(role)
     else:
         llm = get_llm()
