@@ -10,6 +10,12 @@
 
 export const COV_AXES = ['Recon', 'Config', 'Injection', 'Auth', 'Session', 'API'];
 export const SEV_HEX = { critical: '#ef4444', high: '#f97316', medium: '#eab308', low: '#06b6d4', info: '#737373' };
+// Brand accent as a series colour (charts take concrete hex, not CSS vars), so
+// a single edit here moves every "brand-coloured" bar/point. Mirrors --accent.
+export const BRAND = '#c2410c';
+// HTTP method palette, shared by the Proxy and Surface method charts (was
+// duplicated verbatim in both).
+export const METHOD_HEX = { GET: '#22c55e', POST: '#38bdf8', PUT: '#eab308', PATCH: '#a78bfa', DELETE: '#ef4444', HEAD: '#737373', OPTIONS: '#525252' };
 
 // ---- Radar ---------------------------------------------------------------- //
 // values: number[] in 0..100, one per axis. axes: string[] labels.

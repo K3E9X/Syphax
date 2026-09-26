@@ -1,12 +1,11 @@
 import { useCallback, useEffect, useState } from 'react';
 import { api } from '../lib/api.js';
 import { Notice, activateOnKey } from '../components/ui.jsx';
-import { Donut, Histogram, Legend } from '../components/Charts.jsx';
+import { Donut, Histogram, Legend, METHOD_HEX } from '../components/Charts.jsx';
 import KnowledgeMap from '../components/KnowledgeMap.jsx';
 import { hostIcon } from '../lib/knowledgeMap.js';
 
 const METHODS = ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS', 'HEAD'];
-const METHOD_HEX = { GET: '#22c55e', POST: '#38bdf8', PUT: '#eab308', PATCH: '#a78bfa', DELETE: '#ef4444', HEAD: '#737373', OPTIONS: '#525252' };
 const SC_HEX = { '2xx': '#22c55e', '3xx': '#38bdf8', '4xx': '#eab308', '5xx': '#ef4444' };
 const scBucket = (c) => c >= 500 ? '5xx' : c >= 400 ? '4xx' : c >= 300 ? '3xx' : c >= 200 ? '2xx' : null;
 const fmtBytes = (n) => n == null ? '-' : n < 1024 ? n + ' B' : (n / 1024).toFixed(1) + ' KB';
@@ -126,11 +125,12 @@ export default function Proxy() {
         </div>
       </div>
 
-      {kmCats.length > 0 && (
+      {(
         <div style={{ marginBottom: 16 }}>
           <KnowledgeMap categories={kmCats} confidence={kmConfidence}
                         title="Traffic map"
                         subtitle={`${flows.length} flow(s) · ${kmConfidence}% 2xx · click a host to filter`}
+                        idleNote="No flows captured yet — browse the target through the proxy."
                         metricLabel="2xx"
                         activeKey={host || null}
                         onSelect={(h) => setHost((cur) => (cur === h ? '' : h))} />

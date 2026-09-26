@@ -2,11 +2,10 @@ import { useEffect, useState } from 'react';
 import { api } from '../lib/api.js';
 import { useEngagements } from '../lib/useApi.js';
 import { Notice, activateOnKey } from '../components/ui.jsx';
-import { Donut, Histogram, Legend } from '../components/Charts.jsx';
+import { BRAND, Donut, Histogram, Legend, METHOD_HEX } from '../components/Charts.jsx';
 import KnowledgeMap from '../components/KnowledgeMap.jsx';
 import { hostIcon } from '../lib/knowledgeMap.js';
 
-const METHOD_HEX = { GET: '#22c55e', POST: '#38bdf8', PUT: '#eab308', PATCH: '#a78bfa', DELETE: '#ef4444', HEAD: '#737373', OPTIONS: '#525252' };
 
 export default function Surface() {
   const [loadError, setLoadError] = useState(null);
@@ -41,7 +40,7 @@ export default function Surface() {
     .filter((b) => b.value > 0)
     .sort((a, b) => b.value - a.value)
     .slice(0, 8)
-    .map((b) => ({ ...b, color: '#c2410c' }));
+    .map((b) => ({ ...b, color: BRAND }));
   const methodCounts = {};
   for (const x of hosts) for (const e of x.endpoints || []) {
     const m = (e.m || 'GET').toUpperCase();
@@ -96,10 +95,11 @@ export default function Surface() {
         <div className="metric"><div className="metric__l">Technologies</div><div className="metric__v">{totTech}</div></div>
       </div>
 
-      {kmCats.length > 0 && (
+      {(
         <div style={{ marginBottom: 16 }}>
           <KnowledgeMap categories={kmCats} confidence={kmConfidence}
                         title="Surface map" subtitle={`${totalEp} endpoint(s) · ${kmConfidence}% parameterised · click a host to inspect`}
+                        idleNote="No surface mapped yet — run the engagement to discover hosts and endpoints."
                         metricLabel="params"
                         activeKey={sel} onSelect={setSel} />
         </div>

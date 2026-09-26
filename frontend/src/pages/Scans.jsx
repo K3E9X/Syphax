@@ -105,11 +105,12 @@ export default function Scans() {
       <h1 className="sr-only">Scans</h1>
       <Notice kind="error" message={error} onRetry={() => setError(null)} />
 
-      {kmCats.length > 0 && (
+      {(
         <div style={{ marginBottom: 16 }}>
           <KnowledgeMap categories={kmCats} confidence={kmConfidence}
                         title="Scan map"
                         subtitle={`${jobs.length} job(s) · ${kmConfidence}% completed · click a tool to launch it`}
+                        idleNote="No scan jobs yet — launch one below."
                         metricLabel="completed"
                         onSelect={(tool) => set({ tool })} />
         </div>

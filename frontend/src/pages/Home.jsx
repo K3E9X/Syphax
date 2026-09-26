@@ -5,11 +5,12 @@ import { useApi } from '../lib/useApi.js';
 import { Notice, UsageRow, fmtTokens, fmtUsd } from '../components/ui.jsx';
 import { COV_AXES, Donut, Histogram, Legend, Radar, SEV_HEX } from '../components/Charts.jsx';
 import KnowledgeMap from '../components/KnowledgeMap.jsx';
+import { BRAND } from '../components/Charts.jsx';
 import { mapFromEngagements } from '../lib/knowledgeMap.js';
 
 const PHASE_ORDER = ['Reconnaissance', 'Scanning & enumeration', 'Exploitation', 'Capture & analysis', 'Other'];
 const LLM_ROLES = ['planner', 'executor', 'validator'];
-const ROLE_HEX = { planner: '#c2410c', executor: '#a78bfa', validator: '#34d399' };
+const ROLE_HEX = { planner: BRAND, executor: '#a78bfa', validator: '#34d399' };
 const SEV_BARS = ['critical', 'high', 'medium', 'low', 'info'];
 
 export default function Home() {
@@ -163,7 +164,7 @@ export default function Home() {
     .map((s) => ({ label: s, value: conf[s] || 0, color: SEV_HEX[s] }))
     .filter((s) => s.value > 0);
   const roleBars = (usage.by_role || [])
-    .map((r) => ({ label: r.role, value: Math.round((r.tokens || 0) / 1000), color: ROLE_HEX[r.role] || '#c2410c' }));
+    .map((r) => ({ label: r.role, value: Math.round((r.tokens || 0) / 1000), color: ROLE_HEX[r.role] || BRAND }));
 
   // Fleet knowledge map (shared derivation, also used by Engagements).
   const { categories: kmCats, confidence: kmConfidence } = mapFromEngagements(engItems);
@@ -189,11 +190,12 @@ export default function Home() {
                 message={`${((usage.total_tokens || 0) / 1e6).toFixed(2)}M tokens used but LLM_PRICING is unset, so every model is costed at $0. Set it in .env to get a real figure.`} />
       )}
 
-      {kmCats.length > 0 && (
+      {(
         <div style={{ marginBottom: 16 }}>
           <KnowledgeMap categories={kmCats} confidence={kmConfidence}
                         title="Engagements map"
                         subtitle={`${engItems.length} engagement(s) · avg coverage ${kmConfidence}% · click to open live view`}
+                        idleNote="No engagements yet — create one to populate the fleet map."
                         metricLabel="coverage"
                         onSelect={(id) => navigate(`/engagements/${id}/live`)} />
         </div>

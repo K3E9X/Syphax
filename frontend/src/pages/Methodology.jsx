@@ -101,10 +101,11 @@ export default function Methodology() {
         <div className="metric"><div className="metric__l">Queued</div><div className="metric__v">{allItems.filter((i) => i.status === 'queued').length}</div></div>
       </div>
 
-      {kmCats.length > 0 && (
+      {(
         <div style={{ marginBottom: 16 }}>
           <KnowledgeMap categories={kmCats} confidence={cov}
                         title="Coverage map" subtitle={`${allItems.length} checks · ${cov}% completed · click a category to open it`}
+                        idleNote="No coverage yet — run the engagement to populate the matrix."
                         metricLabel="coverage"
                         onSelect={(cat) => {
                           setOpen((o) => (o.includes(cat) ? o : [...o, cat]));
