@@ -206,7 +206,18 @@ async def _pump_streams(
 
 async def startup(ctx: Dict[str, Any]) -> None:
     await db.init_db()
-    logger.info("worker startup: Postgres pool ready")
+    # Hydrate the LLM router from the settings saved in the DB (the model-router
+    # and provider keys entered in the UI). The API process does this in its
+    # lifespan; the worker and orchestrator are separate processes with their
+    # own router, so without this the orchestrator's planner/validator see no
+    # key and every run silently degrades to catalog-only ("no API key or model
+    # configured for the planner role").
+    from app import settings_store
+    try:
+        await settings_store.apply_saved_on_startup()
+    except Exception:  # noqa: BLE001 - a missing/invalid saved config must not stop the worker
+        logger.exception("worker startup: could not hydrate the model router from settings")
+    logger.info("worker startup: Postgres pool ready; model router hydrated")
 
 
 async def shutdown(ctx: Dict[str, Any]) -> None:
