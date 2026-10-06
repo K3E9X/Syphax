@@ -21,7 +21,9 @@ class FfufWrapper(BaseWrapper):
     binary = "ffuf"
     description = "Fast web fuzzer for directories, parameters and vhosts."
     category = "content_discovery"
-    timeout_seconds = 20 * 60
+    # Hard backstop. ffuf stops ITSELF earlier via -maxtime and flushes its JSON,
+    # so the job returns partial results instead of being SIGKILLed with none.
+    timeout_seconds = int(os.environ.get("FFUF_MAXTIME", "300")) + 60
 
     def build_command(self, target: str, options: Sequence[str]) -> List[str]:
         # If the caller did not embed FUZZ in the target, assume directory fuzzing.
@@ -35,6 +37,15 @@ class FfufWrapper(BaseWrapper):
             "-s",          # silent progress
             "-mc", "200,204,301,302,307,401,403,405",
             "-t", "40",
+            # Stop itself and write the results collected so far. Without this, a
+            # slow or WAF'd target (e.g. behind Cloudflare) makes ffuf run until
+            # the job timeout, where it is killed and produces no output at all -
+            # burning the engagement's time budget for zero findings.
+            "-maxtime", os.environ.get("FFUF_MAXTIME", "300"),
+            # Per-request timeout and a polite rate cap: a CDN/WAF rate-limits an
+            # unbounded fuzz, which both wastes time and risks an IP ban.
+            "-timeout", os.environ.get("FFUF_REQ_TIMEOUT", "8"),
+            "-rate", os.environ.get("FFUF_RATE", "60"),
         ]
         cmd.extend(options)
         return cmd
