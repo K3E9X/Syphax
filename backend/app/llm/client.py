@@ -32,6 +32,21 @@ class LLMError(RuntimeError):
 _FALLBACK_STATUS_CODES = {429, 500, 502, 503, 504}
 
 
+def _is_temperature_rejection(body: str) -> bool:
+    """A 400 where the model refuses the temperature we sent. Reasoning models
+    (kimi-k2/k3, some GLM and o-series) only accept their fixed default, e.g.
+    'invalid temperature: only 1 is allowed for this model'. We retry without
+    the field so one setting does not break every call."""
+    b = (body or "").lower()
+    return "temperature" in b and (
+        "only 1 is allowed" in b
+        or "invalid temperature" in b
+        or "does not support" in b
+        or "unsupported" in b
+        or "must be 1" in b
+    )
+
+
 class LLMClient:
     def __init__(
         self,
@@ -149,6 +164,16 @@ class LLMClient:
                 headers=self._headers(),
                 json=payload,
             )
+            # Reasoning models (kimi-k2/k3, some GLM and o-series) reject any
+            # temperature other than their fixed default. Drop the field and
+            # retry once rather than fail a whole run - or a sanity ping - on it.
+            if response.status_code == 400 and _is_temperature_rejection(response.text):
+                payload.pop("temperature", None)
+                response = await client.post(
+                    f"{self.base_url}/chat/completions",
+                    headers=self._headers(),
+                    json=payload,
+                )
         if response.status_code >= 400:
             raise LLMError(f"OpenRouter {response.status_code}: {response.text[:500]}")
 
@@ -224,28 +249,35 @@ class LLMClient:
             "stream": True,
         }
         async with httpx.AsyncClient(timeout=None) as client:
-            async with client.stream(
-                "POST",
-                f"{self.base_url}/chat/completions",
-                headers=self._headers(),
-                json=payload,
-            ) as response:
-                if response.status_code >= 400:
-                    body = await response.aread()
-                    raise LLMError(f"OpenRouter {response.status_code}: {body.decode()[:500]}")
-                async for line in response.aiter_lines():
-                    if not line or not line.startswith("data:"):
-                        continue
-                    data = line[len("data:"):].strip()
-                    if data == "[DONE]":
-                        return
-                    try:
-                        chunk = json.loads(data)
-                    except json.JSONDecodeError:
-                        continue
-                    delta = chunk.get("choices", [{}])[0].get("delta", {}).get("content")
-                    if delta:
-                        yield delta
+            for attempt in (0, 1):
+                async with client.stream(
+                    "POST",
+                    f"{self.base_url}/chat/completions",
+                    headers=self._headers(),
+                    json=payload,
+                ) as response:
+                    if response.status_code >= 400:
+                        body = await response.aread()
+                        # Same temperature-rejection retry as the non-stream path.
+                        if (attempt == 0 and response.status_code == 400
+                                and _is_temperature_rejection(body.decode(errors="replace"))):
+                            payload.pop("temperature", None)
+                            continue
+                        raise LLMError(f"OpenRouter {response.status_code}: {body.decode()[:500]}")
+                    async for line in response.aiter_lines():
+                        if not line or not line.startswith("data:"):
+                            continue
+                        data = line[len("data:"):].strip()
+                        if data == "[DONE]":
+                            return
+                        try:
+                            chunk = json.loads(data)
+                        except json.JSONDecodeError:
+                            continue
+                        delta = chunk.get("choices", [{}])[0].get("delta", {}).get("content")
+                        if delta:
+                            yield delta
+                    return
 
 
 _client: Optional[LLMClient] = None
