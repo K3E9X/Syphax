@@ -14,11 +14,17 @@ Schema bootstrap is centralised here: every domain module exposes a
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
-from typing import AsyncIterator, List, Optional
+from typing import TYPE_CHECKING, AsyncIterator, List, Optional
 
-import asyncpg
+if TYPE_CHECKING:  # annotations only; asyncpg is imported lazily in get_pool()
+    import asyncpg
 
 from app.config import settings
+
+# asyncpg is NOT imported at module top. The mitmproxy addon loads this module
+# for the sync psycopg path only (sync_connect / register_schema) in an image
+# that deliberately ships without asyncpg; a top-level import there crash-looped
+# the proxy with ModuleNotFoundError. The async pool imports it on first use.
 
 _pool: Optional[asyncpg.Pool] = None
 _schemas: List[str] = []
@@ -30,9 +36,10 @@ def register_schema(sql: str) -> None:
         _schemas.append(sql)
 
 
-async def get_pool() -> asyncpg.Pool:
+async def get_pool() -> "asyncpg.Pool":
     global _pool
     if _pool is None:
+        import asyncpg
         _pool = await asyncpg.create_pool(
             dsn=settings.database_url,
             min_size=1,
