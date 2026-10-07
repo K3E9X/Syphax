@@ -20,7 +20,6 @@ from __future__ import annotations
 import json
 import logging
 from typing import Any, Dict, List, Optional, Tuple
-from urllib.parse import urlparse
 
 from app import db
 from app.analysis._store import save_analysis_job

@@ -34,8 +34,9 @@ logger = logging.getLogger("syphax.analysis.dom_sinks")
 MAX_FILES = 150
 MAX_BYTES = 2_000_000
 MAX_FINDINGS = 60
-# How close a source and a sink must be to be worth reporting together.
-_WINDOW = 200
+# How much of the expression after a sink we read. Bounded: a minified bundle
+# is one long line, so an unbounded read would swallow the whole file.
+_EXPR_MAX = 300
 
 # Attacker-controlled inputs available to client code.
 _SOURCES = re.compile(
@@ -60,20 +61,67 @@ _LISTENER = re.compile(
     r"addEventListener\s*\(\s*['\"]message['\"]\s*,", re.I)
 _ORIGIN_CHECK = re.compile(r"\.origin\b", re.I)
 _POST_WILDCARD = re.compile(r"\.postMessage\s*\([^;]{0,400}?,\s*['\"]\*['\"]", re.I | re.S)
+# `const userInput = location.hash` - a readable alias for a source.
+_ALIAS_ASSIGN = re.compile(
+    r"(?:var|let|const)\s+([A-Za-z_$][\w$]*)\s*=\s*([^;\n]{0,160})")
+
+
+def _sink_expression(code: str, start: int, end: int) -> str:
+    """The expression the sink actually consumes.
+
+    For `x.innerHTML = <expr>;` that is everything up to the statement end; for
+    `eval(<expr>)` it is the call's arguments. Bounded, because a minified
+    bundle has no newlines and we must not swallow the rest of the file.
+    """
+    tail = code[end:end + _EXPR_MAX]
+    stop = len(tail)
+    for ch in (";", "\n"):
+        i = tail.find(ch)
+        if i != -1:
+            stop = min(stop, i)
+    return tail[:stop]
+
+
+def _source_aliases(code: str) -> List[str]:
+    """Readable variables assigned from an attacker-controlled source.
+
+    Only names of three characters or more: a minified bundle renames
+    everything to one or two letters, and matching those would pair unrelated
+    code on every line.
+    """
+    out = []
+    for m in _ALIAS_ASSIGN.finditer(code):
+        name = m.group(1)
+        if len(name) >= 3 and _SOURCES.search(m.group(2) or ""):
+            out.append(name)
+    return out
 
 
 def find_sink_hits(code: str) -> List[Dict[str, Any]]:
-    """Sinks that have an attacker-controlled source within _WINDOW chars."""
+    """Sinks whose own expression is fed by an attacker-controlled source.
+
+    Deliberately strict. An earlier version only required a source within 200
+    characters, which on a minified bundle (no newlines, everything adjacent)
+    paired an unused `location.href` with an unrelated `innerHTML=TEMPLATE`,
+    and flagged React code that escapes properly. Proximity is not data flow.
+    """
     out: List[Dict[str, Any]] = []
-    sources = [m.start() for m in _SOURCES.finditer(code)]
-    if not sources:
-        return out
+    aliases = _source_aliases(code)
+    alias_re = (re.compile(r"\b(?:" + "|".join(re.escape(a) for a in aliases) + r")\b")
+                if aliases else None)
     for name, rx in _SINK_RE:
         for m in rx.finditer(code):
-            near = [s for s in sources if abs(s - m.start()) <= _WINDOW]
-            if not near:
+            expr = _sink_expression(code, m.start(), m.end())
+            if not expr.strip():
                 continue
-            out.append({"sink": name, "pos": m.start(),
+            via = None
+            if _SOURCES.search(expr):
+                via = "direct"
+            elif alias_re is not None and alias_re.search(expr):
+                via = "variable"
+            if via is None:
+                continue
+            out.append({"sink": name, "pos": m.start(), "via": via,
                         "snippet": _around(code, m.start())})
             break       # one hit per sink kind per file is enough
     return out

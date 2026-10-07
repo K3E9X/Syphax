@@ -59,3 +59,30 @@ def test_severity_scales_with_sensitivity_and_volume(counts, expected):
 
 def test_clean_json_yields_nothing():
     assert pii_values('{"status":"ok","items":[1,2,3]}') == {}
+
+
+# ---- false positives found in review ---------------------------------------
+
+def test_oauth_token_response_is_not_a_leak():
+    """An /oauth/token endpoint returning access_token IS the product. Flagging
+    it as "API returns secret fields" was a false positive."""
+    from app.analysis.api_exposure import is_token_endpoint
+    names = _names({"access_token": "ey", "refresh_token": "r",
+                    "token_type": "Bearer", "expires_in": 3600})
+    assert is_token_endpoint("/oauth/token", names)
+    assert secret_fields_in(names, token_endpoint=True) == []
+
+
+def test_token_shape_alone_identifies_a_token_endpoint():
+    from app.analysis.api_exposure import is_token_endpoint
+    names = _names({"access_token": "ey", "token_type": "Bearer", "expires_in": 60})
+    assert is_token_endpoint("/v2/exchange", names)
+
+
+def test_a_user_list_leaking_tokens_is_still_reported():
+    """The exemption is for token endpoints only - not for every response."""
+    from app.analysis.api_exposure import is_token_endpoint
+    names = _names({"users": [{"password_hash": "x", "access_token": "y"}]})
+    assert not is_token_endpoint("/api/users", names)
+    assert secret_fields_in(names, token_endpoint=False) == [
+        "access_token", "password_hash"]

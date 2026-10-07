@@ -45,3 +45,30 @@ def test_snippet_is_bounded():
     body = "x" * 1000 + "Traceback (most recent call last)" + "y" * 1000
     out = _around(body, 1000)
     assert 0 < len(out) <= 300
+
+
+def test_build_paths_need_an_error_context():
+    """/home/runner/work/... is baked into every GitHub Actions sourcemap, and
+    sourceMappingURL points at the build machine. Neither is a leak on a 200,
+    so a path only counts alongside a real error signature or a 4xx/5xx."""
+    bundle = '//# sourceMappingURL=/usr/local/share/app.js.map'
+    assert _match(bundle) == [("path_disclosure", "low", "Internal filesystem path")]
+    # ...the signature still matches; the analyzer is what suppresses it. The
+    # suppression rule itself:
+    has_error = any(k != "path_disclosure" for k, _, _ in _match(bundle))
+    assert has_error is False          # -> dropped on a 200 response
+
+    with_error = 'Fatal error: require(/var/www/html/x.php) failed'
+    assert any(k != "path_disclosure" for k, _, _ in _match(with_error))
+
+
+@pytest.mark.parametrize("body,hit", [
+    ("<b>Fatal error</b>: boom", True),      # html_errors on
+    ("Fatal error: boom", True),             # html_errors off (was missed)
+    ("Parse error: syntax error", True),
+    ("PHP Warning: x", True),
+    ("Warning: this product contains nuts", False),
+    ("A fatal error occurred, please retry", False),
+])
+def test_php_error_shapes_without_catching_prose(body, hit):
+    assert any(k == "stack_trace" for k, _, _ in _match(body)) is hit

@@ -23,7 +23,7 @@ from __future__ import annotations
 import json
 import logging
 import re
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any, Dict, List, Set, Tuple
 from urllib.parse import urlparse
 
 from app import db
@@ -89,8 +89,26 @@ def collect_field_names(obj: Any, out: Set[str], depth: int = 0) -> None:
             collect_field_names(v, out, depth + 1)
 
 
-def secret_fields_in(names: Set[str]) -> List[str]:
-    return sorted(n for n in names if n in _SECRET_FIELDS)
+# Fields that ARE the product of an auth endpoint: a token response is supposed
+# to contain a token. Reporting /oauth/token for "returning access_token" is a
+# false positive, so these are only a finding away from a token endpoint.
+_TOKEN_FIELDS = {"access_token", "refresh_token", "id_token", "token_secret"}
+_TOKEN_SHAPE = {"token_type", "expires_in", "scope", "id_token"}
+_TOKEN_PATH = re.compile(r"(oauth|/token|/login|/signin|/auth|/session|refresh)", re.I)
+
+
+def is_token_endpoint(path: str, names: Set[str]) -> bool:
+    """Is handing back a token this endpoint's job?"""
+    if _TOKEN_PATH.search(path or ""):
+        return True
+    return len(names & _TOKEN_SHAPE) >= 2
+
+
+def secret_fields_in(names: Set[str], *, token_endpoint: bool = False) -> List[str]:
+    hits = {n for n in names if n in _SECRET_FIELDS}
+    if token_endpoint:
+        hits -= _TOKEN_FIELDS
+    return sorted(hits)
 
 
 def pii_fields_in(names: Set[str]) -> List[str]:
@@ -172,7 +190,8 @@ async def analyze_api_exposure(engagement_id: str) -> Dict[str, int]:
         if doc is not None:
             collect_field_names(doc, names)
 
-        secrets = secret_fields_in(names)
+        secrets = secret_fields_in(
+            names, token_endpoint=is_token_endpoint(path, names))
         if secrets:
             _add(findings, seen, host, path, "secret_fields",
                  "high", f"API returns secret fields on {path}",

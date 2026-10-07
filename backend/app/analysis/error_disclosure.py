@@ -45,7 +45,11 @@ _SIGNATURES: List[Tuple[str, str, str, re.Pattern]] = [
      re.compile(r"(Server Error in '.*' Application|System\.[\w.]+Exception|"
                 r"at System\.[\w.]+\(.*\) in )")),
     ("stack_trace", "medium", "PHP error",
-     re.compile(r"(Fatal error</b>:|PHP (?:Fatal|Warning|Notice|Parse error)|"
+     # Both shapes: the HTML one PHP emits in a browser, and the bare text one
+     # it writes when html_errors is off. "Warning:" alone is too common in
+     # ordinary content to match on its own.
+     re.compile(r"((?:PHP )?(?:Fatal error|Parse error|Uncaught \w*Error)(?:</b>)?\s*:|"
+                r"PHP (?:Warning|Notice)|"
                 r"<b>Warning</b>:.{0,80}on line <b>\d+)", re.I)),
     ("stack_trace", "medium", "Node.js stack trace",
      re.compile(r"(at Object\.<anonymous> \(|\bat .{0,80}node_modules[/\\])")),
@@ -88,9 +92,17 @@ async def analyze_error_disclosure(engagement_id: str) -> Dict[str, int]:
         body = _text(r["response_body"])
         if not body:
             continue
-        for kind, sev, label, pattern in _SIGNATURES:
-            m = pattern.search(body)
-            if not m:
+        matched = [(k, sev, label, pattern.search(body))
+                   for k, sev, label, pattern in _SIGNATURES]
+        matched = [(k, sev, label, m) for k, sev, label, m in matched if m]
+        has_error = any(k != "path_disclosure" for k, _, _, _ in matched)
+        failed = r["status_code"] is not None and r["status_code"] >= 400
+        for kind, sev, label, m in matched:
+            # A filesystem path inside a bundle or a sourcemap is the build
+            # machine's layout, not a leak: /home/runner/work/... is every
+            # GitHub Actions artefact. Only report one when the response is
+            # actually an error, or when a real error signature sits with it.
+            if kind == "path_disclosure" and not (has_error or failed):
                 continue
             key = (host, kind, label)
             if key in hits:

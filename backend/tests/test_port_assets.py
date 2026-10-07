@@ -7,7 +7,6 @@ mapping (_port_asset_value) and the Surface value format it produces.
 """
 from types import SimpleNamespace
 
-import pytest
 
 from app.orchestrator.executor import _port_asset_value
 

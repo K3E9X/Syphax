@@ -120,16 +120,14 @@ def enumeration_phrase(body: str) -> Optional[str]:
 
 
 def weak_min_length(body: str) -> Optional[int]:
-    """The shortest password the page itself says it will accept."""
+    """The shortest password the page itself says it will accept.
+
+    Read from the HTML/JS minlength attribute only. A quantifier heuristic over
+    validation regexes was tried and dropped: it either matched nothing useful
+    or matched every `.{1,5}` in the bundle.
+    """
     best: Optional[int] = None
-    for m in re.finditer(r"minlength\s*=\s*[\"']?(\d{1,2})", body or "", re.I):
-        try:
-            n = int(m.group(1))
-        except ValueError:
-            continue
-        if 0 < n < 8 and (best is None or n < best):
-            best = n
-    for m in re.finditer(r"\.{2,30}\{(\d{1,2}),\d{0,3}\}", body or ""):
+    for m in re.finditer(r"min[_]?length\s*[=:]\s*[\"']?(\d{1,2})", body or "", re.I):
         try:
             n = int(m.group(1))
         except ValueError:

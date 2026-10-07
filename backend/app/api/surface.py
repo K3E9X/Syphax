@@ -198,7 +198,7 @@ async def scope_candidates(engagement_id: str) -> Dict[str, Any]:
         target_ips = await _resolve(eng.target_host)
 
     items = []
-    for host, ips in zip(hosts, ip_lists):
+    for host, ips in zip(hosts, ip_lists, strict=True):
         same_dom = _scope_util.same_registrable_domain(host, eng.target_host)
         items.append({
             "host": host,

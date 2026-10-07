@@ -16,12 +16,10 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from app.audit import audit
-from app.exploit import capabilities, vetting
 from app.engagements import EngagementRepository, EngagementStatus
 from app.sandbox import runner_client
 from app.sandbox.inspect import inspect_code
-from app.sandbox.staging import (STATUS_APPROVED, STATUS_EXECUTED,
-                                 STATUS_REJECTED, STATUS_STAGED, StagedPoC,
+from app.sandbox.staging import (STATUS_APPROVED, STATUS_REJECTED, STATUS_STAGED, StagedPoC,
                                  StagedPoCRepository, can_transition, fetch_file,
                                  fetch_repo_files, new_poc_id, parse_repo_url)
 
