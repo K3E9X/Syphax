@@ -94,6 +94,17 @@ async def list_findings(severity: str = "", status: str = "", q: str = "",
                 # access / command result) for the Findings detail panel.
                 "exploitation": meta.get("exploitation") or None,
                 "proven": bool(meta.get("proven")),
+                # How to re-run the proof and get the same answer: the exact
+                # command, its exit code and an excerpt of what it printed.
+                # This is what a report needs and what a client re-runs; it was
+                # recorded on the finding and never surfaced.
+                "repro": meta.get("repro") or None,
+                # Which tools agreed, and the note explaining the verdict.
+                "corroboration": meta.get("corroboration") or None,
+                # What decided it: the oracle (a signature/timing/OOB hit) and
+                # the validator method, so "confirmed" is never a bare claim.
+                "oracle": meta.get("oracle") or None,
+                "method": f.method or "",
             }
             groups[key] = g
         else:

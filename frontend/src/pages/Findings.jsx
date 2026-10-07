@@ -253,6 +253,54 @@ export default function Findings() {
                   <dt>Last seen</dt><dd>{ago(f.last_seen)}</dd>
                 </dl>
 
+                {/* How this verdict was reached, in one line, before the
+                    individual proofs below it. "confirmed" should never be a
+                    bare claim: say what decided it. */}
+                {(f.method || f.oracle || f.corroboration) && (
+                  <div className="shadow">
+                    <div className="shadow__h">
+                      How this was decided
+                      <span className="shadow__tag">{Math.round((f.confidence || 0) * 100)}% confidence</span>
+                    </div>
+                    <div className="shadow__row">
+                      {f.method && <><span>method</span><b>{f.method}</b></>}
+                      {f.oracle && <><span>· oracle</span><b>{f.oracle}</b></>}
+                      {f.corroboration?.independent != null && (
+                        <><span>· independent tools</span><b>{f.corroboration.independent}</b></>
+                      )}
+                    </div>
+                    {f.corroboration?.note && (
+                      <div className="shadow__reason">{f.corroboration.note}</div>
+                    )}
+                    {(f.corroboration?.tools || []).length > 0 && (
+                      <div className="shadow__reason mono">
+                        agreed: {(f.corroboration.tools || []).join(', ')}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* The command a reader re-runs to get the same answer. For an
+                    RCE this IS the capture: the output of id/whoami/uname. */}
+                {f.repro && (
+                  <div className="shadow shadow--agree">
+                    <div className="shadow__h">
+                      Reproduce it
+                      <span className="shadow__tag">
+                        {f.repro.tool}{f.repro.exit_code != null ? ` · exit ${f.repro.exit_code}` : ''}
+                      </span>
+                    </div>
+                    <div className="shadow__reason">Run this against {f.repro.target} and you get the same result.</div>
+                    <pre className="detail__pre poc">{f.repro.command}</pre>
+                    {f.repro.output_excerpt && (
+                      <>
+                        <div className="shadow__reason">What it printed</div>
+                        <pre className="detail__pre poc">{f.repro.output_excerpt}</pre>
+                      </>
+                    )}
+                  </div>
+                )}
+
                 {f.exploitation && (
                   <div className="shadow shadow--agree">
                     <div className="shadow__h">
