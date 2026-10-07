@@ -7,7 +7,6 @@ import httpx
 import pytest
 
 from app import intel
-from app.config import settings
 
 
 def _client(handler):
@@ -15,9 +14,7 @@ def _client(handler):
 
 
 @pytest.mark.asyncio
-async def test_shodan_ports_and_cves(monkeypatch):
-    monkeypatch.setattr(settings, "shodan_api_key", "k", raising=False)
-
+async def test_shodan_ports_and_cves():
     def handler(request):
         return httpx.Response(200, json={"data": [
             {"port": 443, "transport": "tcp", "product": "nginx",
@@ -27,7 +24,7 @@ async def test_shodan_ports_and_cves(monkeypatch):
         ]})
 
     async with _client(handler) as c:
-        findings = await intel._shodan(c, "acme.com", "1.2.3.4")
+        findings = await intel._shodan(c, "acme.com", "1.2.3.4", "k")
 
     ports = [f for f in findings if f.metadata.get("vuln_class") == "recon"]
     cves = [f for f in findings if f.metadata.get("vuln_class") == "cve"]
@@ -37,10 +34,7 @@ async def test_shodan_ports_and_cves(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_censys_services(monkeypatch):
-    monkeypatch.setattr(settings, "censys_api_id", "id", raising=False)
-    monkeypatch.setattr(settings, "censys_api_secret", "sec", raising=False)
-
+async def test_censys_services():
     def handler(request):
         return httpx.Response(200, json={"result": {"services": [
             {"port": 80, "transport_protocol": "TCP", "service_name": "HTTP",
@@ -48,7 +42,7 @@ async def test_censys_services(monkeypatch):
         ]}})
 
     async with _client(handler) as c:
-        findings = await intel._censys(c, "acme.com", "1.2.3.4")
+        findings = await intel._censys(c, "acme.com", "1.2.3.4", "id", "sec")
 
     assert len(findings) == 1
     assert findings[0].metadata["port"] == 80
@@ -56,9 +50,7 @@ async def test_censys_services(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_virustotal_flags_malicious(monkeypatch):
-    monkeypatch.setattr(settings, "virustotal_api_key", "k", raising=False)
-
+async def test_virustotal_flags_malicious():
     def handler(request):
         return httpx.Response(200, json={"data": {"attributes": {
             "last_analysis_stats": {"malicious": 3, "suspicious": 1},
@@ -66,7 +58,7 @@ async def test_virustotal_flags_malicious(monkeypatch):
         }}})
 
     async with _client(handler) as c:
-        findings = await intel._virustotal(c, "acme.com", "1.2.3.4")
+        findings = await intel._virustotal(c, "acme.com", "1.2.3.4", "k")
 
     assert len(findings) == 1
     assert findings[0].metadata["malicious"] == 3
@@ -74,24 +66,20 @@ async def test_virustotal_flags_malicious(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_virustotal_clean_domain_is_empty(monkeypatch):
-    monkeypatch.setattr(settings, "virustotal_api_key", "k", raising=False)
-
+async def test_virustotal_clean_domain_is_empty():
     def handler(request):
         return httpx.Response(200, json={"data": {"attributes": {
             "last_analysis_stats": {"malicious": 0, "suspicious": 0},
         }}})
 
     async with _client(handler) as c:
-        assert await intel._virustotal(c, "acme.com", "1.2.3.4") == []
+        assert await intel._virustotal(c, "acme.com", "1.2.3.4", "k") == []
 
 
 @pytest.mark.asyncio
-async def test_provider_http_error_degrades_to_empty(monkeypatch):
-    monkeypatch.setattr(settings, "shodan_api_key", "k", raising=False)
-
+async def test_provider_http_error_degrades_to_empty():
     def handler(request):
         return httpx.Response(401, json={"error": "no"})
 
     async with _client(handler) as c:
-        assert await intel._shodan(c, "acme.com", "1.2.3.4") == []
+        assert await intel._shodan(c, "acme.com", "1.2.3.4", "k") == []

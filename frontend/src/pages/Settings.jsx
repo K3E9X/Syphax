@@ -22,6 +22,8 @@ export default function Settings() {
   const [saveError, setSaveError] = useState(null);
   const [apiKeyInput, setApiKeyInput] = useState(getApiKey());
   const apiKey = apiKeyInput;
+  // Write-only integration tokens typed this session (never read back).
+  const [keyIn, setKeyIn] = useState({});
 
   useEffect(() => {
     // A blank Settings page and a dead backend looked identical.
@@ -40,16 +42,38 @@ export default function Settings() {
 
   // The model router and the provider keys are saved by <ModelRouter/>, which
   // owns them on both screens. This button saves everything else.
+  // Only send tokens the operator actually typed: a value sets it, the sentinel
+  // clears it, an untouched field is omitted (leave unchanged).
+  function integrationPatch() {
+    const out = {};
+    for (const [k, v] of Object.entries(keyIn)) {
+      if (v === '__unset__' || (typeof v === 'string' && v.trim())) out[k] = v;
+    }
+    return out;
+  }
+
   async function save() {
     try {
-      const res = await api.settings.save({
+      const patch = {
         safety: s.safety, scope: s.scope,
         oob_server: s.oob_server || '', budget: s.budget,
-      });
-      setS(res); setSaveError(null); setSaved('Saved');
+      };
+      const ik = integrationPatch();
+      if (Object.keys(ik).length) patch.integration_keys = ik;
+      const res = await api.settings.save(patch);
+      setS(res); setKeyIn({}); setSaveError(null); setSaved('Saved');
     } catch (e) { setSaveError(e.message); setSaved(null); }
     setTimeout(() => setSaved(null), 2500);
   }
+
+  const INTG = [
+    { k: 'github', label: 'GitHub token', ph: 'github_pat_…  — raises PoC search 10→30/min' },
+    { k: 'shodan', label: 'Shodan API key', ph: 'account.shodan.io' },
+    { k: 'censys_id', label: 'Censys API ID', ph: 'search.censys.io → API credentials' },
+    { k: 'censys_secret', label: 'Censys API secret', ph: '' },
+    { k: 'virustotal', label: 'VirusTotal API key', ph: 'virustotal.com → your API key' },
+  ];
+  const intgStatus = s.integration_keys || {};
 
   return (
     <div className="page">
@@ -138,6 +162,48 @@ export default function Settings() {
               <div className="field"><label className="field__label" htmlFor="set-conc">Concurrency</label><input id="set-conc" className="input" type="number" value={scope.concurrency ?? 4} onChange={(e) => setScope('concurrency', Number(e.target.value))} /></div>
             </div>
             <div className="field"><label className="field__label" htmlFor="set-oob">OOB / interactsh server <span style={{ textTransform: 'none', color: 'var(--text-faint)', fontWeight: 400 }}>blank = public servers</span></label><input id="set-oob" className="input" placeholder="https://oob.yourdomain.com" value={s.oob_server || ''} onChange={(e) => setS((x) => ({ ...x, oob_server: e.target.value }))} /></div>
+          </div>
+        </div>
+
+        <div className="card set-full">
+          <div className="card__head">
+            <span className="card__title">Integrations &amp; API keys</span>
+            <span className="card__meta">stored encrypted · write-only</span>
+          </div>
+          <div className="card__body">
+            <p className="intro">
+              Threat-intel and PoC-search tokens. Set them here instead of the
+              .env file; they are encrypted at rest and never shown back. All are
+              optional and free to obtain.
+            </p>
+            {INTG.map(({ k, label, ph }) => {
+              const isSet = intgStatus[k] === 'set';
+              const typed = keyIn[k];
+              return (
+                <div className="field" key={k}>
+                  <label className="field__label" htmlFor={'intg-' + k}>
+                    {label}{' '}
+                    <span style={{ textTransform: 'none', fontWeight: 400,
+                                   color: isSet ? 'var(--brand)' : 'var(--text-faint)' }}>
+                      {typed === '__unset__' ? 'will clear on save' : isSet ? 'set' : 'not set'}
+                    </span>
+                  </label>
+                  <div className="key-row">
+                    <input id={'intg-' + k} className="input" type="password"
+                           autoComplete="new-password"
+                           placeholder={isSet ? '•••••••• (leave blank to keep)' : ph}
+                           value={typed && typed !== '__unset__' ? typed : ''}
+                           onChange={(e) => setKeyIn((x) => ({ ...x, [k]: e.target.value }))} />
+                    {isSet && (
+                      <button type="button" className="btn btn--muted btn--sm"
+                              onClick={() => setKeyIn((x) => ({ ...x, [k]: x[k] === '__unset__' ? '' : '__unset__' }))}>
+                        {typed === '__unset__' ? 'keep' : 'clear'}
+                      </button>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </div>
       </div>

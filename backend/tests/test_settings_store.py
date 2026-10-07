@@ -41,3 +41,26 @@ def test_defaults_shape():
     assert ss.DEFAULTS["safety"]["safe_mode"] is True
     for role in ("planner", "executor", "validator"):
         assert role in ss.DEFAULTS["model_router"]
+
+
+def test_integration_keys_shape():
+    # Every integration key has a .env fallback mapping.
+    for name in ss.INTEGRATION_KEYS:
+        assert name in ss._INTEGRATION_ENV
+    assert ss._INTEGRATION_ENV["github"] == "GITHUB_TOKEN"
+    assert ss._INTEGRATION_ENV["virustotal"] == "VIRUSTOTAL_API_KEY"
+
+
+import pytest  # noqa: E402
+
+
+@pytest.mark.asyncio
+async def test_get_integration_key_falls_back_to_env(monkeypatch):
+    # No DB in this unit context: the read fails and we fall back to the env var.
+    monkeypatch.setenv("GITHUB_TOKEN", "github_pat_fallback")
+    assert await ss.get_integration_key("github") == "github_pat_fallback"
+
+
+@pytest.mark.asyncio
+async def test_get_integration_key_unknown_is_empty():
+    assert await ss.get_integration_key("not_a_key") == ""

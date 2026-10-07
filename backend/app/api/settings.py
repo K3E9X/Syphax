@@ -20,6 +20,7 @@ async def get_settings() -> Dict[str, Any]:
 class SettingsPatch(BaseModel):
     model_router: Dict[str, Any] | None = None
     provider_keys: Dict[str, str] | None = None   # raw to set, '' keep, '__unset__' clear
+    integration_keys: Dict[str, str] | None = None  # GitHub/Shodan/Censys/VT, same rules
     scope: Dict[str, Any] | None = None
     safety: Dict[str, Any] | None = None
     integrations: Dict[str, Any] | None = None

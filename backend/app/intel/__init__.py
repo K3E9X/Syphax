@@ -23,7 +23,6 @@ from typing import Any, Dict, List, Optional
 import httpx
 
 from app.analysis._store import save_analysis_job
-from app.config import settings
 from app.cve_refs import normalize_cve
 from app.engagements import EngagementRepository
 from app.orchestrator.state import EngagementState
@@ -43,31 +42,39 @@ async def run_intel(engagement_id: str) -> Dict[str, int]:
     if not host:
         return {"skipped": 1}
 
+    # Keys come from the UI-saved settings (read at point of use so a token set
+    # in Settings works immediately, in this process too), with a .env fallback.
+    from app.settings_store import get_integration_key
+    shodan_key = await get_integration_key("shodan")
+    censys_id = await get_integration_key("censys_id")
+    censys_secret = await get_integration_key("censys_secret")
+    vt_key = await get_integration_key("virustotal")
+
     state = EngagementState(engagement_id)
     counts: Dict[str, int] = {}
 
     async with httpx.AsyncClient(timeout=_TIMEOUT, follow_redirects=True) as client:
-        ip = await _resolve_ip(client, host)
+        ip = await _resolve_ip(client, host, shodan_key)
 
-        if settings.shodan_api_key and ip:
+        if shodan_key and ip:
             try:
-                findings = await _shodan(client, host, ip)
+                findings = await _shodan(client, host, ip, shodan_key)
                 await _persist(state, "intel_shodan", findings, host)
                 counts["shodan"] = len(findings)
             except Exception:  # noqa: BLE001
                 logger.exception("[%s] shodan enrichment failed", engagement_id)
 
-        if settings.censys_api_id and settings.censys_api_secret and ip:
+        if censys_id and censys_secret and ip:
             try:
-                findings = await _censys(client, host, ip)
+                findings = await _censys(client, host, ip, censys_id, censys_secret)
                 await _persist(state, "intel_censys", findings, host)
                 counts["censys"] = len(findings)
             except Exception:  # noqa: BLE001
                 logger.exception("[%s] censys enrichment failed", engagement_id)
 
-        if settings.virustotal_api_key:
+        if vt_key:
             try:
-                findings = await _virustotal(client, host, ip)
+                findings = await _virustotal(client, host, ip, vt_key)
                 await _persist(state, "intel_vt", findings, host)
                 counts["virustotal"] = len(findings)
             except Exception:  # noqa: BLE001
@@ -96,12 +103,12 @@ async def _persist(state: EngagementState, tool: str, findings: List[Finding], h
 # Providers
 # --------------------------------------------------------------------------- #
 
-async def _resolve_ip(client: httpx.AsyncClient, host: str) -> Optional[str]:
+async def _resolve_ip(client: httpx.AsyncClient, host: str, shodan_key: str) -> Optional[str]:
     """Resolve host -> IP. Prefer Shodan's resolver (no local DNS needed)."""
-    if settings.shodan_api_key:
+    if shodan_key:
         try:
             r = await client.get("https://api.shodan.io/dns/resolve",
-                                  params={"hostnames": host, "key": settings.shodan_api_key})
+                                  params={"hostnames": host, "key": shodan_key})
             if r.status_code == 200:
                 ip = (r.json() or {}).get(host)
                 if ip:
@@ -115,9 +122,9 @@ async def _resolve_ip(client: httpx.AsyncClient, host: str) -> Optional[str]:
         return None
 
 
-async def _shodan(client: httpx.AsyncClient, host: str, ip: str) -> List[Finding]:
+async def _shodan(client: httpx.AsyncClient, host: str, ip: str, key: str) -> List[Finding]:
     r = await client.get(f"https://api.shodan.io/shodan/host/{ip}",
-                          params={"key": settings.shodan_api_key})
+                          params={"key": key})
     if r.status_code != 200:
         return []
     data = r.json() or {}
@@ -161,10 +168,11 @@ async def _shodan(client: httpx.AsyncClient, host: str, ip: str) -> List[Finding
     return findings
 
 
-async def _censys(client: httpx.AsyncClient, host: str, ip: str) -> List[Finding]:
+async def _censys(client: httpx.AsyncClient, host: str, ip: str,
+                  api_id: str, api_secret: str) -> List[Finding]:
     r = await client.get(
         f"https://search.censys.io/api/v2/hosts/{ip}",
-        auth=(settings.censys_api_id, settings.censys_api_secret),
+        auth=(api_id, api_secret),
     )
     if r.status_code != 200:
         return []
@@ -197,8 +205,8 @@ async def _censys(client: httpx.AsyncClient, host: str, ip: str) -> List[Finding
     return findings
 
 
-async def _virustotal(client: httpx.AsyncClient, host: str, ip: Optional[str]) -> List[Finding]:
-    headers = {"x-apikey": settings.virustotal_api_key}
+async def _virustotal(client: httpx.AsyncClient, host: str, ip: Optional[str], key: str) -> List[Finding]:
+    headers = {"x-apikey": key}
     r = await client.get(f"https://www.virustotal.com/api/v3/domains/{host}", headers=headers)
     if r.status_code != 200:
         return []

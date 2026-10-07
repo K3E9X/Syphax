@@ -41,6 +41,18 @@ _ROW_ID = "global"
 # someone forgets to make.
 PROVIDERS = _provider_ids()
 
+# Third-party integration tokens the operator can set from the UI instead of
+# the .env file. Stored encrypted alongside the LLM provider keys, under
+# "intg:<name>". Each has a .env fallback so an existing env var keeps working.
+INTEGRATION_KEYS = ("github", "shodan", "censys_id", "censys_secret", "virustotal")
+_INTEGRATION_ENV = {
+    "github": "GITHUB_TOKEN",
+    "shodan": "SHODAN_API_KEY",
+    "censys_id": "CENSYS_API_ID",
+    "censys_secret": "CENSYS_API_SECRET",
+    "virustotal": "VIRUSTOTAL_API_KEY",
+}
+
 DEFAULTS: Dict[str, Any] = {
     "model_router": {
         "planner": {"base_url": "", "model": ""},
@@ -221,6 +233,14 @@ async def get_public() -> Dict[str, Any]:
     data["provider_keys"] = {
         p: ("set" if row["secrets"].get(p) else "unset") for p in PROVIDERS
     }
+    # Set/unset also reflects a .env fallback, so a token configured the old way
+    # still shows as "set" in the UI (and the field stays write-only).
+    data["integration_keys"] = {
+        name: ("set" if (row["secrets"].get(f"intg:{name}")
+                         or os.environ.get(_INTEGRATION_ENV[name], "").strip())
+               else "unset")
+        for name in INTEGRATION_KEYS
+    }
     data["llm"] = readiness_for(data, row["secrets"]).to_public()
     # Touch the key path once so KEY_IS_EPHEMERAL is computed, then warn the UI.
     _xor_key()
@@ -286,6 +306,20 @@ async def save(patch: Dict[str, Any]) -> Dict[str, Any]:
                 secrets[p] = val.strip()
             # empty / non-string -> leave unchanged
 
+    # Integration tokens (GitHub / Shodan / Censys / VirusTotal), same rules,
+    # stored under the "intg:" namespace so they never collide with an LLM
+    # provider id.
+    ik = (patch or {}).pop("integration_keys", None)
+    if isinstance(ik, dict):
+        for name in INTEGRATION_KEYS:
+            if name not in ik:
+                continue
+            val = ik[name]
+            if val == "__unset__":
+                secrets.pop(f"intg:{name}", None)
+            elif isinstance(val, str) and val.strip():
+                secrets[f"intg:{name}"] = val.strip()
+
     data = _merge(row["data"], {k: v for k, v in (patch or {}).items()})
 
     async with db.acquire() as conn:
@@ -328,6 +362,14 @@ async def apply_to_router(data: Dict[str, Any], secrets: Dict[str, str]) -> None
     oob = (data.get("oob_server") or "").strip()
     if oob:
         os.environ["INTERACTSH_SERVER"] = oob
+    # Mirror integration tokens into the environment so readers that only look
+    # there (the GitHub repo/file fetchers in app/sandbox/staging.py) pick up a
+    # UI-saved token too. Point-of-use reads via get_integration_key stay the
+    # source of truth; this is the belt-and-suspenders for env-only callers.
+    for name in INTEGRATION_KEYS:
+        val = (secrets.get(f"intg:{name}") or "").strip()
+        if val:
+            os.environ[_INTEGRATION_ENV[name]] = val
 
 
 async def apply_saved_on_startup() -> None:
@@ -337,3 +379,22 @@ async def apply_saved_on_startup() -> None:
         await apply_to_router(row["data"], row["secrets"])
     except Exception:  # noqa: BLE001
         logger.debug("no saved settings to apply on startup")
+
+
+async def get_integration_key(name: str) -> str:
+    """Current value of an integration token, read at point of use.
+
+    Read from the DB rather than a process-cached copy so a token saved in the
+    UI takes effect immediately in the orchestrator/worker process too, without
+    a restart. Falls back to the matching .env var for backward compatibility.
+    """
+    if name not in INTEGRATION_KEYS:
+        return ""
+    try:
+        row = await _read_row()
+        val = (row["secrets"].get(f"intg:{name}") or "").strip()
+        if val:
+            return val
+    except Exception:  # noqa: BLE001 - a DB hiccup must not break enrichment
+        logger.debug("could not read integration key %s from settings", name)
+    return os.environ.get(_INTEGRATION_ENV.get(name, ""), "").strip()
