@@ -132,18 +132,21 @@ RUN set -eux; \
     commix --version >/dev/null 2>&1 || true
 
 # cloud_enum (git checkout) - public cloud storage enumeration (AWS S3 / Azure
-# / GCP) from a brand keyword. Publishes no stable PyPI package, so we pin a
-# tag and symlink the entrypoint onto PATH as 'cloud_enum'. Its deps
-# (requests, dnspython, beautifulsoup4) are small and already common.
-ARG CLOUD_ENUM_VERSION=0.8
-RUN set -eux; \
-    git clone --depth 1 --branch "${CLOUD_ENUM_VERSION}" \
-        https://github.com/initstring/cloud_enum.git /opt/cloud_enum \
-        || git clone --depth 1 https://github.com/initstring/cloud_enum.git /opt/cloud_enum; \
-    pip install --no-cache-dir -r /opt/cloud_enum/requirements.txt; \
-    ln -sf /opt/cloud_enum/cloud_enum.py /usr/local/bin/cloud_enum; \
-    chmod +x /opt/cloud_enum/cloud_enum.py; \
-    cloud_enum --help >/dev/null 2>&1 || true
+# / GCP) from a brand keyword. Publishes no stable PyPI package, so we clone
+# and symlink the entrypoint onto PATH as 'cloud_enum'. Best-effort for the
+# same reason naabu is: a clone/CDN hiccup must not fail the whole image - the
+# wrapper then reports cloud_enum unavailable and RECON-CLOUD-STORAGE is
+# skipped. Its deps (requests, dnspython, beautifulsoup4) are installed
+# directly: the repo's requirements.txt path has moved between tags, so we do
+# not depend on it existing.
+RUN set +e; \
+    ( git clone --depth 1 https://github.com/initstring/cloud_enum.git /opt/cloud_enum \
+        && pip install --no-cache-dir requests dnspython beautifulsoup4 \
+        && ln -sf /opt/cloud_enum/cloud_enum.py /usr/local/bin/cloud_enum \
+        && chmod +x /opt/cloud_enum/cloud_enum.py \
+        && cloud_enum --help >/dev/null 2>&1 ) \
+    || echo "cloud_enum: install failed - tool will be reported unavailable"; \
+    true
 
 # Pinned versions (updated manually). Matches the official release naming.
 ARG NUCLEI_VERSION=3.3.5
@@ -333,17 +336,16 @@ RUN set -eux; \
 
 # kiterunner routes wordlist (.kite). Best-effort: if the CDN is unreachable
 # the wrapper reports kiterunner unavailable and MAP-API-ROUTES is skipped.
-RUN set -eux; \
+RUN set +e; \
     mkdir -p /opt/wordlists; \
-    if curl -fsSL --max-time 90 \
+    ( curl -fsSL --max-time 90 \
         "https://wordlists-cdn.assetnote.io/data/kiterunner/routes-small.kite.tar.gz" \
-        -o /tmp/routes-small.kite.tar.gz; then \
-        tar -xzf /tmp/routes-small.kite.tar.gz -C /opt/wordlists \
-            && rm -f /tmp/routes-small.kite.tar.gz \
-            && echo "kiterunner wordlist: installed"; \
-    else \
-        echo "kiterunner wordlist: download failed - kiterunner will be skipped"; \
-    fi
+        -o /tmp/routes-small.kite.tar.gz \
+      && tar -xzf /tmp/routes-small.kite.tar.gz -C /opt/wordlists \
+      && rm -f /tmp/routes-small.kite.tar.gz \
+      && echo "kiterunner wordlist: installed" ) \
+    || echo "kiterunner wordlist: unavailable - kiterunner will be skipped"; \
+    true
 
 WORKDIR /app
 
