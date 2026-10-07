@@ -110,7 +110,14 @@ _TAG_CLASS = [
     (("ssti",), "ssti"),
     (("xxe",), "xxe"),
     (("lfi", "fileinclusion", "file-inclusion", "traversal", "path-traversal"), "lfi"),
-    (("rce", "cmdi", "command-injection", "oast-rce"), "command_injection"),
+    (("deserialization", "deserialize", "insecure-deserialization"), "deserialization"),
+    # Remote code execution (and its common sub-families): kept distinct from
+    # pure OS command injection so the report and the exploit author can tell a
+    # deserialization/EL/upload RCE from a shell-metachar cmdi.
+    (("rce", "oast-rce", "code", "code-injection", "log4j", "log4shell",
+      "spring", "spring4shell", "struts", "ognl", "el-injection",
+      "fileupload", "file-upload"), "rce"),
+    (("cmdi", "command-injection"), "command_injection"),
     (("redirect", "open-redirect", "openredirect"), "open_redirect"),
     (("crlf", "http-response-splitting"), "crlf_injection"),
     (("takeover", "subdomain-takeover"), "subdomain_takeover"),

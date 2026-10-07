@@ -384,6 +384,22 @@ CATALOG: List[CatalogItem] = [
         applies_when={"is_endpoint": True},
     ),
     CatalogItem(
+        id="EXP-RCE",
+        wstg_id="WSTG-INPV-12",
+        attack_techniques=["T1190", "T1059"],
+        vuln_class="rce",
+        phase=PHASE_EXPLOIT,
+        tool="nuclei",
+        description="RCE-focused DAST: code injection, insecure deserialization, "
+                    "template injection, expression language (Spring/OGNL/Struts), "
+                    "Log4Shell and file-upload-to-shell.",
+        severity_default="critical",
+        default_options=["-dast", "-tags",
+                         "rce,code,injection,deserialization,ssti,log4j,log4shell,"
+                         "spring,struts,ognl,el-injection,fileupload,upload"],
+        applies_when={"always": True},
+    ),
+    CatalogItem(
         id="EXP-SQLI",
         wstg_id="WSTG-INPV-05",
         attack_techniques=["T1190"],

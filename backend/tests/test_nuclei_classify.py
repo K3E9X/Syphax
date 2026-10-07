@@ -21,6 +21,15 @@ from app.scans.wrappers.nuclei import _classify
     ("default-login", "auth"),
     (["tls", "ssl"], "weak_tls"),
     ("wordpress", "cms_vulnerability"),
+    # RCE family: distinct from pure OS command injection.
+    ("rce,oast", "rce"),
+    ("log4j", "rce"),
+    (["spring", "cve"], "rce"),
+    ("struts", "rce"),
+    ("fileupload", "rce"),
+    ("deserialization", "deserialization"),
+    ("cmdi", "command_injection"),
+    ("command-injection", "command_injection"),
 ])
 def test_classify_tags(tags, expected):
     assert _classify(tags, "") == expected

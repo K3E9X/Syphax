@@ -40,6 +40,21 @@ MAPPING: Dict[str, Dict[str, Any]] = {
         "remediation": "Avoid shelling out with user input; use safe APIs and "
                        "strict allow-list validation. Drop privileges.",
     },
+    "rce": {
+        "category": "injection",
+        "wstg": "WSTG-INPV-12", "attack": ["T1190", "T1059"], "cwe": "CWE-94",
+        "remediation": "Eliminate the code/command sink: never pass untrusted input "
+                       "to eval/exec, deserializers, template engines or OS calls; "
+                       "use safe APIs, strict allow-lists, and patch the affected "
+                       "component. Sandbox and drop privileges on any required native call.",
+    },
+    "deserialization": {
+        "category": "injection",
+        "wstg": "WSTG-INPV-11", "attack": ["T1190"], "cwe": "CWE-502",
+        "remediation": "Do not deserialize untrusted data; use data-only formats "
+                       "(JSON) with schema validation, signed/encrypted payloads, and "
+                       "allow-list of permitted types.",
+    },
     "nosql_injection": {
         "category": "injection",
         "wstg": "WSTG-INPV-05", "attack": ["T1190"], "cwe": "CWE-943",
