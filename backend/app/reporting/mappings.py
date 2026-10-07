@@ -148,6 +148,20 @@ MAPPING: Dict[str, Dict[str, Any]] = {
         "remediation": "Remove publicly accessible source/config (.git, .env, "
                        "backups); block them at the web server.",
     },
+    "excessive_data_exposure": {
+        "category": "config",
+        "wstg": "WSTG-APIT-01", "attack": ["T1530"], "cwe": "CWE-213",
+        "remediation": "Return only the fields the caller needs: serialise through "
+                       "an explicit allow-list per endpoint and per role, never the "
+                       "whole ORM object. Filter server-side, not in the UI.",
+    },
+    "pii_exposure": {
+        "category": "config",
+        "wstg": "WSTG-APIT-01", "attack": ["T1530"], "cwe": "CWE-359",
+        "remediation": "Minimise and mask personal data in responses; return it "
+                       "only to a caller entitled to it, and log/retain it under "
+                       "the applicable data-protection rules (GDPR).",
+    },
     "cleartext_credentials": {
         "category": "auth_secrets",
         "wstg": "WSTG-ATHN-01", "attack": ["T1040"], "cwe": "CWE-319",
