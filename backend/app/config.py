@@ -48,6 +48,15 @@ class Settings(BaseSettings):
     # gated behind allow_active_exploit exactly like every other active step.
     exploit_refine_iterations: int = 0
 
+    # Auto-run vetted public PoCs. When on (the default), a public GitHub/
+    # Exploit-DB PoC that passes static vetting is executed automatically in the
+    # isolated sandbox during the exploitation phase - no manual click - still
+    # gated by allow_active_exploit, the engagement scope and a fresh vet at run
+    # time. Set AUTO_RUN_PUBLIC_POC=false for a fleet-wide kill switch that
+    # forces the old stage-and-approve flow (the sandbox page still lets an
+    # operator run a staged PoC by hand).
+    auto_run_public_poc: bool = True
+
     # Threat-intel enrichment (read-only, third-party APIs). Each is optional:
     # empty = that provider is skipped. They query public databases ABOUT the
     # target (Internet-wide scan data, passive DNS, reputation) and never touch

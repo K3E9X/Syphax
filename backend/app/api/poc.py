@@ -161,56 +161,18 @@ async def run(poc_id: str, req: RunRequest) -> Dict[str, Any]:
             detail=f"PoC is '{poc.status}': a human must approve it before it runs")
 
     eng = await _authorized_engagement(poc.engagement_id)
-    if not eng.allow_active_exploit:
-        raise HTTPException(status_code=409,
-                            detail="allow_active_exploit is off for this engagement")
-    if not eng.scope_hosts:
-        raise HTTPException(status_code=409, detail="engagement has no scope")
 
-    # Re-vetted here against the engagement AS IT STANDS NOW, not as it stood
-    # at approval. The approval said "I have read this code"; the engagement
-    # says what the client authorized, and both the code and the grant can
-    # change between the two.
-    #
-    # Nothing here is this module's opinion. Destructive, persistent,
-    # availability-affecting and credential-spraying actions all run if the
-    # engagement declares them - see app/exploit/capabilities.py. What is
-    # refused is a capability the operator did not declare, and the refusal
-    # names the capability so they can declare it deliberately.
-    #
-    # Scope is the exception and is not grantable: it is the authorization
-    # itself. The sandbox's egress rules stop an out-of-scope call anyway.
-    granted = capabilities.granted(eng)
-    verdict = vetting.vet(poc.code, scope_hosts=eng.scope_hosts,
-                          allowed_capabilities=granted)
-    if not verdict.allowed:
-        offending = "; ".join(
-            f"line {s.line_no}: {s.detail}" if s.line_no else s.detail
-            for s in verdict.blocking[:5])
-        await audit("poc.refused", engagement_id=eng.id, poc_id=poc_id,
-                    repo=poc.repo, path=poc.path,
-                    requires=verdict.requires, granted=sorted(granted),
-                    missing=verdict.missing)
-        raise HTTPException(status_code=409, detail=f"{verdict.summary} {offending}")
-
+    # The run gate (allow_active_exploit, scope, a fresh vet against the
+    # engagement as it stands now, the sandbox run and the audit) lives in one
+    # shared helper so the operator's manual run and the automatic run of a
+    # vetted public PoC are governed identically - the auto path can never be
+    # laxer than this one. Scope is not grantable; a declared capability is.
+    from app.exploit.poc_run import PoCRunRefused, execute_poc
     try:
-        result = await runner_client.run_poc(
-            poc.code, language=poc.language,
-            scope_hosts=eng.scope_hosts, timeout=req.timeout)
-    except runner_client.SandboxUnavailable as exc:
-        raise HTTPException(status_code=503, detail=str(exc)) from exc
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-
-    await _repo.set_status(poc_id, STATUS_EXECUTED, decided_by=poc.decided_by)
-    await audit("poc.executed", engagement_id=eng.id, poc_id=poc_id,
-                repo=poc.repo, path=poc.path, exit_code=result.exit_code,
-                scope=eng.scope_hosts,
-                # Which capabilities were in force when it ran. Six months
-                # later this is the line that answers "were we allowed to?".
-                capabilities_in_force=sorted(granted),
-                capabilities_used=verdict.requires)
-    return {"id": poc_id, "status": STATUS_EXECUTED, "result": result.to_dict()}
+        return await execute_poc(eng, poc, timeout=req.timeout,
+                                 decided_by=poc.decided_by or "operator")
+    except PoCRunRefused as exc:
+        raise HTTPException(status_code=exc.status, detail=str(exc)) from exc
 
 
 @router.get("/runner/health")
