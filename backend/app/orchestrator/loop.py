@@ -98,6 +98,14 @@ async def run_engagement_loop(run_id: str) -> dict:
     # Seed the surface: the verified host + the base URL.
     await state.add_asset("host", engagement.target_host, source="engagement")
     await state.add_asset("endpoint", engagement.target_url, source="engagement")
+    # Resolve the target to its IP(s) (dig) and bring them into scope + the
+    # surface. The IP a hostname points at is the same server, so its services
+    # (other ports/vhosts) are in scope too - otherwise every IP-keyed asset was
+    # skipped as "out of scope" and the run never looked at the host by address.
+    try:
+        await _seed_resolved_ips(state, engagement)
+    except Exception:  # noqa: BLE001 - resolution is best-effort, never fatal
+        logger.exception("[%s] could not resolve target IPs", run.id)
     # Seed from real captured traffic (proxy): the actual parameterized
     # endpoints the operator exercised - far richer than crawling alone.
     seeded = await _seed_from_proxy(state, engagement)
@@ -633,6 +641,58 @@ async def _finalize_engagement(engagement, run: Run, runs: RunRepository,
                               run_id=run.id, count=len(chains))
     except Exception:  # noqa: BLE001 - validation must not fail the run
         logger.exception("[%s] validation phase error", run.id)
+
+
+async def _seed_resolved_ips(state: "EngagementState", engagement) -> None:
+    """Resolve the target host to its IP(s); add them to scope and the surface.
+
+    The IP a hostname points at is the same server. Without this, the ports and
+    service findings keyed to that IP (nmap reports the address, not the name)
+    were all rejected as out-of-scope and the host was never tested by address.
+    Scope is widened only to the target's own resolved addresses - nothing else.
+    """
+    import socket
+
+    host = (engagement.target_host or "").strip().lower()
+    if not host or _looks_like_ip(host):
+        return
+    try:
+        infos = await asyncio.to_thread(socket.getaddrinfo, host, None)
+    except Exception:  # noqa: BLE001 - DNS failure must not stop the run
+        return
+    ips = sorted({i[4][0] for i in infos if i and i[4]})
+    if not ips:
+        return
+
+    new_scope = list(engagement.scope_hosts)
+    added = []
+    for ip in ips:
+        await state.add_asset("host", ip, source="dns")
+        if ip not in new_scope:
+            new_scope.append(ip)
+            added.append(ip)
+
+    if added:
+        engagement.scope_hosts = new_scope
+        try:
+            await EngagementRepository().update(engagement)
+            await audit("engagement.scope_resolved_ip", engagement_id=engagement.id,
+                        host=host, added=added)
+            await events.emit(
+                engagement.id, events.ASSET_FOUND,
+                f"Resolved {host} -> {', '.join(added)} (added to scope)",
+                level=events.LEVEL_INFO)
+        except Exception:  # noqa: BLE001
+            logger.exception("could not persist resolved IPs into scope")
+
+
+def _looks_like_ip(host: str) -> bool:
+    import ipaddress
+    try:
+        ipaddress.ip_address(host)
+        return True
+    except ValueError:
+        return False
 
 
 async def _seed_from_proxy(state: "EngagementState", engagement) -> int:

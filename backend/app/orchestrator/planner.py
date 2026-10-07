@@ -116,6 +116,13 @@ class Planner:
         tasks: List[Task] = []
         for item in CATALOG:
             for asset in assets:
+                # "port" assets are surface data for the UI (host:port + service),
+                # not scannable targets: their value is "80/tcp . host . svc", and
+                # feeding that to a tool parses the host as the port number and the
+                # whole task is blocked out of scope. The host they belong to is
+                # already an asset in its own right.
+                if asset.kind == "port":
+                    continue
                 ctx = asset.context(tech)
                 # Match the asset kind to the item's expectation.
                 wants_host = bool(item.applies_when.get("is_host"))
