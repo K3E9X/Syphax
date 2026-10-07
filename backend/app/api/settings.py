@@ -25,6 +25,8 @@ class SettingsPatch(BaseModel):
     safety: Dict[str, Any] | None = None
     integrations: Dict[str, Any] | None = None
     oob_server: str | None = None
+    # {"auto_run_poc": bool, "refine_iterations": int}
+    exploit: Dict[str, Any] | None = None
     budget: Dict[str, Any] | None = None
 
 

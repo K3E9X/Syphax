@@ -39,6 +39,8 @@ export default function Settings() {
   const setBudget = (k, v) => setS((x) => ({ ...x, budget: { ...(x.budget || {}), [k]: v } }));
   const setSafety = (k, v) => setS((x) => ({ ...x, safety: { ...(x.safety || {}), [k]: v } }));
   const setScope = (k, v) => setS((x) => ({ ...x, scope: { ...(x.scope || {}), [k]: v } }));
+  const exploit = s.exploit || {};
+  const setExploit = (k, v) => setS((x) => ({ ...x, exploit: { ...(x.exploit || {}), [k]: v } }));
 
   // The model router and the provider keys are saved by <ModelRouter/>, which
   // owns them on both screens. This button saves everything else.
@@ -57,6 +59,7 @@ export default function Settings() {
       const patch = {
         safety: s.safety, scope: s.scope,
         oob_server: s.oob_server || '', budget: s.budget,
+        exploit: s.exploit,
       };
       const ik = integrationPatch();
       if (Object.keys(ik).length) patch.integration_keys = ik;
@@ -162,6 +165,47 @@ export default function Settings() {
               <div className="field"><label className="field__label" htmlFor="set-conc">Concurrency</label><input id="set-conc" className="input" type="number" value={scope.concurrency ?? 4} onChange={(e) => setScope('concurrency', Number(e.target.value))} /></div>
             </div>
             <div className="field"><label className="field__label" htmlFor="set-oob">OOB / interactsh server <span style={{ textTransform: 'none', color: 'var(--text-faint)', fontWeight: 400 }}>blank = public servers</span></label><input id="set-oob" className="input" placeholder="https://oob.yourdomain.com" value={s.oob_server || ''} onChange={(e) => setS((x) => ({ ...x, oob_server: e.target.value }))} /></div>
+          </div>
+        </div>
+
+        <div className="card set-full">
+          <div className="card__head">
+            <span className="card__title">Exploitation</span>
+            <span className="card__meta">how a finding gets proven</span>
+          </div>
+          <div className="card__body">
+            <p className="intro">
+              A finding only reaches &ldquo;confirmed&rdquo; when something runs against
+              the target and returns cleanly. These control how far the tool goes
+              on its own. Every run is still scope-enforced and happens inside the
+              isolated sandbox.
+            </p>
+            <div className="checks">
+              <Check checked={exploit.auto_run_poc !== false}
+                     onChange={(v) => setExploit('auto_run_poc', v)}>
+                <b>Run vetted proofs automatically.</b> A PoC that passes both
+                readings (safe for the target, no malware aimed at you) runs in the
+                sandbox without waiting for a click. Anything suspicious still waits
+                for you.
+              </Check>
+            </div>
+            <div className="field" style={{ marginTop: 12 }}>
+              <label className="field__label" htmlFor="set-refine">
+                Exploit rehearsal rounds{' '}
+                <span style={{ textTransform: 'none', color: 'var(--text-faint)', fontWeight: 400 }}>
+                  0 = the model writes it blind and never sees it run
+                </span>
+              </label>
+              <input id="set-refine" className="input" type="number" min={0} max={10}
+                     value={exploit.refine_iterations ?? 2}
+                     onChange={(e) => setExploit('refine_iterations', Number(e.target.value))} />
+              <p className="poc-note" style={{ marginTop: 6 }}>
+                Published exploits are often only a checker: they print
+                &ldquo;vulnerable&rdquo; and exit, which proves nothing. When that
+                happens the model writes an exploit for this exact finding, watches
+                it run in the sandbox and fixes it, up to this many rounds.
+              </p>
+            </div>
           </div>
         </div>
 

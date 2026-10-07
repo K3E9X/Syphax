@@ -64,6 +64,11 @@ DEFAULTS: Dict[str, Any] = {
                "auto_validate": True, "oob_enabled": True},
     "integrations": {"slack": "", "discord": "", "jira": "", "webhook": ""},
     "oob_server": "",
+    # Exploitation behaviour, tuned from the UI instead of the .env file.
+    #   auto_run_poc      - run a vetted PoC in the sandbox with no manual click
+    #   refine_iterations - rounds the model gets to watch its exploit run and
+    #                       fix it before a human reads it (0 = write it blind)
+    "exploit": {"auto_run_poc": True, "refine_iterations": 2},
     # LLM spend guardrail. 0 disables the alert. Only meaningful once
     # LLM_PRICING is set, otherwise every model is billed at 0 and the
     # threshold can never be reached.

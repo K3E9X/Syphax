@@ -59,20 +59,39 @@ def test_auto_run_policy_requires_both_readings_clean():
 
 # ---- every origin is actually run, not just the published ones -------------
 
-def test_authored_and_public_pocs_both_auto_run():
+def test_both_routes_run_their_poc():
     """A PoC the model wrote used to be staged and never fired, which left the
     whole LLM exploitation path decorative: it proved nothing."""
     import inspect as _inspect
 
     from app.exploit import campaign
 
+    for fn in (campaign._try_public, campaign._try_authored):
+        assert "_auto_run_staged" in _inspect.getsource(fn), fn.__name__
+
+
+def test_a_public_poc_that_proves_nothing_escalates_to_the_model():
+    """Published exploits are often only a checker - they print VULNERABLE and
+    exit. That is not proof, so the model must then write a real one."""
+    import inspect as _inspect
+
+    from app.exploit import campaign
+
     src = _inspect.getsource(campaign.run_campaign)
-    public_at = src.index("ROUTE_PUBLIC_POC")
-    authored_at = src.index("ROUTE_AUTHORED")
-    # Both branches reach the auto-run helper.
-    assert src.count("_auto_run_staged") >= 2
-    assert "_auto_run_staged" in src[public_at:authored_at]
-    assert "_auto_run_staged" in src[authored_at:]
+    assert "_demonstrated(outcome)" in src
+    assert "_try_authored" in src[src.index("ROUTE_PUBLIC_POC"):]
+
+
+@pytest.mark.parametrize("outcome,proved", [
+    ({"auto_run": {"ran": True, "exit_code": 0}}, True),
+    ({"auto_run": {"ran": True, "exit_code": 2}}, False),   # usage error / checker
+    ({"auto_run": {"ran": False, "reason": "vetting refused it"}}, False),
+    ({"poc_id": "p1"}, False),                              # staged only
+    ({}, False),
+])
+def test_only_a_clean_sandbox_run_counts_as_demonstrated(outcome, proved):
+    from app.exploit.campaign import _demonstrated
+    assert _demonstrated(outcome) is proved
 
 
 def test_auto_run_reads_the_gate_from_the_poc_itself():
@@ -88,7 +107,41 @@ def test_auto_run_reads_the_gate_from_the_poc_itself():
     assert "execute_poc" in src
 
 
-def test_rehearsal_is_enabled_by_default():
-    """0 meant the model never watched its own exploit run."""
-    from app.config import settings
-    assert settings.exploit_refine_iterations >= 1
+@pytest.mark.asyncio
+async def test_rehearsal_is_on_by_default():
+    """0 meant the model never watched its own exploit run. The value now comes
+    from the saved settings (no DB here -> the env default answers)."""
+    from app.exploit.settings_live import refine_iterations
+    assert await refine_iterations() >= 1
+
+
+@pytest.mark.asyncio
+async def test_auto_run_defaults_on():
+    from app.exploit.settings_live import auto_run_poc
+    assert await auto_run_poc() is True
+
+
+# ---- the operator can see what happened ------------------------------------
+
+def test_every_attempt_is_reported_to_the_live_view():
+    """run_campaign returned the attempt detail and the caller dropped it, so
+    the operator saw a one-line plan summary and never learned which route was
+    tried or what the sandbox returned."""
+    import inspect as _inspect
+
+    from app.exploit import campaign
+
+    assert "_report_attempts" in _inspect.getsource(campaign.run_campaign)
+    report = _inspect.getsource(campaign._report_attempts)
+    for phrase in ("PROVEN", "proves nothing", "staged for review",
+                   "model wrote one", "rehearsed"):
+        assert phrase in report, phrase
+
+
+def test_summary_counts_what_happened_not_just_what_was_planned():
+    import inspect as _inspect
+
+    from app.exploit import campaign
+
+    src = _inspect.getsource(campaign.run_campaign)
+    assert '"proven"' in src and '"escalated_to_model"' in src
