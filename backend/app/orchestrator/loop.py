@@ -654,15 +654,18 @@ async def _seed_resolved_ips(state: "EngagementState", engagement) -> None:
     import socket
 
     host = (engagement.target_host or "").strip().lower()
-    if not host or _looks_like_ip(host):
+    if not host:
         return
-    try:
-        infos = await asyncio.to_thread(socket.getaddrinfo, host, None)
-    except Exception:  # noqa: BLE001 - DNS failure must not stop the run
-        return
-    ips = sorted({i[4][0] for i in infos if i and i[4]})
-    if not ips:
-        return
+
+    # DNS resolution (skipped when the target is already an IP). A DNS failure
+    # is not fatal: we can still widen scope to the registrable domain below.
+    ips: list = []
+    if not _looks_like_ip(host):
+        try:
+            infos = await asyncio.to_thread(socket.getaddrinfo, host, None)
+            ips = sorted({i[4][0] for i in infos if i and i[4]})
+        except Exception:  # noqa: BLE001
+            ips = []
 
     new_scope = list(engagement.scope_hosts)
     added = []
@@ -683,7 +686,7 @@ async def _seed_resolved_ips(state: "EngagementState", engagement) -> None:
                 f"Resolved {host} -> {', '.join(added)} (added to scope)",
                 level=events.LEVEL_INFO)
         except Exception:  # noqa: BLE001
-            logger.exception("could not persist resolved IPs into scope")
+            logger.exception("could not persist resolved scope")
 
 
 def _looks_like_ip(host: str) -> bool:

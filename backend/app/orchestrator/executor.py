@@ -13,6 +13,7 @@ identical.
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import List, Optional
 import re
@@ -55,6 +56,54 @@ class Executor:
             from app.engagements.storage import EngagementRepository
             self._eng = await EngagementRepository().get(self.state.engagement_id)
         return self._eng
+
+    async def _admit_subdomain(self, host: str, eng) -> bool:
+        """Should a subfinder-discovered subdomain enter scope?
+
+        Yes if it is already in the declared scope, OR - the generic
+        same-server rule - it is under the target's registrable domain AND
+        resolves to one of the target's IPs (or the same /24/64 netblock). That
+        keeps auto-expansion on the same server: it can never reach a different
+        organisation (different registrable domain) or unrelated infrastructure
+        (different netblock). A newly admitted host is persisted into the scope
+        so the runner's own gate accepts it too.
+        """
+        if eng.host_in_scope(host):
+            return True
+        import socket
+
+        from app.engagements.scope_util import (is_ip, same_registrable_domain,
+                                                 same_server)
+        if not same_registrable_domain(host, eng.target_host):
+            return False
+
+        target_ips = [h for h in eng.scope_hosts if is_ip(h)]
+        if not target_ips:
+            try:
+                infos = await asyncio.to_thread(socket.getaddrinfo, eng.target_host, None)
+                target_ips = sorted({i[4][0] for i in infos if i and i[4]})
+            except Exception:  # noqa: BLE001
+                return False
+        try:
+            infos = await asyncio.to_thread(socket.getaddrinfo, host, None)
+            host_ips = sorted({i[4][0] for i in infos if i and i[4]})
+        except Exception:  # noqa: BLE001
+            return False
+        if not host_ips or not same_server(host_ips, target_ips):
+            return False
+
+        # Same server: admit it and persist into scope for the runner gate.
+        try:
+            from app.engagements.storage import EngagementRepository
+            if host not in eng.scope_hosts:
+                eng.scope_hosts = list(eng.scope_hosts) + [host]
+                await EngagementRepository().update(eng)
+                from app.audit import audit
+                await audit("engagement.scope_same_server", engagement_id=eng.id,
+                            host=host, ips=host_ips)
+        except Exception:  # noqa: BLE001 - admission must not crash ingest
+            logger.exception("could not persist same-server subdomain %s", host)
+        return True
 
     async def launch(self, task: Task) -> Optional[Job]:
         """Submit a task as a job and mark coverage 'running'. Returns the job
@@ -205,7 +254,10 @@ class Executor:
             # otherwise generate candidate tasks every iteration that the runner
             # scope-gate then rejects - wasted planning cycles and coverage rows.
             eng = await self._engagement()
-            if host and (eng is None or eng.host_in_scope(host)):
+            if host and eng is None:
+                await self.state.add_asset("host", host, source="subfinder")
+                new_asset = ("host", host)
+            elif host and eng is not None and await self._admit_subdomain(host, eng):
                 await self.state.add_asset("host", host, source="subfinder")
                 new_asset = ("host", host)
         elif tool in ("naabu", "nmap") and meta.get("port") and not meta.get("nse_script"):
