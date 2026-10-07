@@ -227,10 +227,15 @@ services:
       # fails visibly. Set per engagement before running a PoC.
       - SANDBOX_ALLOWED_HOSTS=${SANDBOX_ALLOWED_HOSTS:-}
       - SANDBOX_MAX_TIMEOUT=${SANDBOX_MAX_TIMEOUT:-120}
-    # NET_ADMIN is needed to pin the egress rules at boot; entrypoint.sh drops
-    # to an unprivileged user immediately afterwards, so the PoC never holds it.
+    # NET_ADMIN pins the egress rules at boot; SETUID/SETGID let the root
+    # entrypoint `gosu poc` drop to an unprivileged user (without them gosu
+    # fails with "operation not permitted" and the runner crash-loops). All
+    # three are held only by the entrypoint; after gosu the PoC runs as `poc`
+    # with no capabilities, which no-new-privileges then makes irrevocable.
     cap_add:
       - NET_ADMIN
+      - SETUID
+      - SETGID
     cap_drop:
       - ALL
     security_opt:

@@ -155,12 +155,13 @@ def test_the_runner_writes_only_to_memory(everything):
 
 
 def test_the_runner_drops_every_capability_but_the_one_it_needs(everything):
-    """NET_ADMIN is held only long enough for entrypoint.sh to pin the egress
-    rules; it drops to an unprivileged user immediately after."""
+    """NET_ADMIN pins the egress rules; SETUID/SETGID let the root entrypoint
+    gosu down to the unprivileged user (gosu fails without them). The PoC runs
+    as that user with no capabilities."""
     runner = of_kind(everything, "Deployment", "sandbox-runner")[0]
     caps = containers(runner)["runner"]["securityContext"]["capabilities"]
     assert caps["drop"] == ["ALL"]
-    assert caps["add"] == ["NET_ADMIN"]
+    assert caps["add"] == ["NET_ADMIN", "SETUID", "SETGID"]
 
 
 def test_the_runner_cannot_resolve_a_service_name(everything):

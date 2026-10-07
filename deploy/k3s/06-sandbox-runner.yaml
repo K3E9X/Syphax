@@ -81,7 +81,7 @@ spec:
             # itself never holds it.
             capabilities:
               drop: ["ALL"]
-              add: ["NET_ADMIN"]
+              add: ["NET_ADMIN", "SETUID", "SETGID"]
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
           volumeMounts:

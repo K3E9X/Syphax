@@ -80,10 +80,11 @@ def test_runner_mounts_nothing_from_the_host(runner):
 # ---- Privilege ----
 
 def test_runner_drops_all_capabilities_but_the_one_it_needs(runner):
-    """NET_ADMIN is held only long enough to pin egress; entrypoint.sh then
-    drops to an unprivileged user, so the PoC never holds it."""
+    """NET_ADMIN pins egress; SETUID/SETGID let the root entrypoint gosu down to
+    the unprivileged `poc` user (gosu fails without them). All three are held
+    only by entrypoint.sh; the PoC itself runs as `poc` with no capabilities."""
     assert runner.get("cap_drop") == ["ALL"]
-    assert runner.get("cap_add") == ["NET_ADMIN"]
+    assert runner.get("cap_add") == ["NET_ADMIN", "SETUID", "SETGID"]
 
 
 def test_runner_cannot_gain_privileges(runner):
