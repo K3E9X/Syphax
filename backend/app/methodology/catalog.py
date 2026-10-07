@@ -188,6 +188,17 @@ CATALOG: List[CatalogItem] = [
         applies_when={"always": True},
     ),
     CatalogItem(
+        id="MAP-API-ROUTES",
+        wstg_id="WSTG-APIT-01",
+        attack_techniques=["T1595"],
+        vuln_class="api_route",
+        phase=PHASE_MAPPING,
+        tool="kiterunner",
+        description="Discover undocumented/hidden API routes by replaying real "
+                    "API request templates - the surface for auth/BOLA/injection.",
+        applies_when={"is_base": True},
+    ),
+    CatalogItem(
         id="MAP-HIDDEN-PARAMS",
         wstg_id="WSTG-INFO-07",
         attack_techniques=["T1595"],
@@ -383,6 +394,18 @@ CATALOG: List[CatalogItem] = [
                     "(forms, threaded; batch/level/risk/random-agent from the wrapper).",
         severity_default="high",
         default_options=["--forms", "--threads=4"],
+        applies_when={"is_endpoint": True},
+    ),
+    CatalogItem(
+        id="EXP-NOSQLI",
+        wstg_id="WSTG-INPV-05",
+        attack_techniques=["T1190"],
+        vuln_class="nosql_injection",
+        phase=PHASE_EXPLOIT,
+        tool="nosqli",
+        description="Test parameters for NoSQL (MongoDB operator) injection and "
+                    "authentication bypass - the class sqlmap does not cover.",
+        severity_default="high",
         applies_when={"is_endpoint": True},
     ),
     CatalogItem(

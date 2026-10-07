@@ -27,6 +27,8 @@ TOOL_VULN_CLASS: Dict[str, str] = {
     "retirejs": "vulnerable_component",
     "schemathesis": "api_contract_violation",
     "gitdumper": "source_code_disclosure",
+    "nosqli": "nosql_injection",
+    "cloud_enum": "exposed_bucket",
     # --- tools that describe the surface ---
     "httpx": "fingerprint",
     "whatweb": "fingerprint",
@@ -39,10 +41,11 @@ TOOL_VULN_CLASS: Dict[str, str] = {
     "katana": "recon",
     "arjun": "recon",
     "jsluice": "recon",
+    "kiterunner": "api_route",
     "ffuf": "content_discovery",
 }
 
-SURFACE_CLASSES = {"recon", "fingerprint", "content_discovery", "unknown"}
+SURFACE_CLASSES = {"recon", "fingerprint", "content_discovery", "api_route", "unknown"}
 
 # Classes whose findings are claims about a path existing / being readable.
 # These are the ones a catch-all (soft-404) server manufactures by the hundred,

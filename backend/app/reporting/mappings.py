@@ -40,6 +40,13 @@ MAPPING: Dict[str, Dict[str, Any]] = {
         "remediation": "Avoid shelling out with user input; use safe APIs and "
                        "strict allow-list validation. Drop privileges.",
     },
+    "nosql_injection": {
+        "category": "injection",
+        "wstg": "WSTG-INPV-05", "attack": ["T1190"], "cwe": "CWE-943",
+        "remediation": "Validate and type-cast query inputs; reject object/operator "
+                       "syntax ($ne/$gt/$where/$regex) from client input; use the "
+                       "driver's parameterised query builders, never raw dict merges.",
+    },
     "xss": {
         "category": "injection",
         "wstg": "WSTG-INPV-01", "attack": ["T1059.007"], "cwe": "CWE-79",
@@ -125,6 +132,12 @@ MAPPING: Dict[str, Dict[str, Any]] = {
         "wstg": "WSTG-CONF-04", "attack": ["T1592"], "cwe": "CWE-538",
         "remediation": "Remove publicly accessible source/config (.git, .env, "
                        "backups); block them at the web server.",
+    },
+    "api_route": {
+        "category": "enumeration",
+        "wstg": "WSTG-APIT-01", "attack": ["T1595"], "cwe": "CWE-200",
+        "remediation": "Inventory and authenticate every API route; remove or "
+                       "protect undocumented/legacy endpoints; deny by default.",
     },
     "exposed_bucket": {
         "category": "config",

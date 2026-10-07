@@ -39,6 +39,19 @@ RUN mkdir -p /out \
     && (go install "github.com/BishopFox/jsluice/cmd/jsluice@${JSLUICE_VERSION}" \
         && install -m 0755 /go/bin/jsluice /out/jsluice) || true
 
+# nosqli (Go): NoSQL operator injection scanner. Best-effort - if the module
+# cannot be resolved the wrapper reports it unavailable and the orchestrator
+# skips EXP-NOSQLI (every other injection test still runs).
+ARG NOSQLI_VERSION=latest
+RUN (CGO_ENABLED=0 go install "github.com/Charlie-belmer/nosqli@${NOSQLI_VERSION}" \
+        && install -m 0755 /go/bin/nosqli /out/nosqli) || true
+
+# kiterunner (Go, binary 'kr'): API route discovery. Best-effort for the same
+# reason; EXP/MAP-API-ROUTES is skipped if the build or wordlist is absent.
+ARG KITERUNNER_VERSION=v1.0.2
+RUN (CGO_ENABLED=0 go install "github.com/assetnote/kiterunner/cmd/kiterunner@${KITERUNNER_VERSION}" \
+        && install -m 0755 /go/bin/kiterunner /out/kr) || true
+
 
 # Pinned to bookworm (Debian 12): the default `slim` tag now tracks trixie
 # (Debian 13), which dropped `nikto` and `whatweb` from its apt repos.
@@ -317,6 +330,20 @@ RUN set -eux; \
             > /opt/wordlists/common.txt; \
     fi; \
     wc -l /opt/wordlists/common.txt
+
+# kiterunner routes wordlist (.kite). Best-effort: if the CDN is unreachable
+# the wrapper reports kiterunner unavailable and MAP-API-ROUTES is skipped.
+RUN set -eux; \
+    mkdir -p /opt/wordlists; \
+    if curl -fsSL --max-time 90 \
+        "https://wordlists-cdn.assetnote.io/data/kiterunner/routes-small.kite.tar.gz" \
+        -o /tmp/routes-small.kite.tar.gz; then \
+        tar -xzf /tmp/routes-small.kite.tar.gz -C /opt/wordlists \
+            && rm -f /tmp/routes-small.kite.tar.gz \
+            && echo "kiterunner wordlist: installed"; \
+    else \
+        echo "kiterunner wordlist: download failed - kiterunner will be skipped"; \
+    fi
 
 WORKDIR /app
 

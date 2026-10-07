@@ -15,7 +15,9 @@ from app.scans.wrappers.gitdumper import GitDumperWrapper
 from app.scans.wrappers.httpx import HttpxWrapper
 from app.scans.wrappers.jsluice import JsluiceWrapper
 from app.scans.wrappers.katana import KatanaWrapper
+from app.scans.wrappers.kiterunner import KiterunnerWrapper
 from app.scans.wrappers.naabu import NaabuWrapper
+from app.scans.wrappers.nosqli import NoSqliWrapper
 from app.scans.wrappers.nikto import NiktoWrapper
 from app.scans.wrappers.nmap import NmapWrapper
 from app.scans.wrappers.nuclei import NucleiWrapper
@@ -61,6 +63,11 @@ _WRAPPERS: Dict[str, BaseWrapper] = {
     # Public cloud storage (S3/Azure/GCP) enumerated from the brand keyword -
     # buckets never linked from the target but owned by the same org.
     "cloud_enum": CloudEnumWrapper(),
+    # NoSQL operator injection (MongoDB-style), which sqlmap does not cover.
+    "nosqli": NoSqliWrapper(),
+    # API route discovery: the hidden/undocumented endpoints that feed auth,
+    # BOLA and injection testing.
+    "kiterunner": KiterunnerWrapper(),
 }
 
 
