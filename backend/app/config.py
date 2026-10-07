@@ -46,7 +46,11 @@ class Settings(BaseSettings):
     # still writes a PoC, it just does not get to rehearse it. See
     # app/exploit/refine.py. The rehearsal reaches the live target, so it is
     # gated behind allow_active_exploit exactly like every other active step.
-    exploit_refine_iterations: int = 0
+    # 0 disabled this entirely, so the model wrote every exploit blind and a
+    # human read a v1 that may never have run. Rehearsing is what makes the
+    # authored-exploit path actually work. Still triple-gated: it only happens
+    # when the engagement allows active exploitation AND the sandbox is up.
+    exploit_refine_iterations: int = 2
 
     # Auto-run vetted public PoCs. When on (the default), a public GitHub/
     # Exploit-DB PoC that passes static vetting is executed automatically in the

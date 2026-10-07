@@ -55,3 +55,40 @@ def test_auto_run_policy_requires_both_readings_clean():
     assert not should_run({"allowed": True, "inspection_verdict": "suspicious"})
     assert not should_run({"allowed": True, "inspection_verdict": "hostile"})
     assert not should_run(None)
+
+
+# ---- every origin is actually run, not just the published ones -------------
+
+def test_authored_and_public_pocs_both_auto_run():
+    """A PoC the model wrote used to be staged and never fired, which left the
+    whole LLM exploitation path decorative: it proved nothing."""
+    import inspect as _inspect
+
+    from app.exploit import campaign
+
+    src = _inspect.getsource(campaign.run_campaign)
+    public_at = src.index("ROUTE_PUBLIC_POC")
+    authored_at = src.index("ROUTE_AUTHORED")
+    # Both branches reach the auto-run helper.
+    assert src.count("_auto_run_staged") >= 2
+    assert "_auto_run_staged" in src[public_at:authored_at]
+    assert "_auto_run_staged" in src[authored_at:]
+
+
+def test_auto_run_reads_the_gate_from_the_poc_itself():
+    """The policy must not be passed in by the caller: every origin gets the
+    same two clean readings (target vet + operator-safety inspection)."""
+    import inspect as _inspect
+
+    from app.exploit import campaign
+
+    src = _inspect.getsource(campaign._auto_run_staged)
+    assert "vetting" in src and "allowed" in src
+    assert '"review"' in src
+    assert "execute_poc" in src
+
+
+def test_rehearsal_is_enabled_by_default():
+    """0 meant the model never watched its own exploit run."""
+    from app.config import settings
+    assert settings.exploit_refine_iterations >= 1
