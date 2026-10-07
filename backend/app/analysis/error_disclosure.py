@@ -42,8 +42,11 @@ _SIGNATURES: List[Tuple[str, str, str, re.Pattern]] = [
     ("stack_trace", "medium", "Java stack trace",
      re.compile(r"(Exception in thread \"|\bat (?:com|org|java)\.[\w.$]+\([\w$]+\.java:\d+\))")),
     ("stack_trace", "medium", ".NET stack trace",
-     re.compile(r"(Server Error in '.*' Application|System\.[\w.]+Exception|"
-                r"at System\.[\w.]+\(.*\) in )")),
+     # A frame or an error page - not a bare "System.ArgumentNullException"
+     # mentioned in prose or in API documentation.
+     re.compile(r"(Server Error in '.*' Application|"
+                r"\bat System\.[\w.]+\(|"
+                r"System\.[\w.]+Exception\s*:)")),
     ("stack_trace", "medium", "PHP error",
      # Both shapes: the HTML one PHP emits in a browser, and the bare text one
      # it writes when html_errors is off. "Warning:" alone is too common in
@@ -52,16 +55,25 @@ _SIGNATURES: List[Tuple[str, str, str, re.Pattern]] = [
                 r"PHP (?:Warning|Notice)|"
                 r"<b>Warning</b>:.{0,80}on line <b>\d+)", re.I)),
     ("stack_trace", "medium", "Node.js stack trace",
-     re.compile(r"(at Object\.<anonymous> \(|\bat .{0,80}node_modules[/\\])")),
+     # A real frame starts a line; "bundled at ./node_modules/..." in a
+     # sourcemap comment is not an error.
+     re.compile(r"(at Object\.<anonymous> \(|^\s+at .{0,80}node_modules[/\\])",
+                re.M)),
     ("stack_trace", "medium", "Ruby stack trace",
-     re.compile(r"(ActionController::|ActiveRecord::\w+|[\w/]+\.rb:\d+:in `)")),
+     re.compile(r"(ActionController::\w+Error|ActiveRecord::\w+Error|"
+                r"[\w/]{1,120}\.rb:\d+:in `)")),
     ("debug_page", "medium", "Framework debug page",
+     # "DEBUG = True" is Python; with re.I it also matched JavaScript's
+     # `var DEBUG = true`, so every bundle with a debug flag was a finding.
+     # Case-sensitive alternative, kept out of the re.I group.
      re.compile(r"(Werkzeug Debugger|Whoops, looks like something went wrong|"
-                r"DEBUG\s*=\s*True|Django Version:|Symfony Exception|"
-                r"Rails\.application|__debugger__)", re.I)),
+                r"Django Version:|Symfony Exception|Rails\.application|"
+                r"__debugger__)", re.I)),
+    ("debug_page", "medium", "Framework debug page",
+     re.compile(r"\bDEBUG\s*=\s*True\b")),
     ("path_disclosure", "low", "Internal filesystem path",
      re.compile(r"((?:/var/www|/usr/local/|/home/[\w.-]+/|/opt/[\w.-]+/|"
-                r"[A-Za-z]:\\\\(?:inetpub|wwwroot|Users|xampp))[\w./\\-]{3,})")),
+                r"[A-Za-z]:\\\\?(?:inetpub|wwwroot|Users|xampp))[\w./\\-]{3,})")),
 ]
 
 

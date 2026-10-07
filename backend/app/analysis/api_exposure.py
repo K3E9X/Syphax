@@ -23,7 +23,7 @@ from __future__ import annotations
 import json
 import logging
 import re
-from typing import Any, Dict, List, Set, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
 from urllib.parse import urlparse
 
 from app import db
@@ -54,7 +54,11 @@ _PII_FIELDS = {
     "tax_id", "salary", "first_name", "last_name", "full_name",
 }
 
-_RE_EMAIL = re.compile(r"\b[\w.+-]+@[\w-]+\.[\w.-]{2,}\b")
+# Bounded on both sides and anchored on the "@". The unbounded \b[\w.+-]+@
+# form was quadratic: ".", "-" and "+" are non-word characters, so every one
+# of them started a fresh match attempt that then ran the whole way again. One
+# 300 KB JSON body (a base64 blob, a long JWT) took 141 s inside the event loop.
+_RE_EMAIL = re.compile(r"[\w.+-]{1,64}@[\w-]{1,63}\.[\w.-]{2,24}")
 _RE_IBAN = re.compile(r"\b[A-Z]{2}\d{2}[A-Z0-9]{11,30}\b")
 _RE_CARD = re.compile(r"\b(?:\d[ -]?){13,19}\b")
 _RE_NIR = re.compile(r"\b[12]\d{2}(?:0[1-9]|1[0-2])\d{2}\d{3}\d{3}\d{2}\b")
@@ -76,17 +80,37 @@ def luhn_ok(digits: str) -> bool:
     return total % 10 == 0
 
 
-def collect_field_names(obj: Any, out: Set[str], depth: int = 0) -> None:
-    """Every key in a nested JSON document, lowercased."""
+# Paths that DESCRIBE an API rather than answer with data: a key named
+# "password" in a schema or a validation-error map is not a leaked credential.
+_SCHEMA_PATH = re.compile(r"(openapi|swagger|/schema|\.well-known|/docs?/)", re.I)
+# Values that are a type or a rule, not a secret.
+_NOT_A_SECRET = {"string", "number", "integer", "boolean", "object", "array",
+                 "password", "required", "null", "true", "false", "optional"}
+
+
+def collect_field_names(obj: Any, out: Set[str], depth: int = 0,
+                        valued: Optional[Set[str]] = None) -> None:
+    """Every key in a nested JSON document, lowercased.
+
+    `valued` collects only the keys that carry a non-empty scalar which is not
+    itself a type/rule word - the difference between a schema declaring a
+    password field and a response handing one out.
+    """
     if depth > 8:
         return
     if isinstance(obj, dict):
         for k, v in obj.items():
-            out.add(str(k).strip().lower())
-            collect_field_names(v, out, depth + 1)
+            key = str(k).strip().lower()
+            out.add(key)
+            if valued is not None and isinstance(v, (str, int, float)) \
+                    and not isinstance(v, bool):
+                text = str(v).strip()
+                if text and text.lower() not in _NOT_A_SECRET:
+                    valued.add(key)
+            collect_field_names(v, out, depth + 1, valued)
     elif isinstance(obj, list):
         for v in obj[:200]:
-            collect_field_names(v, out, depth + 1)
+            collect_field_names(v, out, depth + 1, valued)
 
 
 # Fields that ARE the product of an auth endpoint: a token response is supposed
@@ -94,7 +118,11 @@ def collect_field_names(obj: Any, out: Set[str], depth: int = 0) -> None:
 # false positive, so these are only a finding away from a token endpoint.
 _TOKEN_FIELDS = {"access_token", "refresh_token", "id_token", "token_secret"}
 _TOKEN_SHAPE = {"token_type", "expires_in", "scope", "id_token"}
-_TOKEN_PATH = re.compile(r"(oauth|/token|/login|/signin|/auth|/session|refresh)", re.I)
+# Anchored on path SEGMENTS: "/api/authors/1" and "/api/refresh-dashboard"
+# were treated as token endpoints and had their access_token leak excused.
+_TOKEN_PATH = re.compile(
+    r"(?:^|/)(oauth\d?|token|login|signin|sign-in|auth|authorize|session|"
+    r"refresh|connect)(?:$|[/?])", re.I)
 
 
 def is_token_endpoint(path: str, names: Set[str]) -> bool:
@@ -104,8 +132,21 @@ def is_token_endpoint(path: str, names: Set[str]) -> bool:
     return len(names & _TOKEN_SHAPE) >= 2
 
 
-def secret_fields_in(names: Set[str], *, token_endpoint: bool = False) -> List[str]:
+def secret_fields_in(names: Set[str], *, token_endpoint: bool = False,
+                     valued: Optional[Set[str]] = None,
+                     path: str = "") -> List[str]:
+    """Secret-looking fields that are actually CARRYING something.
+
+    A key alone is not a leak: /openapi.json declares a "password" property and
+    a validation-error body lists "password": ["too short"]. Both were reported
+    high. So a hit needs a non-empty scalar value, and schema/doc endpoints are
+    skipped outright.
+    """
+    if path and _SCHEMA_PATH.search(path):
+        return []
     hits = {n for n in names if n in _SECRET_FIELDS}
+    if valued is not None:
+        hits &= valued
     if token_endpoint:
         hits -= _TOKEN_FIELDS
     return sorted(hits)
@@ -121,8 +162,11 @@ def pii_values(body: str) -> Dict[str, int]:
     emails = set(_RE_EMAIL.findall(body))
     # Asset filenames and example addresses are not a disclosure.
     emails = {e for e in emails
-              if not e.lower().endswith((".png", ".jpg", ".svg", ".webp"))
-              and "example.com" not in e.lower()}
+              if not e.lower().endswith((".png", ".jpg", ".svg", ".webp",
+                                         ".js", ".mjs", ".css", ".json", ".map"))
+              and "example.com" not in e.lower()
+              # "react@18.2.0" / "vue@3.4.21": a package spec, not a person.
+              and not re.match(r"^\d", e.split("@", 1)[1] or "")}
     if emails:
         counts["email"] = len(emails)
     ibans = {i for i in _RE_IBAN.findall(body)}
@@ -140,9 +184,20 @@ def pii_values(body: str) -> Dict[str, int]:
     return counts
 
 
-def severity_for_pii(counts: Dict[str, int]) -> str:
-    """Cards/IBAN/NIR are sensitive at any volume; contact data scales."""
-    if any(k in counts for k in ("card_number", "iban", "french_nir")):
+def severity_for_pii(counts: Dict[str, int],
+                     pii_keys: Optional[Set[str]] = None) -> str:
+    """Cards/IBAN/NIR are sensitive - but only once we believe the match.
+
+    The IBAN and NIR patterns have no checksum, so an uppercase ETag, a build
+    id or a 15-digit order reference matched them; Luhn removes most but not
+    all 16-digit numeric ids (40 of 400 epoch-microsecond ids passed). Calling
+    that a HIGH "personal data" finding is the kind of noise that buries the
+    real ones, so the sensitive classes are only escalated when a surrounding
+    JSON key agrees it is personal data. Otherwise volume decides.
+    """
+    sensitive = {"card_number", "iban", "french_nir"}
+    corroborated = bool(pii_keys)
+    if any(k in counts for k in sensitive) and corroborated:
         return "high"
     total = sum(counts.values())
     if total >= BULK_THRESHOLD:
@@ -187,11 +242,13 @@ async def analyze_api_exposure(engagement_id: str) -> Dict[str, int]:
             doc = None
 
         names: Set[str] = set()
+        valued: Set[str] = set()
         if doc is not None:
-            collect_field_names(doc, names)
+            collect_field_names(doc, names, valued=valued)
 
         secrets = secret_fields_in(
-            names, token_endpoint=is_token_endpoint(path, names))
+            names, token_endpoint=is_token_endpoint(path, names),
+            valued=valued, path=path)
         if secrets:
             _add(findings, seen, host, path, "secret_fields",
                  "high", f"API returns secret fields on {path}",
@@ -203,8 +260,9 @@ async def analyze_api_exposure(engagement_id: str) -> Dict[str, int]:
         counts = pii_values(body)
         if counts:
             detail = ", ".join(f"{k}x{v}" for k, v in sorted(counts.items()))
+            pii_keys = set(pii_fields_in(names))
             _add(findings, seen, host, path, "pii_values",
-                 severity_for_pii(counts),
+                 severity_for_pii(counts, pii_keys),
                  f"Personal data in the API response on {path}",
                  "The endpoint returns personal data. Check the caller is entitled "
                  "to all of it: a list endpoint handing out contact details in bulk "

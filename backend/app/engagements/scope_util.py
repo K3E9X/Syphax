@@ -40,6 +40,15 @@ _MULTI_SUFFIXES = {
 # registrable domain is the platform, not the customer. Never expand to these.
 _SHARED_SUFFIXES = {
     "herokuapp.com", "herokudns.com",
+    # Multi-tenant storage/app platforms. Missing these made two different
+    # CUSTOMERS share a registrable domain, so scope auto-expansion would have
+    # reached a third party's host - and the /24 netblock check does not catch
+    # it, because two storage accounts routinely sit in the same /24.
+    "core.windows.net", "cloudapp.azure.com", "azurestaticapps.net",
+    "azureedge.net", "sharepoint.com",
+    "storage.googleapis.com", "googleapis.com", "firebaseio.com",
+    "supabase.co", "pythonanywhere.com", "repl.co", "github.dev",
+    "b-cdn.net", "kinsta.cloud",
     "azurewebsites.net", "cloudapp.net", "trafficmanager.net", "blob.core.windows.net",
     "appspot.com", "run.app", "web.app", "firebaseapp.com", "cloudfunctions.net",
     "github.io", "gitlab.io", "pages.dev", "workers.dev", "r2.dev",
@@ -61,6 +70,11 @@ def registrable_domain(host: str) -> Optional[str]:
     known shared platform (expanding there would scope other tenants).
     """
     host = (host or "").strip().lower().rstrip(".")
+    if not host or _is_ip(host):
+        return None
+    # "example.com:8443" / "[::1]" would otherwise be compared verbatim and
+    # silently fail every match.
+    host = host.split(":")[0].strip("[]")
     if not host or _is_ip(host):
         return None
     labels = host.split(".")

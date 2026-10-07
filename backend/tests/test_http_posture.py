@@ -19,8 +19,8 @@ def _classes(findings):
 
 def test_parse_cookie_flags():
     c = parse_cookie("SESSIONID=abc; Path=/; HttpOnly; Secure; SameSite=Lax")
-    assert c == {"name": "SESSIONID", "secure": True, "httponly": True,
-                 "samesite": "lax"}
+    assert c == {"name": "SESSIONID", "value": "abc", "deleted": False,
+                 "secure": True, "httponly": True, "samesite": "lax"}
 
 
 def test_session_cookie_detection():

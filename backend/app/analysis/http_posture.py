@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from typing import Any, Dict, List, Optional, Tuple
 
 from app import db
@@ -54,16 +55,32 @@ def _all_headers(headers: List[Tuple[str, str]], name: str) -> List[str]:
 
 
 def parse_cookie(raw: str) -> Dict[str, Any]:
-    """Name and flags of one Set-Cookie value."""
+    """Name, value and flags of one Set-Cookie value.
+
+    A directive with no "=" is not a cookie a browser accepts, and a DELETION
+    (empty value, Max-Age=0, or a 1970 expiry) needs no flags. Reporting the
+    logout response was masking the real, correctly-flagged cookie set at login.
+    """
     parts = [p.strip() for p in (raw or "").split(";")]
-    name = parts[0].split("=", 1)[0].strip() if parts and parts[0] else ""
+    head = parts[0] if parts else ""
+    if "=" not in head:
+        return {"name": "", "value": "", "deleted": False, "secure": False,
+                "httponly": False, "samesite": None}
+    name, _, value = head.partition("=")
+    name, value = name.strip(), value.strip()
     flags = {p.split("=", 1)[0].strip().lower() for p in parts[1:] if p}
     samesite = None
     for p in parts[1:]:
         if p.lower().startswith("samesite"):
             _, _, v = p.partition("=")
             samesite = v.strip().lower() or None
-    return {"name": name, "secure": "secure" in flags,
+    deleted = not value
+    for part in parts[1:]:
+        low = part.lower().replace(" ", "")
+        if low.startswith("max-age=0") or "expires=thu,01jan1970" in low:
+            deleted = True
+    return {"name": name, "value": value, "deleted": deleted,
+            "secure": "secure" in flags,
             "httponly": "httponly" in flags, "samesite": samesite}
 
 
@@ -73,28 +90,43 @@ def is_session_cookie(name: str) -> bool:
 
 
 def csp_weaknesses(csp: str) -> List[str]:
-    """Which parts of a Content-Security-Policy defeat its own purpose."""
+    """Which parts of a Content-Security-Policy defeat its own purpose.
+
+    Script execution only. Framing is NOT judged here: it is answered by the
+    caller, which also honours X-Frame-Options. Checking it here made a
+    textbook policy ("default-src 'none'; script-src 'nonce-...'" plus
+    X-Frame-Options: DENY) report as "does not stop script injection" - a
+    finding that fires BECAUSE the target did the work.
+    """
     out: List[str] = []
     low = (csp or "").lower()
     if not low.strip():
         return out
-    script = ""
+    script = default = ""
     for directive in low.split(";"):
-        d = directive.strip()
-        if d.startswith("script-src") or (d.startswith("default-src") and not script):
-            script = d
-    if "'unsafe-inline'" in script:
+        parts = directive.strip().split()
+        if not parts:
+            continue
+        # Exact name: "script-src-attr"/"script-src-elem" are DIFFERENT
+        # directives, and a startswith test let a later one clobber the policy.
+        if parts[0] == "script-src" and not script:
+            script = directive.strip()
+        elif parts[0] == "default-src" and not default:
+            default = directive.strip()
+    effective = script or default
+    if not effective:
+        return out
+    tokens = effective.split()[1:]
+    if "'unsafe-inline'" in tokens:
         out.append("script-src allows 'unsafe-inline' - an injected <script> executes")
-    if "'unsafe-eval'" in script:
+    if "'unsafe-eval'" in tokens:
         out.append("script-src allows 'unsafe-eval'")
-    if " *" in f" {script}" or script.endswith(" *"):
+    # A bare "*". "*.cdn.example.com" is a scoped allow-list, not any origin.
+    if "*" in tokens:
         out.append("script-src allows any origin (*)")
-    if "data:" in script:
+    if any(t.startswith("data:") for t in tokens):
         out.append("script-src allows data: URIs")
-    if "frame-ancestors" not in low:
-        out.append("no frame-ancestors directive (clickjacking not covered by CSP)")
     return out
-
 
 # --------------------------------------------------------------------------- #
 # Analysis
@@ -108,7 +140,8 @@ async def analyze_http_posture(engagement_id: str) -> Dict[str, int]:
     try:
         async with db.acquire() as conn:
             rows = await conn.fetch(
-                'SELECT url, host, status_code, response_headers_json '
+                'SELECT url, host, status_code, response_headers_json, method, '
+                'response_content_type '
                 'FROM flows WHERE response_headers_json IS NOT NULL '
                 'ORDER BY "timestamp" DESC LIMIT $1', MAX_FLOWS)
     except Exception:  # noqa: BLE001 - no proxy data is a normal state
@@ -128,10 +161,19 @@ async def analyze_http_posture(engagement_id: str) -> Dict[str, int]:
             continue
         if not isinstance(headers, list):
             continue
-        entry = seen.setdefault(host, {"headers": headers, "url": r["url"],
+        entry = seen.setdefault(host, {"headers": None, "url": r["url"],
                                        "https": str(r["url"] or "").startswith("https"),
                                        "cookies": []})
+        # Cookies are collected from EVERY flow (a Set-Cookie on a redirect
+        # still counts), but the header checks need a real page: a 304, a 204
+        # CORS preflight, a redirect, a static asset or a flow that never got a
+        # response legitimately carries no security headers, and judging one of
+        # those fabricated three mediums and two lows per host.
         entry["cookies"].extend(_all_headers(headers, "set-cookie"))
+        if entry["headers"] is None and _is_representative(r, headers):
+            entry["headers"] = headers
+            entry["url"] = r["url"]
+            entry["https"] = str(r["url"] or "").startswith("https")
 
     findings: List[Finding] = []
     for host, data in seen.items():
@@ -143,8 +185,27 @@ async def analyze_http_posture(engagement_id: str) -> Dict[str, int]:
     return {"hosts": len(seen), "findings": len(findings)}
 
 
+def _is_representative(row: Any, headers: List[Tuple[str, str]]) -> bool:
+    """Is this flow a real page whose security headers mean something?
+
+    Requires a 2xx, a non-OPTIONS method and an HTML content type. Without this
+    the most recent flow for a host - routinely a 304 for a hashed asset, a 204
+    preflight, or a request that never got a response at all (addon.py stores
+    an empty header list for those, which is not NULL) - was treated as the
+    host's configuration.
+    """
+    if not headers:
+        return False
+    status = row["status_code"]
+    if status is None or not 200 <= status < 300:
+        return False
+    if str(row["method"] or "").upper() == "OPTIONS":
+        return False
+    return "html" in str(row["response_content_type"] or "").lower()
+
+
 def _host_findings(host: str, data: Dict[str, Any]) -> List[Finding]:
-    headers: List[Tuple[str, str]] = data["headers"]
+    headers = data["headers"]
     url: str = data["url"] or f"https://{host}/"
     https: bool = bool(data["https"])
     out: List[Finding] = []
@@ -160,7 +221,7 @@ def _host_findings(host: str, data: Dict[str, Any]) -> List[Finding]:
     reported: set = set()
     for raw in data["cookies"]:
         c = parse_cookie(raw)
-        if not c["name"] or c["name"] in reported:
+        if not c["name"] or c["deleted"] or c["name"] in reported:
             continue
         reported.add(c["name"])
         session = is_session_cookie(c["name"])
@@ -178,6 +239,11 @@ def _host_findings(host: str, data: Dict[str, Any]) -> List[Finding]:
                 f"Cookie '{c['name']}' is missing protections on {host}",
                 "; ".join(problems) + ".",
                 raw, "cookie_security", cookie=c["name"], session=session)
+
+    # No representative page response for this host: report the cookies we saw
+    # and say nothing about headers rather than inventing five findings.
+    if headers is None:
+        return out
 
     # ---- CSP / clickjacking (Client-side) ----
     csp = _header(headers, "content-security-policy")
@@ -212,14 +278,16 @@ def _host_findings(host: str, data: Dict[str, Any]) -> List[Finding]:
                 "be intercepted in plaintext.",
                 "Strict-Transport-Security: (absent)", "security_headers")
         else:
-            age = 0
+            age = None
             for part in hsts.split(";"):
                 if part.strip().lower().startswith("max-age"):
                     try:
-                        age = int(part.split("=", 1)[1].strip())
+                        age = int(part.split("=", 1)[1].strip().strip("\"'"))
                     except (IndexError, ValueError):
-                        age = 0
-            if age < _HSTS_MIN:
+                        age = None
+            # Unparseable is not zero: some appliances quote the value, and
+            # calling a two-year policy "max-age=0s" is worse than silence.
+            if age is not None and age < _HSTS_MIN:
                 add("low", f"HSTS max-age is short on {host}",
                     f"max-age={age}s is below the six months (15552000s) browsers "
                     "and preload lists expect.",
@@ -240,8 +308,9 @@ def _host_findings(host: str, data: Dict[str, Any]) -> List[Finding]:
     # ---- version disclosure ----
     for name in ("server", "x-powered-by", "x-aspnet-version", "x-generator"):
         value = _header(headers, name)
-        # A bare product name is fine; a version is what feeds a CVE lookup.
-        if value and any(ch.isdigit() for ch in value):
+        # A bare product name is fine, and so is a cache id like "ECAcc
+        # (dcd/7D5D)". A VERSION is what feeds a CVE lookup.
+        if value and re.search(r"\d+\.\d+", value):
             add("low", f"{name.title()} discloses a version on {host}",
                 "The exact component version is advertised, which hands an attacker "
                 "the CVE list for it without a single probe.",

@@ -46,15 +46,20 @@ def test_card_number_needs_luhn():
     assert "card_number" not in pii_values("id 1234567890123456789")
 
 
-@pytest.mark.parametrize("counts,expected", [
-    ({"card_number": 1}, "high"),
-    ({"iban": 1}, "high"),
-    ({"french_nir": 1}, "high"),
-    ({"email": 50}, "medium"),
-    ({"email": 2}, "low"),
+@pytest.mark.parametrize("counts,keys,expected", [
+    # A sensitive class is only HIGH once a surrounding key agrees it is
+    # personal data: the IBAN/NIR patterns have no checksum and Luhn leaks a
+    # few numeric ids, so an ETag or an order reference used to ship as high.
+    ({"card_number": 1}, {"card_number"}, "high"),
+    ({"iban": 1}, {"iban"}, "high"),
+    ({"french_nir": 1}, {"ssn"}, "high"),
+    ({"card_number": 1}, set(), "low"),        # bare match, no key
+    ({"iban": 1}, set(), "low"),
+    ({"email": 50}, {"email"}, "medium"),
+    ({"email": 2}, {"email"}, "low"),
 ])
-def test_severity_scales_with_sensitivity_and_volume(counts, expected):
-    assert severity_for_pii(counts) == expected
+def test_severity_scales_with_sensitivity_and_volume(counts, keys, expected):
+    assert severity_for_pii(counts, keys) == expected
 
 
 def test_clean_json_yields_nothing():

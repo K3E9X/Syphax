@@ -23,7 +23,12 @@ from urllib.parse import urlparse
 
 # One option declaration: argparse's add_argument(...), click's option(...),
 # optparse's add_option(...). We only need the quoted flag tokens inside.
-_OPTION_CALL = re.compile(r"(?:add_argument|add_option|option)\s*\(([^)]*)\)", re.S)
+_OPTION_CALL = re.compile(
+    r"\b(?:add_argument|add_option|click\.option)\s*\(([^)]*)\)", re.S)
+# argparse lets a short-only flag name its destination: add_argument("-t",
+# dest="target"). Reading only the flag spellings made the module's own
+# motivating example ("-t is required") still produce no argv.
+_DEST = re.compile(r"""(?:dest|metavar)\s*=\s*['"](\w+)['"]""")
 _FLAG = re.compile(r"""['"](-{1,2}[A-Za-z][\w-]*)['"]""")
 
 # Long names that mean "where to point this exploit".
@@ -48,22 +53,43 @@ def detect_options(code: str) -> Dict[str, Optional[str]]:
     port_flag: Optional[str] = None
     target_is_url = False
 
+    # Ranked, not first-wins: a PoC declaring --domain before --target had the
+    # IP handed to --domain while the required --target was never passed.
+    candidates: List[Tuple[int, str, bool]] = []
     for block in _OPTION_CALL.findall(code or ""):
         flags = _FLAG.findall(block)
         if not flags:
             continue
-        names = {_name_of(f) for f in flags}
-        if "help" in names or "-h" in flags and len(flags) == 1:
+        names = {_name_of(f) for f in flags} | {n.lower() for n in _DEST.findall(block)}
+        if "help" in names:
             continue
-        # Prefer the long form for the actual argv token.
         longest = max(flags, key=len)
         if names & _PORT_NAMES and port_flag is None:
             port_flag = longest
             continue
-        if names & _TARGET_NAMES and target_flag is None:
-            target_flag = longest
-            target_is_url = bool(names & _URL_NAMES)
+        if names & _TARGET_NAMES:
+            rank = _target_rank(names)
+            if "required=True" in block.replace(" ", ""):
+                rank -= 1          # a required option is the one it needs
+            candidates.append((rank, longest, bool(names & _URL_NAMES)))
+    if candidates:
+        candidates.sort(key=lambda c: c[0])
+        _, target_flag, target_is_url = candidates[0]
     return {"target": target_flag, "port": port_flag, "target_is_url": target_is_url}
+
+
+# Lower is better: what the exploit is aimed AT beats what it is aimed THROUGH.
+_RANKED = (({"target", "rhost", "victim"}, 0),
+           ({"url", "uri", "site", "link"}, 1),
+           ({"host", "hostname", "ip", "addr", "address"}, 2),
+           ({"domain", "server"}, 3))
+
+
+def _target_rank(names: set) -> int:
+    for group, rank in _RANKED:
+        if names & group:
+            return rank
+    return 9
 
 
 def split_target(target: str) -> Tuple[str, Optional[str], Optional[str]]:
@@ -72,10 +98,16 @@ def split_target(target: str) -> Tuple[str, Optional[str], Optional[str]]:
     if not t:
         return "", None, None
     if "://" in t:
-        p = urlparse(t)
-        host = (p.hostname or "").lower()
-        port = str(p.port) if p.port else None
-        return host, port, t
+        # A malformed URL raises from urlparse/.port ("[::1" , port 99999);
+        # that propagated out and the PoC then ran bare - the exact failure
+        # this module exists to remove.
+        try:
+            p = urlparse(t)
+            host = (p.hostname or "").lower()
+            port = str(p.port) if p.port else None
+            return host, port, t
+        except ValueError:
+            return t.lower(), None, t
     # "host:port" - but keep bare IPv6 (which is full of colons) intact.
     if t.count(":") == 1:
         host, _, port = t.partition(":")

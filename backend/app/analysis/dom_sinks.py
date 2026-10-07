@@ -62,8 +62,12 @@ _LISTENER = re.compile(
 _ORIGIN_CHECK = re.compile(r"\.origin\b", re.I)
 _POST_WILDCARD = re.compile(r"\.postMessage\s*\([^;]{0,400}?,\s*['\"]\*['\"]", re.I | re.S)
 # `const userInput = location.hash` - a readable alias for a source.
+# The value stops at the DECLARATOR boundary. Spanning commas paired the first
+# declared name with a later declarator's value, so
+# `var template = "<b>"+t, qs = location.search;` tagged `template` as
+# URL-controlled - and DOMPurify-sanitised output was reported as DOM XSS.
 _ALIAS_ASSIGN = re.compile(
-    r"(?:var|let|const)\s+([A-Za-z_$][\w$]*)\s*=\s*([^;\n]{0,160})")
+    r"(?:var|let|const)\s+([A-Za-z_$][\w$]*)\s*=\s*([^;\n,]{0,160})")
 
 
 def _sink_expression(code: str, start: int, end: int) -> str:
@@ -127,15 +131,37 @@ def find_sink_hits(code: str) -> List[Dict[str, Any]]:
     return out
 
 
+_NAMED_HANDLER = re.compile(
+    r"addEventListener\s*\(\s*['\"]message['\"]\s*,\s*([A-Za-z_$][\w$]*)\s*[,)]", re.I)
+
+
+def _handler_body(code: str, name: str) -> str:
+    """The body of a handler registered by name, wherever it is declared."""
+    decl = re.search(
+        r"(?:function\s+%s\s*\(|(?:var|let|const)\s+%s\s*=)" % (re.escape(name),
+                                                                   re.escape(name)),
+        code)
+    return code[decl.start():decl.start() + 1500] if decl else ""
+
+
 def listener_without_origin_check(code: str) -> Optional[str]:
-    """A message listener whose body never looks at the sender's origin."""
-    m = _LISTENER.search(code)
-    if not m:
-        return None
-    body = code[m.start():m.start() + 1500]
-    if _ORIGIN_CHECK.search(body):
-        return None
-    return _around(code, m.start())
+    """A message listener whose handler never looks at the sender's origin.
+
+    Checks EVERY listener, and follows a handler registered by name: the
+    positional version looked only at the first listener and only at the 1500
+    bytes after it, so the common
+    `function onMessage(e){ if (e.origin !== ...) ... }` ... later ...
+    `addEventListener("message", onMessage)` was reported as unchecked, while
+    an unrelated `location.origin` nearby silently suppressed a real one.
+    """
+    for m in _LISTENER.finditer(code or ""):
+        named = _NAMED_HANDLER.match(code, m.start())
+        body = _handler_body(code, named.group(1)) if named else ""
+        if not body:
+            body = code[m.start():m.start() + 1500]
+        if not _ORIGIN_CHECK.search(body):
+            return _around(code, m.start())
+    return None
 
 
 def wildcard_post_message(code: str) -> Optional[str]:
@@ -193,7 +219,9 @@ async def analyze_dom_sinks(engagement_id: str) -> Dict[str, int]:
         if snippet and ("listener", name) not in seen:
             seen.add(("listener", name))
             findings.append(Finding(
-                severity="high",
+                # A lead, like the DOM sinks: the handler may validate the
+                # sender another way. It used to ship as high.
+                severity="medium",
                 title=f"window.message listener without an origin check ({name})",
                 description=(
                     "The handler never inspects event.origin, so any page that "

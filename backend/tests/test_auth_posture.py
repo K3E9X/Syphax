@@ -59,7 +59,14 @@ def test_weak_password_policy_from_the_page_itself():
 
 
 def test_weak_password_policy_takes_the_shortest():
-    assert weak_min_length('minlength="6" ... minlength="4"') == 4
+    page = ('<input type="password" minlength="6">'
+            '<input name="new_password" minlength="4">')
+    assert weak_min_length(page) == 4
+
+
+def test_a_non_password_field_is_ignored():
+    """A search box with minlength=3 was reported as a password policy."""
+    assert weak_min_length('<input type="search" name="q" minlength="3">') is None
 
 
 def test_protected_status():
