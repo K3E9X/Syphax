@@ -467,6 +467,15 @@ async def _finalize_engagement(engagement, run: Run, runs: RunRepository,
         from app.analysis import run_analysis
         _active_ok = run.stop_reason not in {"exploit_denied", "stopped", "cancelled"}
         await run_analysis(engagement.id, allow_active=_active_ok)
+        # Threat-intel enrichment (read-only third-party APIs: Shodan / Censys /
+        # VirusTotal). Internet-visible ports, service versions and reputation -
+        # adds surface even on a WAF'd target, and never touches it. Skipped
+        # entirely when no provider key is configured.
+        try:
+            from app.intel import run_intel
+            await run_intel(engagement.id)
+        except Exception:  # noqa: BLE001 - enrichment never fails a run
+            logger.exception("[%s] intel enrichment error", run.id)
         # Proof-of-impact: prove confirmed injections (RCE/SQLi) with a
         # benign read-only command. Double opt-in: requires
         # allow_active_exploit (the exploitation phase already passed its

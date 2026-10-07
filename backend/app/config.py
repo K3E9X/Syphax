@@ -48,6 +48,16 @@ class Settings(BaseSettings):
     # gated behind allow_active_exploit exactly like every other active step.
     exploit_refine_iterations: int = 0
 
+    # Threat-intel enrichment (read-only, third-party APIs). Each is optional:
+    # empty = that provider is skipped. They query public databases ABOUT the
+    # target (Internet-wide scan data, passive DNS, reputation) and never touch
+    # the target itself. See app/intel/. Shodan and VirusTotal take one key;
+    # Censys takes an API id + secret (Platform/legacy) or a single token.
+    shodan_api_key: str = ""
+    censys_api_id: str = ""
+    censys_api_secret: str = ""
+    virustotal_api_key: str = ""
+
     # Shadow judge: run a SECOND judge alongside the real one and record where
     # they disagree, without ever letting it move a verdict. Empty = off. "llm"
     # re-reads with the validator model at a higher temperature (a baseline that
