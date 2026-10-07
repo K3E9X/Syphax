@@ -253,6 +253,26 @@ export default function Findings() {
                   <dt>Last seen</dt><dd>{ago(f.last_seen)}</dd>
                 </dl>
 
+                {f.exploitation && (
+                  <div className="shadow shadow--agree">
+                    <div className="shadow__h">
+                      Exploited — PoC ran against the target
+                      <span className="shadow__tag">{f.exploitation.auto ? 'auto-run' : 'operator'} · exit {f.exploitation.exit_code}</span>
+                    </div>
+                    <div className="shadow__row">
+                      <b>{f.exploitation.repo}</b>
+                      {f.exploitation.path ? <span className="mono"> / {f.exploitation.path}</span> : null}
+                    </div>
+                    {f.exploitation.stdout
+                      ? <><div className="shadow__reason">What the PoC returned</div>
+                          <pre className="detail__pre poc">{f.exploitation.stdout}</pre></>
+                      : <div className="shadow__note">Ran clean (exit 0) with no stdout.</div>}
+                    <div className="shadow__note">
+                      A public PoC ran in the isolated sandbox and returned cleanly — the
+                      strongest proof there is. Read the output above to confirm the impact.
+                    </div>
+                  </div>
+                )}
                 {f.proof_replay && (
                   <div className={'shadow ' + (f.proof_replay.outcome === 'held' ? 'shadow--agree'
                     : f.proof_replay.outcome === 'did_not_hold' ? 'shadow--diff' : '')}>

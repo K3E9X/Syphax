@@ -89,6 +89,11 @@ async def list_findings(severity: str = "", status: str = "", q: str = "",
                 # This is what actually confirmed the finding (or refuted the
                 # model's claim), so it belongs next to the verdict.
                 "proof_replay": meta.get("proof_replay") or None,
+                # A PoC was run against the target and returned cleanly: the
+                # strongest proof there is. Carries the PoC output (server
+                # access / command result) for the Findings detail panel.
+                "exploitation": meta.get("exploitation") or None,
+                "proven": bool(meta.get("proven")),
             }
             groups[key] = g
         else:
