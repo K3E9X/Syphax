@@ -504,6 +504,11 @@ async def _finalize_engagement(engagement, run: Run, runs: RunRepository,
                 await run_known_exploits(engagement.id)
                 await run_auth_spray(engagement.id)
                 await prove_impact(engagement.id)
+                # Leaked cloud creds -> prove blast radius. Uses a discovered
+                # AWS key for read-only identity/permission probes; active, so
+                # it lives behind the same allow_active_exploit gate.
+                from app.intel.cloud_creds import probe_leaked_cloud_creds
+                await probe_leaked_cloud_creds(engagement.id)
             except Exception:  # noqa: BLE001 - never fail the run on proof
                 logger.exception("[%s] active-exploit phase error", run.id)
 

@@ -11,6 +11,10 @@ asyncpg==0.31.0
 psycopg[binary]==3.3.5
 arq==0.28.0
 dnspython==2.7.0
+# AWS SDK: used only to probe the blast radius of a leaked AWS key (read-only
+# STS/IAM/S3 calls in app/intel/cloud_creds.py). Imported lazily; a run never
+# needs it unless a live key is found on an engagement that allows active steps.
+boto3==1.35.90
 # No longer capped by mitmproxy: the addon runs in its own container off
 # requirements-proxy.txt, so the API/worker stack is free to track upstream.
 cryptography==50.0.1
