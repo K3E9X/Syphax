@@ -148,6 +148,33 @@ MAPPING: Dict[str, Dict[str, Any]] = {
         "remediation": "Remove publicly accessible source/config (.git, .env, "
                        "backups); block them at the web server.",
     },
+    "cookie_security": {
+        "category": "auth_secrets",
+        "wstg": "WSTG-SESS-02", "attack": ["T1539"], "cwe": "CWE-614",
+        "remediation": "Set Secure, HttpOnly and SameSite on every session/auth "
+                       "cookie. SameSite=None requires Secure. Scope cookies with "
+                       "Path and avoid a wildcard Domain.",
+    },
+    "security_headers": {
+        "category": "config",
+        "wstg": "WSTG-CONF-07", "attack": ["T1190"], "cwe": "CWE-693",
+        "remediation": "Send the defence-in-depth headers: a strict "
+                       "Content-Security-Policy, Strict-Transport-Security, "
+                       "X-Content-Type-Options: nosniff and a Referrer-Policy.",
+    },
+    "clickjacking": {
+        "category": "config",
+        "wstg": "WSTG-CLNT-09", "attack": ["T1185"], "cwe": "CWE-1021",
+        "remediation": "Send Content-Security-Policy: frame-ancestors 'none' (or an "
+                       "explicit allow-list), and X-Frame-Options: DENY for old browsers.",
+    },
+    "information_disclosure": {
+        "category": "config",
+        "wstg": "WSTG-ERRH-01", "attack": ["T1592"], "cwe": "CWE-200",
+        "remediation": "Return generic error pages; never ship stack traces, SQL "
+                       "errors, internal paths or component versions to the client. "
+                       "Log the detail server-side instead.",
+    },
     "api_route": {
         "category": "enumeration",
         "wstg": "WSTG-APIT-01", "attack": ["T1595"], "cwe": "CWE-200",
