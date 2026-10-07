@@ -5,6 +5,7 @@ from typing import Dict, List
 
 from app.scans.wrappers.arjun import ArjunWrapper
 from app.scans.wrappers.base import BaseWrapper
+from app.scans.wrappers.cloud_enum import CloudEnumWrapper
 from app.scans.wrappers.commix import CommixWrapper
 from app.scans.wrappers.dalfox import DalfoxWrapper
 from app.scans.wrappers.dnsx import DnsxWrapper
@@ -57,6 +58,9 @@ _WRAPPERS: Dict[str, BaseWrapper] = {
     # Act on an exposed .git, then prove which of the recovered secrets is live.
     "gitdumper": GitDumperWrapper(),
     "trufflehog": TruffleHogWrapper(),
+    # Public cloud storage (S3/Azure/GCP) enumerated from the brand keyword -
+    # buckets never linked from the target but owned by the same org.
+    "cloud_enum": CloudEnumWrapper(),
 }
 
 

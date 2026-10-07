@@ -118,6 +118,20 @@ RUN set -eux; \
     chmod +x /opt/commix/commix.py; \
     commix --version >/dev/null 2>&1 || true
 
+# cloud_enum (git checkout) - public cloud storage enumeration (AWS S3 / Azure
+# / GCP) from a brand keyword. Publishes no stable PyPI package, so we pin a
+# tag and symlink the entrypoint onto PATH as 'cloud_enum'. Its deps
+# (requests, dnspython, beautifulsoup4) are small and already common.
+ARG CLOUD_ENUM_VERSION=0.8
+RUN set -eux; \
+    git clone --depth 1 --branch "${CLOUD_ENUM_VERSION}" \
+        https://github.com/initstring/cloud_enum.git /opt/cloud_enum \
+        || git clone --depth 1 https://github.com/initstring/cloud_enum.git /opt/cloud_enum; \
+    pip install --no-cache-dir -r /opt/cloud_enum/requirements.txt; \
+    ln -sf /opt/cloud_enum/cloud_enum.py /usr/local/bin/cloud_enum; \
+    chmod +x /opt/cloud_enum/cloud_enum.py; \
+    cloud_enum --help >/dev/null 2>&1 || true
+
 # Pinned versions (updated manually). Matches the official release naming.
 ARG NUCLEI_VERSION=3.3.5
 ARG FFUF_VERSION=2.1.0

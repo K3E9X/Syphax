@@ -98,6 +98,17 @@ CATALOG: List[CatalogItem] = [
         applies_when={"is_host": True},
     ),
     CatalogItem(
+        id="RECON-CLOUD-STORAGE",
+        wstg_id="WSTG-CONF-11",
+        attack_techniques=["T1580", "T1530"],
+        vuln_class="exposed_bucket",
+        phase=PHASE_RECON,
+        tool="cloud_enum",
+        description="Enumerate public cloud storage (AWS S3 / Azure / GCP) for the brand.",
+        severity_default="medium",
+        applies_when={"is_host": True},
+    ),
+    CatalogItem(
         id="RECON-NMAP-SERVICES",
         wstg_id="WSTG-INFO-02",
         attack_techniques=["T1046"],

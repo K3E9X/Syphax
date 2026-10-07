@@ -126,6 +126,14 @@ MAPPING: Dict[str, Dict[str, Any]] = {
         "remediation": "Remove publicly accessible source/config (.git, .env, "
                        "backups); block them at the web server.",
     },
+    "exposed_bucket": {
+        "category": "config",
+        "wstg": "WSTG-CONF-11", "attack": ["T1530", "T1580"], "cwe": "CWE-284",
+        "remediation": "Make cloud storage private by default: block public ACLs "
+                       "and anonymous access (S3 Block Public Access / Azure "
+                       "'disallow public blob access' / uniform bucket-level access "
+                       "on GCS); grant read only to named principals; audit object ACLs.",
+    },
     "content_discovery": {
         "category": "enumeration",
         "wstg": "WSTG-CONF-04", "attack": ["T1595"], "cwe": "CWE-538",
