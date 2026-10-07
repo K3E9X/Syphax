@@ -49,6 +49,12 @@ services:
 
   backend:
     networks: [syphax-net, sandbox-net]
+    # backend, worker and orchestrator run the SAME image (same context, same
+    # 'app' target). Build it once here and tag it; the other two reference the
+    # tag instead of each rebuilding and unpacking an identical ~1.5GB copy -
+    # which is what filled the disk on a small VM. Rebuild with
+    # `docker compose build backend` (or `up --build`), then the others pick it up.
+    image: syphax-app:latest
     build:
       context: ./backend
       dockerfile: Dockerfile
@@ -129,10 +135,9 @@ services:
       - ./data:/data
 
   worker:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
-      target: app
+    # Same image as backend (built there). No build block, so it is never
+    # rebuilt or unpacked as a separate copy.
+    image: syphax-app:latest
     container_name: syphax-worker
     restart: unless-stopped
     # Share the backend's network namespace. The backend is the only container
@@ -165,10 +170,8 @@ services:
   # Dedicated worker for the autonomous orchestrator loops, on its own queue so
   # a long-lived run never starves the scan worker's pool (avoids deadlock).
   orchestrator:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
-      target: app
+    # Same image as backend (built there). No build block.
+    image: syphax-app:latest
     container_name: syphax-orchestrator
     restart: unless-stopped
     # Share the backend's network namespace. The backend is the only container
