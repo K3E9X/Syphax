@@ -344,6 +344,20 @@ CATALOG: List[CatalogItem] = [
         applies_when={"is_base": True},
     ),
     CatalogItem(
+        id="VULN-JS-SECRETS",
+        wstg_id="WSTG-CONF-04",
+        attack_techniques=["T1552.001"],
+        vuln_class="secret_exposure",
+        phase=PHASE_VULN,
+        tool="jsluice",
+        description="Extract API keys, tokens and credentials from the captured "
+                    "JavaScript with a real parser - the structural pass that "
+                    "trufflehog then verifies against the provider.",
+        severity_default="high",
+        default_options=["secrets"],
+        applies_when={"is_base": True},
+    ),
+    CatalogItem(
         id="VULN-VERIFIED-SECRETS",
         wstg_id="WSTG-CONF-04",
         attack_techniques=["T1552.001"],

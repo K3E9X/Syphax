@@ -123,6 +123,12 @@ class Planner:
                 # already an asset in its own right.
                 if asset.kind == "port":
                     continue
+                # A stylesheet, font or image has no parameters and no server
+                # behaviour to attack: pointing dalfox/sqlmap/nuclei-dast at
+                # /static/assets/index-Dn2E.css burned a job per file and
+                # reported CSS colour codes as "extracted results".
+                if asset.kind == "endpoint" and _is_static_asset(asset.value):
+                    continue
                 ctx = asset.context(tech)
                 # Match the asset kind to the item's expectation.
                 wants_host = bool(item.applies_when.get("is_host"))
@@ -287,3 +293,21 @@ def _parse_ordered_keys(reply: str) -> List[str]:
             return []
     keys = obj.get("ordered_keys") if isinstance(obj, dict) else None
     return [str(k) for k in keys] if isinstance(keys, list) else []
+
+
+# Extensions that are served as-is and carry no injectable surface. ".js" is
+# deliberately NOT here: the JS tools read it, and a crawler still learns from
+# it. ".map" is, because a source map is data, not an endpoint.
+_STATIC_EXT = (".css", ".png", ".jpg", ".jpeg", ".gif", ".svg", ".ico", ".webp",
+               ".avif", ".bmp", ".woff", ".woff2", ".ttf", ".otf", ".eot",
+               ".mp4", ".webm", ".mp3", ".wav", ".pdf", ".map")
+
+
+def _is_static_asset(url: str) -> bool:
+    """Is this endpoint a static file with nothing to test?"""
+    from urllib.parse import urlparse
+    try:
+        path = (urlparse(url or "").path or "").lower()
+    except ValueError:
+        return False
+    return path.endswith(_STATIC_EXT)

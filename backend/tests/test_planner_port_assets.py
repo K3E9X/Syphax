@@ -41,3 +41,22 @@ async def test_host_asset_still_produces_tasks():
     # The host itself is still scanned (sanity: the skip did not nuke everything).
     assert tasks
     assert all(t.asset_value == "prospex.example" for t in tasks)
+
+
+@pytest.mark.asyncio
+async def test_static_assets_are_not_fuzzed():
+    """A stylesheet/font/image has no injectable surface: dalfox and friends
+    were burning a job per static file and reporting CSS colours as results."""
+    planner = Planner(_FakeState())
+    assets = [
+        Asset(kind="endpoint", value="https://t.example/static/index-Dn2E.css"),
+        Asset(kind="endpoint", value="https://t.example/logo.png"),
+        Asset(kind="endpoint", value="https://t.example/app.js"),
+        Asset(kind="endpoint", value="https://t.example/api/v1?q=1"),
+    ]
+    tasks = await planner._candidate_tasks(assets, tech=[])
+    targeted = {t.asset_value for t in tasks}
+    assert "https://t.example/static/index-Dn2E.css" not in targeted
+    assert "https://t.example/logo.png" not in targeted
+    # Real surface is untouched.
+    assert "https://t.example/api/v1?q=1" in targeted
