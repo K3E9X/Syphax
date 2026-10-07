@@ -46,6 +46,7 @@ async def run_analysis(engagement_id: str, *, allow_active: bool = True) -> Dict
     from app.analysis.error_disclosure import analyze_error_disclosure
     from app.analysis.auth_posture import analyze_auth_posture
     from app.analysis.api_exposure import analyze_api_exposure
+    from app.analysis.dom_sinks import analyze_dom_sinks
     steps = [
         # Keep the JS on disk current for retire.js/jsluice, in case the
         # operator re-runs analysis and then a manual scan.
@@ -64,6 +65,8 @@ async def run_analysis(engagement_id: str, *, allow_active: bool = True) -> Dict
         ("error_disclosure", analyze_error_disclosure),
         # Secrets and personal data handed back by the API itself.
         ("api_exposure", analyze_api_exposure),
+        # Client-side: DOM XSS sinks fed from the URL, postMessage handlers.
+        ("dom_sinks", analyze_dom_sinks),
         # Identity + authentication. The bypass probe is active (in-scope GETs),
         # so it self-gates on allow_active like the other active analyzers.
         ("auth_posture", lambda eid: analyze_auth_posture(eid, allow_active=allow_active)),
