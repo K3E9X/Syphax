@@ -382,17 +382,26 @@ export default function PocReview({ engagementId }) {
               )}
             </div>
 
-            {result && (
-              <div className="poc-result">
-                <div className="poc-code-head">
-                  Sandbox output — exit {result.exit_code ?? 'n/a'}
-                  {result.timed_out ? ' · timed out' : ''} · {result.duration_s}s
-                  · scope {(result.scope_hosts || []).join(', ')}
+            {(() => {
+              // Prefer the result we just got from a manual run; otherwise the
+              // persisted one (an auto-run, or this PoC reopened later).
+              const runOut = result || open?.inspection?.run_result;
+              if (!runOut) return null;
+              const auto = !result && (open?.decided_by || '').startsWith('auto');
+              return (
+                <div className="poc-result">
+                  <div className="poc-code-head">
+                    Sandbox output — exit {runOut.exit_code ?? 'n/a'}
+                    {runOut.timed_out ? ' · timed out' : ''}
+                    {runOut.duration_s != null ? ` · ${runOut.duration_s}s` : ''}
+                    {(runOut.scope_hosts || []).length ? ` · scope ${(runOut.scope_hosts || []).join(', ')}` : ''}
+                    {auto ? ' · auto-run' : ''}
+                  </div>
+                  <pre className="poc-code">{runOut.stdout || '(no stdout)'}</pre>
+                  {runOut.stderr && <pre className="poc-code poc-code--err">{runOut.stderr}</pre>}
                 </div>
-                <pre className="poc-code">{result.stdout || '(no stdout)'}</pre>
-                {result.stderr && <pre className="poc-code poc-code--err">{result.stderr}</pre>}
-              </div>
-            )}
+              );
+            })()}
           </div>
         </div>
       )}

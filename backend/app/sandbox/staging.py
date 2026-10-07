@@ -280,6 +280,28 @@ class StagedPoCRepository:
                 "UPDATE staged_pocs SET status=$1, decided_by=$2, decided_at=$3 WHERE id=$4",
                 status, decided_by, time.time(), poc_id)
 
+    async def attach_run_result(self, poc_id: str, result: Dict[str, Any]) -> None:
+        """Persist a sandbox run's output onto the PoC's inspection blob.
+
+        Without this the run output (the stdout that IS the proof of access)
+        lived only in the browser of whoever clicked Run, and an auto-run had
+        nowhere to show it at all. Stored under inspection["run_result"] so the
+        review panel shows it whenever the PoC is reopened, for both paths.
+        """
+        async with db.acquire() as conn:
+            row = await conn.fetchrow(
+                "SELECT inspection FROM staged_pocs WHERE id=$1", poc_id)
+            if row is None:
+                return
+            try:
+                inspection = json.loads(row["inspection"] or "{}")
+            except (TypeError, ValueError):
+                inspection = {}
+            inspection["run_result"] = {**result, "ran_at": time.time()}
+            await conn.execute(
+                "UPDATE staged_pocs SET inspection=$1 WHERE id=$2",
+                json.dumps(inspection), poc_id)
+
 
 def _row_to_poc(row) -> StagedPoC:
     try:
