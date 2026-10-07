@@ -289,10 +289,12 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ decided_by: 'operator' }),
     }),
-    run: (pocId, timeout = 60) => request(`/api/poc/${pocId}/run`, {
+    // argv: the PoC's command line. null/undefined lets the backend derive it
+    // from the PoC's options and its finding's target; [] runs it bare.
+    run: (pocId, { timeout = 60, argv = null } = {}) => request(`/api/poc/${pocId}/run`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ timeout }),
+      body: JSON.stringify({ timeout, argv }),
     }),
   },
 

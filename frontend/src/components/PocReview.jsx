@@ -75,6 +75,9 @@ export default function PocReview({ engagementId }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
   const [result, setResult] = useState(null);
+  // The PoC's command line. Public exploits take "-t host -p port"; running them
+  // bare just prints a usage error, which is why nothing was ever proven.
+  const [argvStr, setArgvStr] = useState('');
 
   const [listError, setListError] = useState(null);
   const load = useCallback(async () => {
@@ -113,7 +116,11 @@ export default function PocReview({ engagementId }) {
 
   async function openPoc(id) {
     setError(null); setResult(null);
-    try { setOpen(await api.poc.get(id)); } catch (e) { setError(e.message); }
+    try {
+      const p = await api.poc.get(id);
+      setOpen(p);
+      setArgvStr((p.suggested_argv || []).join(' '));
+    } catch (e) { setError(e.message); }
   }
 
   // Spelled out rather than dispatched through api.poc[action]: dynamic
@@ -133,7 +140,8 @@ export default function PocReview({ engagementId }) {
   async function runPoc() {
     setBusy(true); setError(null); setResult(null);
     try {
-      const r = await api.poc.run(open.id);
+      const argv = argvStr.trim() ? argvStr.trim().split(/\s+/) : [];
+      const r = await api.poc.run(open.id, { argv });
       setResult(r.result);
       await load();
       setOpen(await api.poc.get(open.id));
@@ -350,6 +358,21 @@ export default function PocReview({ engagementId }) {
               ))}
             </pre>
 
+            {(open.status === 'approved' || open.status === 'executed') && (
+              <div className="field" style={{ marginTop: 12 }}>
+                <label className="field__label" htmlFor="poc-argv">
+                  Arguments{' '}
+                  <span style={{ textTransform: 'none', fontWeight: 400, color: 'var(--text-faint)' }}>
+                    the command line the PoC receives — derived from its own options
+                    and this finding&apos;s target; edit it if the guess is wrong
+                  </span>
+                </label>
+                <input id="poc-argv" className="input" style={{ fontFamily: 'var(--font-mono)' }}
+                       placeholder="-t 10.0.0.1 -p 22"
+                       value={argvStr} onChange={(e) => setArgvStr(e.target.value)} />
+              </div>
+            )}
+
             <div className="form-actions">
               {open.status === 'staged' && (
                 <>
@@ -397,6 +420,11 @@ export default function PocReview({ engagementId }) {
                     {(runOut.scope_hosts || []).length ? ` · scope ${(runOut.scope_hosts || []).join(', ')}` : ''}
                     {auto ? ' · auto-run' : ''}
                   </div>
+                  {(runOut.argv || []).length > 0 && (
+                    <div className="shadow__reason mono">
+                      ran: {(runOut.argv || []).join(' ')}
+                    </div>
+                  )}
                   <pre className="poc-code">{runOut.stdout || '(no stdout)'}</pre>
                   {runOut.stderr && <pre className="poc-code poc-code--err">{runOut.stderr}</pre>}
                 </div>

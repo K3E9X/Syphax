@@ -45,6 +45,10 @@ class DecisionRequest(BaseModel):
 
 class RunRequest(BaseModel):
     timeout: int = 60
+    # Command line for the PoC. Omitted/None = derive it from the PoC's declared
+    # options and its finding's target; [] = run bare (what used to happen
+    # always, which made argparse-based exploits exit 2 on a usage message).
+    argv: Optional[List[str]] = None
 
 
 async def _authorized_engagement(engagement_id: str):
@@ -116,7 +120,16 @@ async def get_staged(poc_id: str) -> Dict[str, Any]:
     poc = await _repo.get(poc_id)
     if poc is None:
         raise HTTPException(status_code=404, detail="staged PoC not found")
-    return poc.to_public(include_code=True)
+    out = poc.to_public(include_code=True)
+    # The command line this PoC would be run with, derived from its declared
+    # options and its finding's target. Shown (and editable) before running, so
+    # an exploit that needs "-t host -p port" is not fired bare at a usage error.
+    try:
+        from app.exploit.poc_run import _argv_for
+        out["suggested_argv"] = await _argv_for(poc)
+    except Exception:  # noqa: BLE001 - a failed guess must not hide the PoC
+        out["suggested_argv"] = []
+    return out
 
 
 @router.post("/{poc_id}/approve")
@@ -170,7 +183,8 @@ async def run(poc_id: str, req: RunRequest) -> Dict[str, Any]:
     from app.exploit.poc_run import PoCRunRefused, execute_poc
     try:
         return await execute_poc(eng, poc, timeout=req.timeout,
-                                 decided_by=poc.decided_by or "operator")
+                                 decided_by=poc.decided_by or "operator",
+                                 argv=req.argv)
     except PoCRunRefused as exc:
         raise HTTPException(status_code=exc.status, detail=str(exc)) from exc
 
