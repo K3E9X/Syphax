@@ -35,6 +35,11 @@ export default [
       // Without this, every imported component reads as an unused variable:
       // core ESLint does not know that <Card/> is a use of `Card`.
       'react/jsx-uses-vars': 'error',
+      // ...and the mirror of it: core no-undef does not resolve a JSX element
+      // name either, so <Check/> in a file that never imported Check passed
+      // lint AND build, then threw "Check is not defined" and blanked the
+      // whole screen the moment the page rendered.
+      'react/jsx-no-undef': 'error',
       // An empty catch block is how an error disappears. Six of them were
       // hiding failures in this codebase; the ones that remain are deliberate
       // and say so in a comment, which this allows for.

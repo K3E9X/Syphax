@@ -180,14 +180,14 @@ export default function Settings() {
               on its own. Every run is still scope-enforced and happens inside the
               isolated sandbox.
             </p>
-            <div className="checks">
-              <Check checked={exploit.auto_run_poc !== false}
-                     onChange={(v) => setExploit('auto_run_poc', v)}>
-                <b>Run vetted proofs automatically.</b> A PoC that passes both
-                readings (safe for the target, no malware aimed at you) runs in the
-                sandbox without waiting for a click. Anything suspicious still waits
-                for you.
-              </Check>
+            <div className="toggle-row">
+              <span className="toggle-row__txt">
+                Run vetted proofs automatically — a PoC that passes both readings
+                (safe for the target, no malware aimed at you) runs in the sandbox
+                without waiting for a click. Anything suspicious still waits for you.
+              </span>
+              <Toggle on={exploit.auto_run_poc !== false}
+                      onChange={(v) => setExploit('auto_run_poc', v)} />
             </div>
             <div className="field" style={{ marginTop: 12 }}>
               <label className="field__label" htmlFor="set-refine">
