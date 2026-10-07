@@ -460,13 +460,30 @@ export default function LiveView() {
                     <div className="finding__title">{f.title}</div>
                     <div className="finding__target">{f.target}</div>
                     <div className="finding__meta">{f.tool} · {f.vuln_class}{f.method ? ' · ' + f.method : ''}</div>
+                    {(f.metadata || {}).description && <div className="finding__desc">{f.metadata.description}</div>}
                     {f.corroboration && f.corroboration.note && (
                       <div className={'corr' + (f.corroboration.demoted ? ' corr--down' : '')}>
                         {f.corroboration.demoted ? '↓ ' : (f.corroboration.independent > 1 ? '↑ ' : '')}
                         {f.corroboration.note}
                       </div>
                     )}
-                    {f.poc && <pre className="finding__poc">{f.poc}</pre>}
+                    {f.evidence && <><div className="finding__proof-l">Evidence</div><pre className="finding__poc">{f.evidence}</pre></>}
+                    {f.poc && <><div className="finding__proof-l">Proof of concept</div><pre className="finding__poc">{f.poc}</pre></>}
+                    {(f.metadata || {}).proof_replay && (
+                      <div className={'corr' + (f.metadata.proof_replay.outcome === 'held' ? '' : ' corr--down')}>
+                        {f.metadata.proof_replay.outcome === 'held' ? '✓ confirmed by a read-only replay'
+                          : f.metadata.proof_replay.outcome === 'did_not_hold' ? '✗ a replay refuted the model’s claim'
+                            : `replay: ${f.metadata.proof_replay.outcome}`}
+                        {f.metadata.proof_replay.request ? ` · ${f.metadata.proof_replay.request}` : ''}
+                      </div>
+                    )}
+                    {(f.metadata || {}).shadow_judge && (
+                      <div className={'corr' + (f.metadata.shadow_judge.agreement === 'agree' ? '' : ' corr--down')}>
+                        Second opinion ({f.metadata.shadow_judge.backend}): {f.metadata.shadow_judge.agreement === 'agree' ? 'agreed' : 'disagreed'}
+                        {f.metadata.shadow_judge.shadow?.status ? ` — said ${f.metadata.shadow_judge.shadow.status}` : ''}
+                        {f.metadata.shadow_judge.shadow?.reason ? ` · ${f.metadata.shadow_judge.shadow.reason}` : ''}
+                      </div>
+                    )}
                     {(f.metadata || {}).suggested_proof && (
                       <div className="finding__proof">
                         <span className="finding__proof-l">Suggested proof</span>
