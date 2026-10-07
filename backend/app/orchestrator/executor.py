@@ -208,6 +208,15 @@ class Executor:
             if host and (eng is None or eng.host_in_scope(host)):
                 await self.state.add_asset("host", host, source="subfinder")
                 new_asset = ("host", host)
+        elif tool in ("naabu", "nmap") and meta.get("port") and not meta.get("nse_script"):
+            # Open-port findings from the scanners become "port" assets so the
+            # Surface page can show them. Without this the ports were only ever
+            # findings and Surface always read "0 ports". NSE vuln findings
+            # (which carry nse_script) are not ports - they are skipped here.
+            port_asset = _port_asset_value(finding, meta)
+            if port_asset:
+                await self.state.add_asset("port", port_asset, source=tool)
+                new_asset = ("port", port_asset)
 
         if new_asset:
             await events.emit(
@@ -226,6 +235,32 @@ _NOT_IN_A_URL = set('\\ "<>{}|^`') | {chr(c) for c in range(0x21)} | {chr(0x7f)}
 
 # A path that is really a regex: escaped separators or metacharacters.
 _REGEX_PATH = re.compile(r"\\[./]|\(\?|\[\^|\)\$|\.\*")
+
+
+def _port_asset_value(finding, meta: dict) -> Optional[str]:
+    """Build the "port" asset value from a naabu/nmap open-port finding.
+
+    Format: "<port>/<proto> · <host> · <service> <version>" - the Surface API
+    (app/api/surface.py) splits on "·", so host and service each stay in their
+    own field. naabu emits host+port only (service empty); nmap adds service,
+    product and version. Both collapse to one row per (host, port) on Surface.
+    """
+    port = meta.get("port")
+    if not port:
+        return None
+    proto = (meta.get("protocol") or "tcp").lower()
+    # Host: naabu puts it in metadata; nmap only in the target "<addr>:<port>".
+    host = (meta.get("host") or "").strip().lower()
+    if not host:
+        tgt = (finding.target or "").strip()
+        host = tgt.rsplit(":", 1)[0].lower() if ":" in tgt else tgt.lower()
+    if not host:
+        return None
+    service = (meta.get("service") or "").strip()
+    version = " ".join(p for p in (str(meta.get("product") or "").strip(),
+                                   str(meta.get("version") or "").strip()) if p)
+    svc = (f"{service} {version}".strip()) if (service or version) else ""
+    return f"{port}/{proto} · {host} · {svc}".rstrip(" ·").rstrip()
 
 
 def _looks_like_http_url(value: str) -> bool:
