@@ -173,7 +173,7 @@ export default function Engagements() {
               </div>
               <div className="field">
                 <label className="field__label">In-scope hosts <span style={{ textTransform: 'none', color: 'var(--text-faint)', fontWeight: 400 }}>optional</span></label>
-                <input className="input" placeholder="api.example.com, .example.com" value={form.scope_hosts} onChange={(e) => set({ scope_hosts: e.target.value })} />
+                <input className="input" placeholder="api.example.com, *.example.com" value={form.scope_hosts} onChange={(e) => set({ scope_hosts: e.target.value })} />
                 {handoff.from_prerecon && (
                   <span className="field__hint">
                     Prefilled from pre-recon on {handoff.from_prerecon}: names found on the

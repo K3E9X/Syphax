@@ -175,11 +175,16 @@ class Engagement:
         host = (host or "").lower().strip()
         for allowed in self.scope_hosts:
             allowed = allowed.lower().strip()
+            # A wildcard entry "*.iliad.fr" means the same as ".iliad.fr": the
+            # domain and all its subdomains. Operators type it either way.
+            if allowed.startswith("*."):
+                allowed = allowed[1:]
             if host == allowed:
                 return True
-            # allow subdomains of an in-scope apex when the entry starts with '.'
-            if allowed.startswith(".") and host.endswith(allowed):
-                return True
+            if allowed.startswith("."):
+                # ".iliad.fr" matches any subdomain AND the apex "iliad.fr".
+                if host.endswith(allowed) or host == allowed[1:]:
+                    return True
         return False
 
     def url_in_scope(self, url: str) -> bool:
