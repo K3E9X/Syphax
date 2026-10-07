@@ -43,6 +43,7 @@ async def run_analysis(engagement_id: str, *, allow_active: bool = True) -> Dict
     from app.exploit import run_cve_checks  # targeted CVE checks (safe-PoC GETs)
     from app.analysis.llm_recon import analyze_llm_recon  # LLM response analyst
     from app.analysis.http_posture import analyze_http_posture
+    from app.analysis.error_disclosure import analyze_error_disclosure
     steps = [
         # Keep the JS on disk current for retire.js/jsluice, in case the
         # operator re-runs analysis and then a manual scan.
@@ -57,6 +58,8 @@ async def run_analysis(engagement_id: str, *, allow_active: bool = True) -> Dict
         # clickjacking, HSTS, version disclosure. Sends nothing, so it still
         # works on a WAF'd target where active probing stalls.
         ("http_posture", analyze_http_posture),
+        # Stack traces / SQL errors / internal paths in captured responses.
+        ("error_disclosure", analyze_error_disclosure),
         ("graphql", analyze_graphql),
         ("llm_recon", analyze_llm_recon),    # LLM eye on captured traffic (grounded)
     ]
