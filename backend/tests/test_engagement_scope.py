@@ -38,10 +38,13 @@ def test_primary_host_always_in_scope():
     assert e.host_in_scope("example.com")
 
 
-def test_active_exploit_flags_default_off():
+def test_active_exploit_on_by_default_destructive_subflags_off():
+    # Active exploitation (known-CVE verification + benign read-only proof) is
+    # on by default on every engagement; the destructive sub-flags are not.
     e = Engagement.create("https://example.com", attested=True)
-    assert e.allow_active_exploit is False
+    assert e.allow_active_exploit is True
     assert e.allow_sql_os_cmd is False
+    assert e.allow_data_proof is False
 
 
 def test_active_exploit_flags_opt_in():

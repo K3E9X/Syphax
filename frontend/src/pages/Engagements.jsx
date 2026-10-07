@@ -26,7 +26,7 @@ function SevMini({ sev }) {
 
 const BLANK = {
   target_url: '', scope_hosts: '', auth: '', secondary_auth: '',
-  require_approval: false, allow_active_exploit: false,
+  require_approval: false, allow_active_exploit: true,
   allow_sql_os_cmd: false, allow_data_proof: false, attest: false,
   // Empty means "follow USER_AGENT_MODE from the environment", which is what
   // every engagement created before this field existed does.
@@ -278,20 +278,25 @@ export default function Engagements() {
               <Check checked={form.require_approval} onChange={(v) => set({ require_approval: v })}>
                 <b>Require my approval</b> before the exploitation phase.
               </Check>
-              <Check checked={form.allow_active_exploit} onChange={(v) => set({ allow_active_exploit: v, allow_sql_os_cmd: v && form.allow_sql_os_cmd, allow_data_proof: v && form.allow_data_proof })}>
-                <b>Prove impact:</b> run a benign read-only command through confirmed injections (RCE/SQLi) to demonstrate access. Never destructive.
-              </Check>
-              {form.allow_active_exploit && (
-                <div className="check-nested">
-                  <div className="danger-note">sensitive - only on targets you fully own</div>
-                  <Check checked={form.allow_sql_os_cmd} onChange={(v) => set({ allow_sql_os_cmd: v })}>
-                    Also attempt OS command execution through SQLi <code>(sqlmap --os-cmd)</code>.
-                  </Check>
-                  <Check checked={form.allow_data_proof} onChange={(v) => set({ allow_data_proof: v })}>
-                    Prove a data breach: retrieve a small bounded sample <code>(&le;3 rows)</code> of sensitive tables via confirmed SQLi.
-                  </Check>
-                </div>
-              )}
+              {/* Active exploitation is ON by default on every engagement:
+                  it runs the known-CVE verification pass (nuclei CVE templates,
+                  OOB-confirmed) and a benign read-only proof of confirmed
+                  injections. Never destructive. The genuinely dangerous steps
+                  below stay opt-in. */}
+              <div className="form-note">
+                <b>Active exploitation is on</b> for every engagement: known-CVE
+                verification (OOB-confirmed) and a benign read-only proof of
+                confirmed injections. Never destructive.
+              </div>
+              <div className="check-nested">
+                <div className="danger-note">sensitive - only on targets you fully own</div>
+                <Check checked={form.allow_sql_os_cmd} onChange={(v) => set({ allow_sql_os_cmd: v })}>
+                  Also attempt OS command execution through SQLi <code>(sqlmap --os-cmd)</code>.
+                </Check>
+                <Check checked={form.allow_data_proof} onChange={(v) => set({ allow_data_proof: v })}>
+                  Prove a data breach: retrieve a small bounded sample <code>(&le;3 rows)</code> of sensitive tables via confirmed SQLi.
+                </Check>
+              </div>
             </div>
 
             <div className="attest">

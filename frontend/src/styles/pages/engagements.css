@@ -44,6 +44,8 @@
 
 /* sensitive block (exploit) */
 .danger-note { font-family: var(--font-mono); font-size: 11px; color: var(--severity-medium); }
+.form-note { font-size: 12.5px; line-height: 1.5; color: var(--text-secondary); padding: 10px 12px; border: 1px solid var(--border); border-left: 2px solid var(--brand); border-radius: 6px; background: var(--surface-2, rgba(255,255,255,.02)); }
+.form-note b { color: var(--text-primary); }
 
 /* authorization gate */
 .attest { border: 1px solid rgba(234,179,8,.35); border-radius: var(--radius-md); background: var(--surface); padding: 14px 16px; }

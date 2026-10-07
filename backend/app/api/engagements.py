@@ -61,8 +61,10 @@ class CreateEngagementRequest(BaseModel):
     attest_authorized: bool = False
     # Active exploitation: prove confirmed injections (RCE/SQLi) by running a
     # benign read-only command. Off by default; double-gated with the
-    # exploitation approval.
-    allow_active_exploit: bool = False
+    # exploitation approval. ON by default: the known-CVE verification pass and
+    # the benign read-only proof run on every engagement (authorization is
+    # attested at creation). Dangerous sub-flags below stay off by default.
+    allow_active_exploit: bool = True
     # Sub-flag: also allow OS command execution through SQLi (sqlmap --os-cmd).
     allow_sql_os_cmd: bool = False
     # Sub-flag: prove a data breach with a small bounded SQLi dump (<=3 rows).

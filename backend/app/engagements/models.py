@@ -71,9 +71,11 @@ class Engagement:
     # Pause before the exploitation phase and wait for human approval.
     require_exploit_approval: bool = False
     # Active exploitation: after a tool confirms an injection, PROVE impact by
-    # running a benign, read-only command (RCE/SQLi). Off by default and
-    # double-gated with the exploitation approval. Never destructive.
-    allow_active_exploit: bool = False
+    # running a benign, read-only command (RCE/SQLi), and run the known-CVE
+    # verification pass. ON by default on every engagement (the operator has
+    # already attested authorization at creation); never destructive. The
+    # genuinely dangerous sub-flags below stay off by default.
+    allow_active_exploit: bool = True
     # Sub-flag: also allow OS command execution *through SQLi* (sqlmap --os-cmd).
     allow_sql_os_cmd: bool = False
     # Sub-flag: prove a DATA BREACH by dumping a small, bounded sample (<=3 rows)
@@ -122,7 +124,7 @@ class Engagement:
         budget_seconds: Optional[int] = None,
         attested: bool = False,
         require_exploit_approval: bool = False,
-        allow_active_exploit: bool = False,
+        allow_active_exploit: bool = True,
         allow_sql_os_cmd: bool = False,
         allow_data_proof: bool = False,
         exploit_capabilities: Optional[List[str]] = None,
