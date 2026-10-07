@@ -120,6 +120,13 @@ export const api = {
     approvals: (id) => request(`/api/engagements/${id}/approvals`),
     surface: (id) => request(`/api/engagements/${id}/surface`),
     coverage: (id) => request(`/api/engagements/${id}/coverage`),
+    // Hosts the run discovered but was not allowed to touch, and the explicit
+    // operator action that admits chosen ones into scope.
+    scopeCandidates: (id) => request(`/api/engagements/${id}/scope/candidates`),
+    scopeAdd: (id, hosts) => request(`/api/engagements/${id}/scope/add`, {
+      method: 'POST',
+      body: JSON.stringify({ hosts }),
+    }),
     findings: (id) => request(`/api/engagements/${id}/findings`),
     chains: (id) => request(`/api/engagements/${id}/chains`),
     reportJson: (id) => request(`/api/engagements/${id}/report.json`),

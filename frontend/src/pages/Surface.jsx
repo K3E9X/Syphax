@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { api } from '../lib/api.js';
 import { useEngagements } from '../lib/useApi.js';
 import { Notice, activateOnKey } from '../components/ui.jsx';
@@ -15,6 +15,12 @@ export default function Surface() {
   const [hosts, setHosts] = useState([]);
   const [sel, setSel] = useState(null);
   const [q, setQ] = useState('');
+  // Hosts the run found but was not allowed to touch, and the ones the operator
+  // ticks to admit. Admitting widens the authorization, so it is never automatic.
+  const [cands, setCands] = useState([]);
+  const [picked, setPicked] = useState({});
+  const [scopeBusy, setScopeBusy] = useState(false);
+  const [scopeMsg, setScopeMsg] = useState(null);
 
   useEffect(() => {
     if (!engId) return;
@@ -24,6 +30,26 @@ export default function Surface() {
       setSel(hs.length ? hs[0].host : null);
     }).catch((e) => { setHosts([]); setLoadError(e.message); });
   }, [engId]);
+
+  const loadCandidates = useCallback(() => {
+    if (!engId) return;
+    api.engagements.scopeCandidates(engId)
+      .then((r) => setCands(r.items || []))
+      .catch(() => setCands([]));
+  }, [engId]);
+  useEffect(() => { setPicked({}); setScopeMsg(null); loadCandidates(); }, [loadCandidates]);
+
+  async function admit() {
+    const hostsToAdd = Object.keys(picked).filter((k) => picked[k]);
+    if (!hostsToAdd.length) return;
+    setScopeBusy(true); setScopeMsg(null);
+    try {
+      const r = await api.engagements.scopeAdd(engId, hostsToAdd);
+      setScopeMsg(`Added to scope: ${(r.added || []).join(', ') || 'nothing new'}`);
+      setPicked({});
+      loadCandidates();
+    } catch (e) { setScopeMsg(e.message); } finally { setScopeBusy(false); }
+  }
 
   const openPorts = (h) => (h.ports || []).filter((p) => p.state === 'open').length;
   const shown = hosts.filter((h) => !q || (h.host || '').toLowerCase().includes(q.toLowerCase()));
@@ -122,6 +148,62 @@ export default function Surface() {
               </div>
             </div>
           )}
+        </div>
+      )}
+
+      {cands.length > 0 && (
+        <div className="card" style={{ marginBottom: 16 }}>
+          <div className="card__head">
+            <span className="card__title">Discovered outside scope</span>
+            <span className="card__meta">{cands.length} host(s) · tick to authorize</span>
+          </div>
+          <div className="card__body">
+            <p className="intro">
+              The run found these hosts but was not allowed to touch them — an API
+              or a sibling subdomain you have not scoped. Admitting one widens the
+              engagement&apos;s authorization, so it is your call, never the tool&apos;s.
+              Only tick what you are authorized to test.
+            </p>
+            <div className="tbl-scroll">
+              <table className="tbl">
+                <thead>
+                  <tr><th></th><th>Host</th><th>Resolves to</th><th>Relation</th><th>Found by</th></tr>
+                </thead>
+                <tbody>
+                  {cands.map((c) => (
+                    <tr key={c.host}>
+                      <td>
+                        <input type="checkbox" aria-label={`Add ${c.host} to scope`}
+                               checked={!!picked[c.host]}
+                               onChange={(e) => setPicked((p) => ({ ...p, [c.host]: e.target.checked }))} />
+                      </td>
+                      <td className="mono">{c.host}</td>
+                      <td className="mono" style={{ color: 'var(--text-faint)', fontSize: 11 }}>
+                        {(c.ips || []).join(', ') || '—'}
+                      </td>
+                      <td>
+                        {c.same_server
+                          ? <span className="sev sev--medium">same server</span>
+                          : c.same_domain
+                            ? <span className="sev sev--low">same domain</span>
+                            : <span className="sev sev--info">unrelated</span>}
+                      </td>
+                      <td style={{ color: 'var(--text-faint)', fontSize: 11 }}>
+                        {(c.sources || []).join(', ')}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div className="form-actions">
+              <button className="btn btn--solid" onClick={admit}
+                      disabled={scopeBusy || !Object.values(picked).some(Boolean)}>
+                {scopeBusy ? 'Adding…' : 'Add selected to scope'}
+              </button>
+              {scopeMsg && <span className="set-actions__msg">{scopeMsg}</span>}
+            </div>
+          </div>
         </div>
       )}
 
