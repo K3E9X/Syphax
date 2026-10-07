@@ -44,6 +44,7 @@ async def run_analysis(engagement_id: str, *, allow_active: bool = True) -> Dict
     from app.analysis.llm_recon import analyze_llm_recon  # LLM response analyst
     from app.analysis.http_posture import analyze_http_posture
     from app.analysis.error_disclosure import analyze_error_disclosure
+    from app.analysis.auth_posture import analyze_auth_posture
     steps = [
         # Keep the JS on disk current for retire.js/jsluice, in case the
         # operator re-runs analysis and then a manual scan.
@@ -60,6 +61,9 @@ async def run_analysis(engagement_id: str, *, allow_active: bool = True) -> Dict
         ("http_posture", analyze_http_posture),
         # Stack traces / SQL errors / internal paths in captured responses.
         ("error_disclosure", analyze_error_disclosure),
+        # Identity + authentication. The bypass probe is active (in-scope GETs),
+        # so it self-gates on allow_active like the other active analyzers.
+        ("auth_posture", lambda eid: analyze_auth_posture(eid, allow_active=allow_active)),
         ("graphql", analyze_graphql),
         ("llm_recon", analyze_llm_recon),    # LLM eye on captured traffic (grounded)
     ]

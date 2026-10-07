@@ -148,6 +148,34 @@ MAPPING: Dict[str, Dict[str, Any]] = {
         "remediation": "Remove publicly accessible source/config (.git, .env, "
                        "backups); block them at the web server.",
     },
+    "cleartext_credentials": {
+        "category": "auth_secrets",
+        "wstg": "WSTG-ATHN-01", "attack": ["T1040"], "cwe": "CWE-319",
+        "remediation": "Serve the login over HTTPS only and redirect HTTP to it "
+                       "with HSTS; never submit credentials to an http:// URL.",
+    },
+    "user_enumeration": {
+        "category": "auth_secrets",
+        "wstg": "WSTG-IDNT-04", "attack": ["T1589.001"], "cwe": "CWE-204",
+        "remediation": "Return one generic message and the same timing for "
+                       "unknown users and wrong passwords, on login, password "
+                       "reset and registration alike.",
+    },
+    "weak_password_policy": {
+        "category": "auth_secrets",
+        "wstg": "WSTG-ATHN-07", "attack": ["T1110"], "cwe": "CWE-521",
+        "remediation": "Require a reasonable minimum length (>= 8, ideally 12), "
+                       "check candidates against a breached-password list, and "
+                       "enforce it server-side - not only in the browser.",
+    },
+    "auth_bypass": {
+        "category": "access_control",
+        "wstg": "WSTG-ATHN-04", "attack": ["T1078"], "cwe": "CWE-287",
+        "remediation": "Do not let request headers override the routed path or the "
+                       "caller's address for authorization. Ignore X-Original-URL / "
+                       "X-Rewrite-URL, and never trust a client-supplied "
+                       "X-Forwarded-For for an access decision.",
+    },
     "cookie_security": {
         "category": "auth_secrets",
         "wstg": "WSTG-SESS-02", "attack": ["T1539"], "cwe": "CWE-614",
