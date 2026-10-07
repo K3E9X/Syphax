@@ -145,3 +145,32 @@ def test_summary_counts_what_happened_not_just_what_was_planned():
 
     src = _inspect.getsource(campaign.run_campaign)
     assert '"proven"' in src and '"escalated_to_model"' in src
+
+
+# ---- the Sandbox page is optional ------------------------------------------
+
+def test_the_automatic_path_does_not_wait_for_a_human_approval():
+    """Nothing in the run requires opening the Sandbox page. The approval gate
+    belongs to the MANUAL endpoint only; the campaign calls execute_poc directly."""
+    import inspect as _inspect
+
+    from app.api import poc as poc_api
+    from app.exploit import campaign, poc_run
+
+    # The shared runner has no approval check...
+    assert "STATUS_APPROVED" not in _inspect.getsource(poc_run.execute_poc)
+    # ...the manual endpoint does...
+    assert "STATUS_APPROVED" in _inspect.getsource(poc_api.run)
+    # ...and the automatic path goes straight to the runner.
+    assert "execute_poc" in _inspect.getsource(campaign._auto_run_staged)
+
+
+def test_only_a_poc_that_looks_hostile_to_the_operator_waits():
+    """The single remaining human gate: static analysis says the PoC attacks
+    YOU (a stealer in a fake exploit repo), not the target."""
+    import inspect as _inspect
+
+    from app.exploit import campaign
+
+    src = _inspect.getsource(campaign._auto_run_staged)
+    assert '"review"' in src and "needs a human" in src
