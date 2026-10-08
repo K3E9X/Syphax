@@ -64,12 +64,25 @@ class RunRequest(BaseModel):
     scope_hosts: List[str] = Field(default_factory=list)
 
 
+def _effective_user() -> str:
+    try:
+        import pwd
+        return pwd.getpwuid(os.geteuid()).pw_name
+    except Exception:  # noqa: BLE001 - a missing passwd entry is not fatal
+        return f"uid:{os.geteuid()}"
+
+
 @app.get("/health")
 async def health() -> Dict[str, Any]:
     return {
         "status": "ok",
         "egress_locked": Path("/run/egress.locked").exists(),
-        "user": os.environ.get("USER", "unknown"),
+        # The REAL effective user, not the USER env var: gosu does not set it,
+        # so this always answered "unknown" - useless for the one question it
+        # exists to answer, which is whether untrusted code is about to run as
+        # root.
+        "user": _effective_user(),
+        "uid": os.geteuid(),
     }
 
 
