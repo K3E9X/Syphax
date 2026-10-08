@@ -540,28 +540,31 @@ async def _finalize_engagement(engagement, run: Run, runs: RunRepository,
         except Exception:  # noqa: BLE001 - enrichment never fails a run
             logger.exception("[%s] public-exploit aggregation error", run.id)
 
-        # The campaign: walk every validated finding, pick the best available
-        # route to proving it, and follow it. Reads the aggregation above to
-        # know which findings have a published PoC, so it runs after it.
-        #
-        # Also outside the gate, and for the same reason: fetching a repository
-        # and asking a model both happen without touching the target, and an
-        # operator deciding whether to turn allow_active_exploit on should be
-        # able to see what it would unlock. Executing a staged PoC is where the
-        # gate bites - /api/poc/{id}/run re-checks every one of them rather
-        # than trusting the approval it was given.
-        try:
-            from app.exploit import run_campaign
-            await run_campaign(engagement.id)
-        except Exception:  # noqa: BLE001 - one dead route is not the run
-            logger.exception("[%s] exploitation campaign error", run.id)
-
         run.phase = "validation"
         await runs.update(run)
         await events.emit(engagement.id, events.PHASE_CHANGED, "Phase: validation",
                           run_id=run.id, phase="validation")
 
         stats = await validate_engagement(engagement.id)
+
+        # The campaign: walk every VALIDATED finding, follow every route to
+        # proving it, and stop at the first that works.
+        #
+        # It must run AFTER validate_engagement, which is what creates the
+        # validated findings it reads. It used to run nine lines earlier, found
+        # an empty table on a first run, and returned through a silent early
+        # exit - no plan, no PoC, no event. Every finding then stayed "likely"
+        # with nothing in the console to say why.
+        #
+        # Outside the active-exploit gate on purpose: fetching a repository and
+        # asking a model both happen without touching the target. Executing a
+        # staged PoC is where the gate bites, and execute_poc re-checks it.
+        try:
+            from app.exploit import run_campaign
+            await run_campaign(engagement.id)
+        except Exception:  # noqa: BLE001 - one dead route is not the run
+            logger.exception("[%s] exploitation campaign error", run.id)
+
         # Intelligence #3: LLM judge pass to kill false positives / confirm
         # with grounded evidence (best-effort; no-op without an LLM).
         try:

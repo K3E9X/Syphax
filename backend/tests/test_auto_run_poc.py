@@ -209,3 +209,30 @@ def test_only_a_poc_that_looks_hostile_to_the_operator_waits():
 
     src = _inspect.getsource(campaign._auto_run_staged)
     assert '"review"' in src and "needs a human" in src
+
+
+# ---- ordering: the campaign must see the findings it works on --------------
+
+def test_the_campaign_runs_after_validation_creates_its_input():
+    """run_campaign reads VALIDATED findings. It used to run nine lines before
+    validate_engagement, which is what writes them: on a run it found an empty
+    table, returned through a silent early exit, and produced no plan, no PoC
+    and no event - every finding stayed "likely" with nothing explaining it."""
+    import inspect as _inspect
+
+    from app.orchestrator import loop
+
+    src = _inspect.getsource(loop)
+    assert src.index("await validate_engagement(engagement.id)") < \
+        src.index("await run_campaign(engagement.id)"), \
+        "the campaign reads validated findings before validation writes them"
+
+
+def test_an_empty_campaign_says_so():
+    """The silent return is what hid the ordering bug."""
+    import inspect as _inspect
+
+    from app.exploit import campaign
+
+    src = _inspect.getsource(campaign.run_campaign)
+    assert "no validated finding to work on" in src
