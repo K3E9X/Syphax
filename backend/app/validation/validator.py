@@ -196,15 +196,23 @@ class FindingValidator:
     async def _check_against_baseline(
         self, finding: Finding, vuln_class: str
     ) -> Optional[ValidationResult]:
-        """Disprove a path-existence finding that matches the catch-all page.
+        """Disprove a path-existence finding by asking the server about it.
 
-        Only runs when calibration actually found a catch-all, so a server that
-        returns a real 404 costs no extra request here. Only applies to classes
-        that claim a path exists or is readable - never to an injection or a
-        TLS finding, where the response shape means nothing.
+        Two ways a "this path exists" claim dies, and both need the same one
+        request:
+
+          * the server is a catch-all and answers every path the same way, so
+            the scanner matched the friendly page rather than a resource;
+          * the server answers a real 404/410, so the path simply is not there.
+
+        The second case used to be skipped entirely - the method returned
+        immediately unless calibration had found a catch-all - which is why a
+        well-behaved server still produced a list of "discovered" paths that
+        were all 404s, and the operator had to sort them by hand.
+
+        Only applies to classes that claim a path exists or is readable: on an
+        injection or a TLS finding the response shape means nothing.
         """
-        if not self.baseline.catch_all:
-            return None
         if vuln_class not in DISCOVERY_CLASSES:
             return None
         url = finding.target
@@ -218,6 +226,18 @@ class FindingValidator:
         except ScopeError:
             return None
         if resp is None:
+            return None
+
+        # The server distinguishes missing paths and says this one is missing.
+        if resp.status_code in (404, 410):
+            return ValidationResult.false_positive(
+                "re-request",
+                detail=f"{url} answers {resp.status_code}: the path does not "
+                       "exist. The scanner reported it from an earlier response "
+                       "or a pattern, not from the resource being there.",
+            )
+
+        if not self.baseline.catch_all:
             return None
         if not baseline_matches(self.baseline, resp.status_code, resp.text or "",
                                 path=path):

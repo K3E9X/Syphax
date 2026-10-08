@@ -281,15 +281,52 @@ def test_the_baseline_never_touches_an_injection_finding():
     assert len(safe.fetched) == before  # no extra request either
 
 
-def test_an_honest_target_costs_no_extra_request():
+def test_an_honest_target_is_re_requested_and_a_real_hit_survives():
+    """Deliberate change of an earlier decision.
+
+    This used to assert that a server returning real 404s cost NO extra
+    request: the baseline check returned immediately unless calibration had
+    found a catch-all. The cost saving was real, but so was the consequence -
+    a path the scanner reported from a pattern or an earlier response was
+    never re-asked about, so a list of "discovered" paths that were all 404s
+    reached the operator to sort by hand.
+
+    One in-scope read-only GET per path-existence claim is the price of not
+    reporting things that are not there.
+    """
     safe = FakeSafePoC(default=(404, "<title>404</title>gone"),
                        routes={"/backup.sql": (200, REAL_PAGE)})
     baseline = run(calibrate(safe, "https://target.example.com/"))
     n = len(safe.fetched)
     v = FindingValidator(safe, baseline=baseline)
-    run(v.validate(_finding("https://target.example.com/backup.sql"),
-                   "nikto", "information_disclosure"))
-    assert len(safe.fetched) == n
+    result = run(v.validate(_finding("https://target.example.com/backup.sql"),
+                            "nikto", "information_disclosure"))
+    # It asks...
+    assert len(safe.fetched) == n + 1
+    # ...and a path that really is there is NOT thrown away.
+    assert result.status != ValidationStatus.FALSE_POSITIVE
+
+
+def test_a_path_that_answers_404_is_dropped():
+    """The operator's actual complaint: findings pointing at 404s."""
+    safe = FakeSafePoC(default=(404, "<title>404</title>gone"))
+    baseline = run(calibrate(safe, "https://target.example.com/"))
+    v = FindingValidator(safe, baseline=baseline)
+    result = run(v.validate(_finding("https://target.example.com/admin.bak"),
+                            "nikto", "information_disclosure"))
+    assert result.status == ValidationStatus.FALSE_POSITIVE
+    assert "does not exist" in result.detail
+
+
+def test_an_injection_finding_is_never_judged_on_its_status_code():
+    """A 404 on an injection target says nothing about the injection."""
+    safe = FakeSafePoC(default=(404, "gone"))
+    baseline = run(calibrate(safe, "https://target.example.com/"))
+    v = FindingValidator(safe, baseline=baseline)
+    result = run(v.validate(_finding("https://target.example.com/x?q=1"),
+                            "sqlmap", "sql_injection"))
+    assert result.status != ValidationStatus.FALSE_POSITIVE or \
+        "does not exist" not in (result.detail or "")
 
 
 def test_the_home_page_is_not_a_path_existence_claim():

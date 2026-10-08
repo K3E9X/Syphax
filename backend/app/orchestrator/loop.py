@@ -512,11 +512,6 @@ async def _finalize_engagement(engagement, run: Run, runs: RunRepository,
                 await run_known_exploits(engagement.id)
                 await run_auth_spray(engagement.id)
                 await prove_impact(engagement.id)
-                # Leaked cloud creds -> prove blast radius. Uses a discovered
-                # AWS key for read-only identity/permission probes; active, so
-                # it lives behind the same allow_active_exploit gate.
-                from app.intel.cloud_creds import probe_leaked_cloud_creds
-                await probe_leaked_cloud_creds(engagement.id)
             except Exception:  # noqa: BLE001 - never fail the run on proof
                 logger.exception("[%s] active-exploit phase error", run.id)
 
@@ -564,6 +559,18 @@ async def _finalize_engagement(engagement, run: Run, runs: RunRepository,
             await run_campaign(engagement.id)
         except Exception:  # noqa: BLE001 - one dead route is not the run
             logger.exception("[%s] exploitation campaign error", run.id)
+
+        # Leaked cloud creds -> prove blast radius with read-only identity and
+        # permission probes. It reads VALIDATED findings to find the key, so it
+        # belongs here and not in the exploitation block above, where it ran
+        # before validation had written a single row and therefore never found
+        # one. Active, so it still self-gates on allow_active_exploit.
+        if engagement.allow_active_exploit and run.stop_reason not in _suppressed:
+            try:
+                from app.intel.cloud_creds import probe_leaked_cloud_creds
+                await probe_leaked_cloud_creds(engagement.id)
+            except Exception:  # noqa: BLE001 - never fail the run on a probe
+                logger.exception("[%s] cloud-credential probe error", run.id)
 
         # Intelligence #3: LLM judge pass to kill false positives / confirm
         # with grounded evidence (best-effort; no-op without an LLM).
