@@ -57,6 +57,24 @@ class Executor:
             self._eng = await EngagementRepository().get(self.state.engagement_id)
         return self._eng
 
+    async def _endpoint_in_scope(self, url: str) -> bool:
+        """May a wrapper-declared endpoint become an asset?
+
+        The host has to be in the engagement's scope. arjun re-expresses the
+        asset it was pointed at, so it always passes; jsluice pulls URLs out of
+        JavaScript and those can name ANY host - a CDN, a third-party API, the
+        vendor's own SaaS - and an asset is what later phases aim tools at.
+        Scope is the authorization and is never widened here.
+        """
+        from urllib.parse import urlparse
+        host = (urlparse(url).hostname or "").lower()
+        if not host:
+            return False
+        eng = await self._engagement()
+        if eng is None:
+            return False
+        return bool(eng.host_in_scope(host))
+
     async def _admit_subdomain(self, host: str, eng) -> bool:
         """Should a subfinder-discovered subdomain enter scope?
 
@@ -243,7 +261,31 @@ class Executor:
 
         # New endpoint assets from crawl / archive / content-discovery tools.
         new_asset = None  # (kind, value)
-        if tool in ("katana", "gau", "ffuf"):
+
+        # A wrapper can declare the asset its finding implies, in
+        # metadata["asset"] + ["asset_kind"]. Two of them already do - and
+        # NOTHING read those keys, so both were dropped on the floor:
+        #
+        #   arjun  (MAP-HIDDEN-PARAMS, "the injection points every later test
+        #          needs") re-emits the endpoint with the parameters it
+        #          confirmed attached, precisely so the next phase can inject
+        #          into them.
+        #   jsluice re-emits URLs with the parameters it extracted from JS.
+        #
+        # The ingest allowlisted katana/gau/ffuf BY TOOL NAME, so neither was
+        # ever turned into an asset. Seven catalog items - sqlmap, commix,
+        # SSRF, SSTI, LFI, XXE, open redirect, CRLF - apply only to an asset
+        # whose URL carries query parameters, and the only tools that could
+        # create one were being ignored. On a target full of injection flaws
+        # the run therefore planned no injection test at all and reported
+        # nothing above "info" - which is what arjun's own output is.
+        declared = (meta.get("asset") or "").strip()
+        declared_kind = (meta.get("asset_kind") or "").strip()
+        if declared and declared_kind == "endpoint" and _looks_like_http_url(declared):
+            if await self._endpoint_in_scope(declared):
+                await self.state.add_asset("endpoint", declared, source=tool)
+                new_asset = ("endpoint", declared)
+        elif tool in ("katana", "gau", "ffuf"):
             url = finding.target
             if _looks_like_http_url(url):
                 await self.state.add_asset("endpoint", url, source=tool)

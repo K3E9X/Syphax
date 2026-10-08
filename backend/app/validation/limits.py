@@ -70,6 +70,11 @@ def limits_for(
     inspection_refusals: int = 0,
     routeless_findings: int = 0,
     routeless_reasons: Optional[Dict[str, int]] = None,
+    # None = unknown (do not claim either way); False = the run ended before
+    # the exploitation phase was ever planned, which outranks every other
+    # explanation and was reported nowhere.
+    reached_exploitation: Optional[bool] = None,
+    last_phase: str = "",
 ) -> List[Limit]:
     """Every reason this run verified less than it could have.
 
@@ -96,6 +101,51 @@ def limits_for(
             what="Active verification did not run:",
             why=f"the run ended as '{stop_reason}' before that phase.",
             fix="Re-run, and approve the exploitation checkpoint when it asks.",
+        ))
+
+    # The budget stops. These were not reported at all: a run whose job or time
+    # budget ran out during recon/mapping never reaches the vuln and
+    # exploitation phases, so it finds nothing but surface - and said nothing
+    # about why. On a target whose crawl explodes into hundreds of endpoints
+    # that is the normal outcome, and it reads as "the scanner found nothing".
+    if stop_reason == "job_budget":
+        out.append(Limit(
+            key="job_budget_spent",
+            what="The run stopped on its job budget:",
+            why="every scan task counts against it, and recon plus mapping can "
+                "spend all of it on a target whose crawl finds many endpoints. "
+                "The phases after mapping were never planned.",
+            fix="Raise 'budget_requests' on the engagement (default 200), or "
+                "narrow the scope so the crawl produces fewer endpoints.",
+        ))
+    if stop_reason == "time_budget":
+        out.append(Limit(
+            key="time_budget_spent",
+            what="The run stopped on its time budget:",
+            why="the later phases were never reached.",
+            fix="Raise 'budget_seconds' on the engagement (default 2 hours).",
+        ))
+    if stop_reason == "no_tools":
+        out.append(Limit(
+            key="no_launchable_tool",
+            what="The run stopped because nothing could be launched:",
+            why="three planning rounds in a row produced only tasks whose tool "
+                "is missing from the image.",
+            fix="Check the missing binaries listed below and rebuild.",
+        ))
+
+    # The headline, when it applies. Said first in the panel because every
+    # other explanation is secondary to "the phase that proves things never
+    # started".
+    if reached_exploitation is False:
+        out.insert(0, Limit(
+            key="exploitation_never_started",
+            what="Nothing was exploited because the exploitation phase never ran:",
+            why="the run ended during "
+                f"{last_phase or 'an earlier phase'}, so no injection, CVE or "
+                "PoC test was ever planned. Findings carry the verdict their "
+                "scanner gave them and nothing more.",
+            fix="See the reason the run ended, below.",
         ))
 
     if not captured_js_files and (classes & CAPTURE_FED_CLASSES):
