@@ -253,3 +253,25 @@ body { background: var(--bg); color: var(--text-primary); font: var(--font-body)
   padding-left: var(--space-2, 8px);
 }
 .corr--down { color: var(--severity-medium); border-left-color: var(--severity-medium); }
+
+/* Active-run banner: a run lives in the worker, not the browser. This is what
+   lets a different machine, or a session after a logout, find it again. */
+.active-runs { display: flex; flex-direction: column; gap: 6px; padding: 10px 24px 0; }
+.active-runs__item {
+  display: flex; align-items: center; gap: 10px; width: 100%; text-align: left;
+  padding: 9px 14px; border: 1px solid var(--border); border-left: 2px solid var(--brand);
+  border-radius: 6px; background: var(--surface-2, rgba(255,255,255,.02));
+  color: var(--text-secondary); font-size: 12.5px; cursor: pointer;
+}
+.active-runs__item:hover { border-color: var(--brand); color: var(--text-primary); }
+.active-runs__item b { color: var(--text-primary); font-family: var(--font-mono); }
+.active-runs__dot {
+  width: 7px; height: 7px; border-radius: 50%; background: var(--brand);
+  animation: active-runs-pulse 1.6s ease-in-out infinite; flex: none;
+}
+@keyframes active-runs-pulse { 0%,100% { opacity: 1; } 50% { opacity: .25; } }
+.active-runs__meta { color: var(--text-faint); font-family: var(--font-mono); font-size: 11px; }
+.active-runs__cta { margin-left: auto; color: var(--brand); font-weight: 600; }
+@media (prefers-reduced-motion: reduce) { .active-runs__dot { animation: none; } }
+.active-runs__item--err { border-left-color: var(--severity-medium); cursor: default; }
+.active-runs__item--err:hover { border-color: var(--border); }

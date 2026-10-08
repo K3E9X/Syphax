@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import time
 from dataclasses import dataclass
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from app import db
 
@@ -161,6 +161,20 @@ class RunRepository:
             return int(str(result).split()[-1])
         except (IndexError, ValueError):
             return 0
+
+    async def active(self, *, limit: int = 20) -> List[Run]:
+        """Every run still queued or running, across all engagements.
+
+        Nothing could answer "what is going on right now" without already
+        knowing which engagement to ask about - so an operator arriving on a
+        different machine, or after a logout, had no way back to a run in
+        progress.
+        """
+        async with db.acquire() as conn:
+            rows = await conn.fetch(
+                "SELECT * FROM runs WHERE status IN ('queued','running') "
+                "ORDER BY created_at DESC LIMIT $1", limit)
+        return [_row(r) for r in rows]
 
     async def get(self, run_id: str) -> Optional[Run]:
         async with db.acquire() as conn:

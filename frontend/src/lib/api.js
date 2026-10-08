@@ -114,6 +114,9 @@ export const api = {
     run: (id) => request(`/api/engagements/${id}/run`, { method: 'POST' }),
     stop: (id) => request(`/api/engagements/${id}/stop`, { method: 'POST' }),
     state: (id) => request(`/api/engagements/${id}/state`),
+    // Every run still going, across engagements. The only thing that knows -
+    // localStorage does not travel to another machine.
+    activeRuns: () => request('/api/engagements/runs/active'),
     validate: (id) => request(`/api/engagements/${id}/validate`, { method: 'POST' }),
     analyzeTraffic: (id) => request(`/api/engagements/${id}/analyze-traffic`, { method: 'POST' }),
     events: (id, afterId = 0) => request(`/api/engagements/${id}/events?after_id=${afterId}`),

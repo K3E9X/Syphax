@@ -164,7 +164,7 @@ function storedEngagement() {
   try { return localStorage.getItem(ACTIVE_KEY) || ''; } catch { return ''; }
 }
 
-function rememberEngagement(id) {
+export function rememberEngagement(id) {
   try {
     if (id) localStorage.setItem(ACTIVE_KEY, id);
     else localStorage.removeItem(ACTIVE_KEY);

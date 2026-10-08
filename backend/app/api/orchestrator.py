@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import time
 
+from typing import Any, Dict
+
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
@@ -35,6 +37,37 @@ _jobs = JobRepository()
 _vf = ValidatedFindingRepository()
 _chains = ChainRepository()
 _approvals = ApprovalRepository()
+
+
+@router.get("/runs/active")
+async def active_runs() -> Dict[str, Any]:
+    """Everything still running, whoever started it and from wherever.
+
+    A run lives in the orchestrator worker, not in the browser: it survives a
+    page change, a logout, a closed laptop. But nothing SAID so, and the
+    remembered engagement lives in localStorage, which does not travel to
+    another machine. This is what lets any session pick a run back up.
+    """
+    from app.orchestrator.runs import RunRepository
+
+    runs = await RunRepository().active()
+    engs = {e.id: e for e in await _engagements.list(limit=500)}
+    items = []
+    for r in runs:
+        eng = engs.get(r.engagement_id)
+        items.append({
+            "run_id": r.id,
+            "engagement_id": r.engagement_id,
+            "target": (eng.target_host or eng.target_url) if eng else r.engagement_id,
+            "status": r.status,
+            "phase": r.phase,
+            "iterations": r.iterations,
+            "jobs_launched": r.jobs_launched,
+            "started_at": r.started_at,
+            "heartbeat_at": r.heartbeat_at,
+            "stop_requested": r.stop_requested,
+        })
+    return {"count": len(items), "items": items}
 
 
 @router.post("/{engagement_id}/run")
