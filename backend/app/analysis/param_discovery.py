@@ -85,33 +85,55 @@ async def analyze_params(engagement_id: str) -> Dict[str, int]:
         ))
 
     # ---- active: probe param-less GET endpoints for reflected params ----
+    #
+    # Candidates used to come from captured proxy traffic ONLY. On a fully
+    # automated run nobody browses the target through the MITM, so there were
+    # no flows, so nothing was probed, so no parameterised asset was ever
+    # seeded - and the seven param-gated catalog items (sqlmap, commix, SSRF,
+    # SSTI, LFI, XXE, open redirect, CRLF) could never fire. A target full of
+    # injection flaws produced nothing above "info".
+    #
+    # The endpoints the crawl already found are perfectly good candidates, and
+    # they are in scope by construction. Flows first (a real request proves the
+    # app serves it), assets after.
+    targets: List[tuple] = [(f.url, (f.method or "GET").upper()) for f in in_scope]
+    try:
+        from app.orchestrator.state import EngagementState
+        for asset in await EngagementState(engagement_id).assets("endpoint"):
+            targets.append((asset.value, "GET"))
+    except Exception:  # noqa: BLE001 - flows alone is still better than nothing
+        logger.debug("[%s] could not read endpoint assets for param discovery",
+                     engagement_id)
+
     probed = 0
     seeded_urls: List[str] = []
     seen_paths: Set[str] = set()
-    for f in in_scope:
+    for url, method in targets:
         if probed >= MAX_ENDPOINTS:
             break
-        if (f.method or "").upper() != "GET" or _is_static(f.url):
+        if method != "GET" or _is_static(url):
             continue
-        parsed = urlparse(f.url)
+        parsed = urlparse(url)
         if parsed.query:
             continue  # already parameterised; the fuzzers see it already
         if parsed.path in seen_paths:
             continue
+        if not eng.host_in_scope((parsed.hostname or "").lower()):
+            continue
         seen_paths.add(parsed.path)
         probed += 1
 
-        reflected = await _probe_reflection(safe, f.url, candidates)
+        reflected = await _probe_reflection(safe, url, candidates)
         if not reflected:
             continue
-        seed = _with_params(f.url, reflected)
+        seed = _with_params(url, reflected)
         seeded_urls.append(seed)
         findings.append(Finding(
             severity="low",
             title=f"Reflected hidden parameter(s) on {parsed.path or '/'}",
             description="Undocumented parameters are reflected in the response - "
                         "test them for XSS / open redirect / SSRF.",
-            target=f.url,
+            target=url,
             evidence=f"Reflected params: {', '.join(reflected)}\nSeeded: {seed}",
             metadata={"vuln_class": "param_discovery", "status": "likely",
                       "confidence": 0.5, "kind": "reflected", "params": reflected},
@@ -122,6 +144,31 @@ async def analyze_params(engagement_id: str) -> Dict[str, int]:
 
     logger.info("[%s] params: harvested=%d probed=%d reflected_endpoints=%d seeded=%d",
                 engagement_id, len(harvested), probed, len(seeded_urls), seeded)
+
+    # Say it. Every injection test in the catalog depends on this pass, and it
+    # reported nothing at all - so when it found no parameter, the run simply
+    # planned no injection task and the operator had no way to know why.
+    try:
+        from app import events
+        if seeded:
+            await events.emit(
+                engagement_id, events.THOUGHT,
+                f"Parameter discovery: {seeded} parameterised endpoint(s) seeded "
+                f"from {probed} probe(s). The injection tests (sqlmap, commix, "
+                f"nuclei -dast) can now apply to them.",
+                level=events.LEVEL_INFO)
+        else:
+            await events.emit(
+                engagement_id, events.THOUGHT,
+                f"Parameter discovery: probed {probed} endpoint(s), none reflected "
+                f"an undocumented parameter. Every injection test in the catalog "
+                f"applies only to an endpoint with parameters, so none will be "
+                f"planned unless the crawl, arjun or captured traffic supplies "
+                f"one.",
+                level=events.LEVEL_INFO)
+    except Exception:  # noqa: BLE001 - reporting never fails the pass
+        logger.debug("could not report parameter discovery")
+
     return {"harvested": len(harvested), "probed": probed,
             "reflected_endpoints": len(seeded_urls), "seeded": seeded}
 

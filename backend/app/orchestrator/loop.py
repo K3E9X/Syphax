@@ -117,6 +117,11 @@ async def run_engagement_loop(run_id: str) -> dict:
     current_phase: Optional[str] = None
     no_launch_streak = 0
     error_streak = 0
+    # Which phases actually got planned. A run that ends on its job or time
+    # budget during mapping never reaches exploitation, so nothing can be
+    # proven - and that was reported nowhere, which reads as "the scanner found
+    # nothing".
+    phases_seen: set = set()
     try:
         for iteration in range(MAX_ITERATIONS):
             # A sign of life, so a worker that dies can be told apart from a
@@ -166,6 +171,7 @@ async def run_engagement_loop(run_id: str) -> dict:
                 await runs.update(run)
                 if batch[0].phase != current_phase:
                     current_phase = batch[0].phase
+                    phases_seen.add(current_phase)
                     await events.emit(engagement.id, events.PHASE_CHANGED,
                                       f"Phase: {current_phase}", run_id=run.id, phase=current_phase)
 
@@ -175,6 +181,10 @@ async def run_engagement_loop(run_id: str) -> dict:
                     # the leads to change what gets scanned.
                     if current_phase == PHASE_VULN:
                         await _materialise_js(engagement, run)
+                        # Parameters BEFORE the injection tests are planned.
+                        # See _discover_params: every injection item in the
+                        # catalog applies only to an endpoint that has them.
+                        await _discover_params(engagement, run)
                         await _run_correlation(engagement, run, executor, runs)
 
                 # Human checkpoint before exploitation (spec §11 approval).
@@ -257,7 +267,8 @@ async def run_engagement_loop(run_id: str) -> dict:
 
         # Validation phase: confirm findings with safe PoC, then build chains.
         # Always run it (even on stop) so partial results are still validated.
-        await _finalize_engagement(engagement, run, runs, state)
+        await _finalize_engagement(engagement, run, runs, state,
+                                   phases_seen=phases_seen)
 
         if run.status != "stopped":
             run.status = "completed"
@@ -294,7 +305,8 @@ async def run_engagement_loop(run_id: str) -> dict:
 
 
 async def _report_verification_limits(engagement, run,
-                                      campaign: Optional[Dict[str, Any]] = None) -> None:
+                                      campaign: Optional[Dict[str, Any]] = None,
+                                      phases_seen: Optional[set] = None) -> None:
     """Name what kept findings unverified, in the live console.
 
     Everything here was already decided and already discarded: run_cve_checks
@@ -328,6 +340,11 @@ async def _report_verification_limits(engagement, run,
             inspection_refusals=_count_inspection_refusals(campaign),
             routeless_findings=int(campaign.get("skipped") or 0),
             routeless_reasons=campaign.get("skipped_reasons") or {},
+            # None when the caller did not say, so the panel never claims
+            # either way on a path that does not track it.
+            reached_exploitation=(PHASE_EXPLOIT in phases_seen
+                                  if phases_seen is not None else None),
+            last_phase=_last_phase(phases_seen),
         )
         if not limits:
             return
@@ -338,6 +355,17 @@ async def _report_verification_limits(engagement, run,
                               limit=limit.key)
     except Exception:  # noqa: BLE001 - explaining must never fail the run
         logger.debug("could not report the verification limits", exc_info=True)
+
+
+_PHASE_ORDER = ["recon", "mapping", PHASE_VULN, PHASE_EXPLOIT]
+
+
+def _last_phase(phases_seen: Optional[set]) -> str:
+    """The furthest phase the run actually planned, for the limits panel."""
+    if not phases_seen:
+        return ""
+    ordered = [p for p in _PHASE_ORDER if p in phases_seen]
+    return ordered[-1] if ordered else sorted(phases_seen)[-1]
 
 
 async def _sandbox_error() -> str:
@@ -418,6 +446,41 @@ async def _llm_budget_exceeded(engagement_id: str):
     except Exception:  # noqa: BLE001
         logger.debug("could not evaluate the LLM budget", exc_info=True)
         return None
+
+
+async def _discover_params(engagement, run) -> None:
+    """Find injection points before the phase that needs them is planned.
+
+    Seven catalog items - sqlmap, commix, and the nuclei -dast runs for SSRF,
+    SSTI, LFI, XXE, open redirect and CRLF - carry
+    `applies_when={"requires_params": True}`, which is true only of an endpoint
+    ASSET whose URL already carries a query string. So an endpoint with no
+    visible parameter is tested as if it had no input at all.
+
+    analyze_params exists to close that, and its own docstring says so:
+    "discovered parameters are seeded back as parameterised endpoint assets, so
+    the param-gated exploitation items (sqlmap / dalfox / nuclei -dast) test
+    them". It ran in `run_analysis`, i.e. during FINALISATION - after every
+    scan phase had already been planned and run. The assets it seeded could
+    therefore only ever help a second run on the same engagement, and a first
+    run on a target full of injection flaws planned no injection test at all
+    and reported nothing above "info".
+
+    It still runs in run_analysis as well, where it sees the traffic the scan
+    itself captured. This call is the one that can change what gets scanned.
+    """
+    try:
+        from app.analysis.param_discovery import analyze_params
+        result = await analyze_params(engagement.id)
+        seeded = int(result.get("seeded", 0) or 0)
+        if seeded:
+            await events.emit(
+                engagement.id, events.PHASE_CHANGED,
+                f"Seeded {seeded} parameterised endpoint(s) before vuln analysis",
+                level=events.LEVEL_VERBOSE, run_id=run.id,
+            )
+    except Exception:  # noqa: BLE001 - never block the phase transition
+        logger.exception("[%s] parameter discovery failed", run.id)
 
 
 async def _materialise_js(engagement, run) -> None:
@@ -528,7 +591,8 @@ async def _run_correlation(engagement, run: Run, executor: Executor,
 
 
 async def _finalize_engagement(engagement, run: Run, runs: RunRepository,
-                               state: EngagementState) -> None:
+                               state: EngagementState,
+                               phases_seen: Optional[set] = None) -> None:
     """Everything after the plan/execute loop: analysis, active exploitation,
     validation, the LLM judge, adaptive probes and kill-chains.
 
@@ -733,7 +797,8 @@ async def _finalize_engagement(engagement, run: Run, runs: RunRepository,
         # "0 confirmed" reads as "the scanner is broken". Usually it means an
         # oracle existed but a switch kept it from running, or the input it
         # needs was never captured. Say which, or the operator has to guess.
-        await _report_verification_limits(engagement, run, campaign_result)
+        await _report_verification_limits(engagement, run, campaign_result,
+                                          phases_seen=phases_seen)
         if chains:
             await events.emit(engagement.id, events.CHAIN_BUILT,
                               f"{len(chains)} kill-chain(s) identified",
