@@ -47,10 +47,11 @@ spec:
       labels:
         app: sandbox-runner
     spec:
-      # Public resolvers, not the cluster's. entrypoint.sh resolves
-      # SANDBOX_ALLOWED_HOSTS at boot - before it appends the REJECT rule - so
-      # this has to work; afterwards its own iptables rules stop DNS entirely,
-      # which closes it as a covert channel.
+      # Public resolvers, not the cluster's: a PoC must not be able to look up
+      # in-cluster service names. entrypoint.sh reads these from resolv.conf and
+      # allows DNS to exactly these addresses, because the runner resolves the
+      # engagement scope on every request - a wildcard scope has no address to
+      # pin at boot, so per-request resolution is the only thing that works.
       dnsPolicy: None
       dnsConfig:
         nameservers:
@@ -63,22 +64,35 @@ spec:
           image: syphax-sandbox-runner:latest
           imagePullPolicy: IfNotPresent
           env:
-            # Comma-separated engagement scope. EMPTY MEANS DENY ALL OUTBOUND -
-            # a sandbox that silently allows the whole internet is worse than
-            # one that fails visibly. Set it per engagement before running a
-            # PoC:
-            #   kubectl -n syphax set env deploy/sandbox-runner \
-            #       SANDBOX_ALLOWED_HOSTS=app.example.com
+            # OPTIONAL permanent pin, applied on top of the per-request
+            # allowlist and never flushed. Leave it empty: the engagement scope
+            # arrives with each /v1/run call and is written into the
+            # SYPHAX_EGRESS chain for the duration of that run.
+            #
+            # This used to be the only allowlist, and since nothing ever set it,
+            # the runner denied every outbound packet while /health answered
+            # "ok" - so every PoC failed against the firewall and the operator
+            # was told the exploit had not worked.
             - name: SANDBOX_ALLOWED_HOSTS
               value: ""
             - name: SANDBOX_MAX_TIMEOUT
               value: "120"
+            # Shared with the backend: the runner keeps CAP_NET_ADMIN so it can
+            # set the allowlist, so only the backend may drive it.
+            - name: SANDBOX_RUNNER_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: syphax-secrets
+                  key: SANDBOX_RUNNER_TOKEN
+                  optional: true
           ports:
             - containerPort: 8090
           securityContext:
-            # NET_ADMIN is held only long enough for entrypoint.sh to pin the
-            # egress rules; it then drops to an unprivileged user, so the PoC
-            # itself never holds it.
+            # NET_ADMIN lets the runner write the egress allowlist for each
+            # request; SETUID/SETGID let it `gosu poc` the PoC itself. The
+            # server holds them, the untrusted code never does, and an iptables
+            # owner-match rule stops the PoC reaching the control port to ask
+            # for a wider allowlist.
             capabilities:
               drop: ["ALL"]
               add: ["NET_ADMIN", "SETUID", "SETGID"]

@@ -186,6 +186,16 @@ if [ -z "$(current_env SYPHAX_SECRET_KEY)" ]; then
     log "Generated SYPHAX_SECRET_KEY"
 fi
 
+# The sandbox runner holds CAP_NET_ADMIN so it can pin egress to the engagement
+# scope for each PoC it runs. Only the backend may drive it, so they share a
+# token. Generated rather than left empty: an empty value means the only thing
+# keeping a PoC off the control port is an iptables owner-match rule, and
+# defence in depth is cheap here.
+if [ -z "$(current_env SANDBOX_RUNNER_TOKEN)" ]; then
+    set_env SANDBOX_RUNNER_TOKEN "$(random_hex 24)"
+    log "Generated SANDBOX_RUNNER_TOKEN"
+fi
+
 # Written as `if`, not `[ ... ] && { ... }`: under `set -e` a false test on the
 # last line of that form exits the script, which would end the install silently
 # whenever --bind was not passed.

@@ -155,6 +155,25 @@ export default function PocReview({ engagementId }) {
   const signals = (open?.inspection?.signals || [])
     .slice().sort((a, b) => (SEV_ORDER[a.severity] ?? 9) - (SEV_ORDER[b.severity] ?? 9));
   const egressLocked = runner?.egress_locked;
+  // A runner built before per-request egress pins its allowlist once at boot
+  // from SANDBOX_ALLOWED_HOSTS, which is empty in every normal install - so it
+  // denies every packet a PoC sends while still answering "ok" here. The
+  // backend refuses to send it work; say why, or every PoC looks like a failed
+  // exploit.
+  // ABSENT counts as stale, not as fine: the old image has no egress_mode key
+  // at all, and that is exactly the image that denies every packet. The backend
+  // reads a missing key the same way (runner_client: `or "boot"`), so a green
+  // light here would contradict a refusal there.
+  const staleRunner = runner?.status === 'ok'
+    && (runner.egress_mode || 'boot') !== 'per-request';
+  // The image shipped with no HTTP client at all while the authoring prompt
+  // promised `requests`, so every authored exploit died on ModuleNotFoundError.
+  const missingClients = Object.entries(runner?.clients || {})
+    .filter(([, ok]) => !ok).map(([name]) => name);
+  const sandboxUsable = runner?.status === 'ok' && egressLocked && !staleRunner;
+  // An auto-run that failed leaves the PoC where it was, so it can be approved
+  // and re-run once the cause is fixed.
+  const alreadyTried = open?.inspection?.run_result || null;
 
   return (
     <>
@@ -163,7 +182,9 @@ export default function PocReview({ engagementId }) {
           <span className="card__title">Public PoCs</span>
           <span className="card__meta">
             {runner?.status === 'ok'
-              ? (egressLocked ? 'runner ready · egress pinned' : 'runner up · EGRESS NOT PINNED')
+              ? (staleRunner ? 'runner up · STALE IMAGE'
+                : egressLocked ? 'runner ready · egress pinned per run'
+                : 'runner up · EGRESS NOT PINNED')
               : 'runner unavailable'}
           </span>
         </div>
@@ -194,6 +215,36 @@ export default function PocReview({ engagementId }) {
               The sandbox started without an egress policy. Running untrusted code now
               would give it unrestricted outbound access — the backend refuses to send it work.
             </p>
+          )}
+          {staleRunner && (
+            <div className="notice notice--error" role="alert">
+              <div className="notice__body">
+                <strong className="notice__t">The sandbox image is out of date</strong>
+                <span className="notice__m">
+                  This runner pins its egress allowlist once at boot from
+                  SANDBOX_ALLOWED_HOSTS, which is empty — so it denies every request
+                  a PoC makes, and every exploit looks like it failed. The backend
+                  refuses to send it work until it applies the engagement scope per run.
+                </span>
+                <span className="notice__m">
+                  Rebuild it: <code>docker compose up -d --build sandbox-runner</code>
+                </span>
+              </div>
+              <button type="button" className="btn btn--muted btn--sm" onClick={loadRunner}>Recheck</button>
+            </div>
+          )}
+          {missingClients.length > 0 && (
+            <div className="notice notice--error" role="alert">
+              <div className="notice__body">
+                <strong className="notice__t">The sandbox has no HTTP client</strong>
+                <span className="notice__m">
+                  Missing: {missingClients.join(', ')}. A PoC cannot reach the target
+                  without one — it exits on an import error, which reads as a failed
+                  exploit. Rebuild the sandbox-runner image.
+                </span>
+              </div>
+              <button type="button" className="btn btn--muted btn--sm" onClick={loadRunner}>Recheck</button>
+            </div>
           )}
 
           <p className="intro">
@@ -378,6 +429,16 @@ export default function PocReview({ engagementId }) {
             )}
 
             <div className="form-actions">
+              {open.status === 'staged' && alreadyTried
+                && alreadyTried.exit_code !== 0 && (
+                <span className="poc-note">
+                  An automatic run already tried this one and it exited{' '}
+                  {alreadyTried.exit_code ?? 'with no code'}
+                  {alreadyTried.timed_out ? ' (timed out)' : ''}. It stayed staged
+                  rather than being closed out, so you can approve and re-run it —
+                  read the output below first.
+                </span>
+              )}
               {open.status === 'staged' && (
                 <>
                   <button className="btn btn--solid" onClick={approve} disabled={busy}>
@@ -391,7 +452,7 @@ export default function PocReview({ engagementId }) {
               {open.status === 'approved' && (
                 <>
                   <button className="btn btn--solid" onClick={runPoc}
-                          disabled={busy || !egressLocked
+                          disabled={busy || !sandboxUsable
                                     || open.inspection?.vetting?.allowed === false}>
                     Run in sandbox
                   </button>
@@ -402,7 +463,16 @@ export default function PocReview({ engagementId }) {
               )}
               {open.status === 'rejected' && <span className="poc-note">Rejected — terminal.</span>}
               {open.status === 'executed' && (
-                <span className="poc-note">Executed — re-running needs a fresh decision.</span>
+                <>
+                  <button className="btn btn--solid" onClick={approve} disabled={busy}>
+                    Approve again to re-run
+                  </button>
+                  <span className="poc-note">
+                    Already run. Re-running costs a fresh decision — but it is possible:
+                    a PoC that failed on something environmental is worth another go
+                    once the cause is fixed.
+                  </span>
+                </>
               )}
               {open.decided_by && (
                 <span className="poc-note">decided by {open.decided_by}</span>

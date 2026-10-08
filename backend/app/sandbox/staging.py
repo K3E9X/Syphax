@@ -46,7 +46,16 @@ TRANSITIONS = {
     STATUS_STAGED: {STATUS_APPROVED, STATUS_REJECTED},
     STATUS_APPROVED: {STATUS_EXECUTED, STATUS_REJECTED},
     STATUS_REJECTED: set(),
-    STATUS_EXECUTED: set(),
+    # "executed" used to be a dead end, and poc_run set it whatever the exit
+    # code was. A PoC that died on an environment problem - no HTTP client in
+    # the sandbox image, egress denied, a timeout - could then neither be
+    # approved nor re-run: the API only runs an APPROVED PoC, and nothing could
+    # transition out of "executed". The operator was left with a dead row and
+    # no way to retry once the environment was fixed.
+    #
+    # poc_run only sets it on a clean run now, and re-approving an executed PoC
+    # is allowed so a successful one can be deliberately re-demonstrated.
+    STATUS_EXECUTED: {STATUS_APPROVED},
 }
 
 MAX_FILE_BYTES = 256 * 1024
@@ -265,6 +274,33 @@ class StagedPoCRepository:
         async with db.acquire() as conn:
             row = await conn.fetchrow("SELECT * FROM staged_pocs WHERE id=$1", poc_id)
         return _row_to_poc(row) if row else None
+
+    async def repoint_findings(self, engagement_id: str,
+                               mapping: Dict[str, str]) -> int:
+        """Move PoCs from an old finding id to its replacement.
+
+        Validation rebuilds validated_findings with DELETE + INSERT. A PoC
+        staged against a row that gets a new id is orphaned, and the proof of a
+        clean run is then written against a row that does not exist - exit 0,
+        nothing confirmed, no event. See validation.run._repoint_staged_pocs.
+        """
+        if not mapping:
+            return 0
+        moved = 0
+        async with db.acquire() as conn:
+            async with conn.transaction():
+                for old_id, new_id in mapping.items():
+                    status = await conn.execute(
+                        "UPDATE staged_pocs SET finding_id=$1 "
+                        "WHERE engagement_id=$2 AND finding_id=$3",
+                        new_id, engagement_id, old_id,
+                    )
+                    # asyncpg returns "UPDATE <n>".
+                    try:
+                        moved += int(str(status).rsplit(" ", 1)[-1])
+                    except ValueError:
+                        pass
+        return moved
 
     async def list(self, engagement_id: str) -> List[StagedPoC]:
         async with db.acquire() as conn:

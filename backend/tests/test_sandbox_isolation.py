@@ -65,9 +65,19 @@ def test_runner_has_no_env_file(runner):
     assert "env_file" not in runner
 
 
+# The one credential the sandbox is allowed to hold, because it is the
+# credential FOR the sandbox: the runner keeps CAP_NET_ADMIN so it can pin
+# egress per request, so only the backend may drive /v1/run. It is worthless
+# anywhere else - it grants "run code in a box that already runs code" - and
+# test_the_poc_never_sees_the_runner_token proves the PoC cannot read it.
+_SANDBOX_OWN_CREDENTIAL = "SANDBOX_RUNNER_TOKEN"
+
+
 def test_runner_environment_carries_no_credentials(runner):
     for entry in runner.get("environment") or []:
         key = str(entry).split("=", 1)[0].upper()
+        if key == _SANDBOX_OWN_CREDENTIAL:
+            continue
         assert not any(w in key for w in ("KEY", "TOKEN", "PASSWORD", "SECRET", "DSN")), \
             f"{key} does not belong in the sandbox"
 
@@ -104,18 +114,86 @@ def test_runner_has_resource_limits(runner):
 
 # ---- The entrypoint's ordering is the whole design ----
 
-def test_entrypoint_pins_egress_before_dropping_privileges():
+def _entrypoint() -> list:
+    """entrypoint.sh as logical lines: backslash continuations joined.
+
+    The rules are written across continuations for readability, so a per-line
+    grep silently matches nothing - which is how an assertion about them can
+    pass while testing air.
+    """
+    raw = (COMPOSE.parent / "sandbox-runner" / "entrypoint.sh").read_text()
+    joined = raw.replace("\\\n", " ")
+    return [" ".join(ln.split()) for ln in joined.splitlines() if ln.strip()]
+
+
+def test_entrypoint_closes_the_jail_before_serving():
+    """Nothing may be served until the final REJECT is in place.
+
+    The server now keeps root, because writing the per-request allowlist needs
+    CAP_NET_ADMIN - so the ordering guarantee moved from "drop privileges last"
+    to "serve last". The PoC is what gets de-privileged, inside runner.py.
+    """
     src = (COMPOSE.parent / "sandbox-runner" / "entrypoint.sh").read_text()
-    assert src.index("iptables -A OUTPUT -j REJECT") < src.index("exec gosu poc"), \
-        "privileges must be dropped only after the rules are in place"
+    assert src.index("iptables -A OUTPUT -j REJECT") < src.index('exec "$@"'), \
+        "the runner must not accept a request before egress is closed"
+
+
+def test_the_poc_cannot_reach_the_control_port():
+    """This is what pays for the server keeping NET_ADMIN.
+
+    The server can widen the egress allowlist; the PoC runs as a different uid
+    and an owner-match rule rejects anything it sends to the control port, on
+    every interface including loopback. Without this rule a PoC could POST to
+    /v1/run and allowlist its own exfiltration host.
+    """
+    src = _entrypoint()
+    rule = [ln for ln in src
+            if "--uid-owner" in ln and "--dport" in ln and "iptables -A OUTPUT" in ln]
+    assert rule, "no owner-match rule guards the control port"
+    # And it must be the FIRST OUTPUT rule: a loopback ACCEPT before it would
+    # let the PoC straight through to 127.0.0.1:8090.
+    # `in`, not startswith: the rule is written as `if ! iptables -A OUTPUT ...`
+    # so that a missing xt_owner aborts the boot, and a startswith filter would
+    # skip it and then assert the ordering of the wrong rule.
+    outputs = [ln for ln in src if "iptables -A OUTPUT" in ln]
+    assert "--uid-owner" in outputs[0], \
+        f"the owner-match rule must come first, not after {outputs[0]!r}"
+    # Fail closed when there is nothing else: a kernel with no xt_owner must
+    # either have SANDBOX_RUNNER_TOKEN (which a PoC cannot read - its
+    # environment is wiped to PATH/HOME/LANG) or refuse to boot. What it must
+    # NOT do is start with neither control.
+    tail = "\n".join(src[src.index(rule[0]):src.index(rule[0]) + 25])
+    assert "SANDBOX_RUNNER_TOKEN" in tail, \
+        "no fallback control named for a kernel without xt_owner"
+    assert "die " in tail, \
+        "with neither the owner rule nor a token, the runner must not start"
 
 
 def test_entrypoint_denies_everything_by_default():
-    """Empty scope must mean deny-all. A sandbox that silently allows the whole
-    internet looks identical to a working one until it matters."""
+    """Empty scope must mean deny-all.
+
+    The allowlist is per request now, so "by default" means two things: the
+    chain OUTPUT jumps to is created empty, and the policy still ends in a
+    REJECT. An unconfigured SANDBOX_ALLOWED_HOSTS is no longer a dead sandbox -
+    it is the normal case - but an idle one must still reach nothing.
+    """
     src = (COMPOSE.parent / "sandbox-runner" / "entrypoint.sh").read_text()
-    assert "outbound denied" in src
-    assert "REJECT" in src
+    assert "iptables -N SYPHAX_EGRESS" in src.replace('"$chain"', "SYPHAX_EGRESS") \
+        or "SYPHAX_EGRESS" in src
+    assert "iptables -A OUTPUT -j REJECT" in src
+    # IPv6 was unconfigured, which meant the whole v4 policy could be walked
+    # around with a v6 literal or a AAAA record.
+    assert "ip6tables" in src and "ip6tables -A OUTPUT -j REJECT" in src
+
+
+def test_the_runner_flushes_the_allowlist_after_every_run():
+    """Deny-all at rest. Otherwise the container stays a usable proxy to the
+    last engagement's scope for as long as it is up."""
+    src = (COMPOSE.parent / "sandbox-runner" / "runner.py").read_text()
+    assert "_flush_egress()" in src
+    body = src.split("async def run_v1")[1]
+    assert "finally:" in body and "_flush_egress()" in body.split("finally:")[1], \
+        "the allowlist must be flushed in a finally, so a crash still closes it"
 
 
 def test_entrypoint_refuses_to_start_without_iptables():

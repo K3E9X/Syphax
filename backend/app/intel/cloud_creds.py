@@ -57,30 +57,94 @@ async def probe_leaked_cloud_creds(engagement_id: str) -> Dict[str, int]:
     if eng is None:
         return {"error": 1}
 
-    vfs = await ValidatedFindingRepository().list(engagement_id)
+    vf_repo = ValidatedFindingRepository()
+    vfs = await vf_repo.list(engagement_id)
     pairs = _extract_aws_pairs(vfs)
     if not pairs:
+        # This returned {"skipped": 1} without a word. "No cloud credential
+        # was found in this engagement's findings" is worth one line: the
+        # alternative is the operator assuming the probe ran and found nothing
+        # live, which is a different and much more alarming statement.
+        await _say(engagement_id,
+                   "Cloud-credential probe: no AWS key pair appears in this "
+                   "engagement's findings, so nothing was probed.")
         return {"skipped": 1}
 
     findings: List[Finding] = []
-    for akid, secret in pairs:
+    confirmed = 0
+    for akid, secret, origin_id in pairs:
         try:
             result = await asyncio.to_thread(_probe_aws, akid, secret)
         except Exception:  # noqa: BLE001 - never fail the run on a probe
             logger.exception("[%s] AWS cred probe crashed", engagement_id)
             continue
-        if result is not None:
-            findings.append(_finding_for(akid, result))
+        if result is None:
+            await _say(engagement_id,
+                       f"Cloud-credential probe: {akid[:8]}... is not live "
+                       f"(AWS refused it), so the leak is not exploitable.")
+            continue
+        findings.append(_finding_for(akid, result))
+
+        # Confirm the finding the key came OUT of, here and now.
+        #
+        # This phase runs after validate_engagement, so the job finding written
+        # above is never validated during this run: it reaches neither the
+        # Findings page (which reads validated_findings) nor the report. And
+        # "cloud_creds" was not in validator._ANALYSIS_TOOLS, so even the next
+        # validation pass ignored its precomputed verdict and fell back to a
+        # scanner-match heuristic. A live, probe-verified AWS key - the single
+        # most serious thing this tool can find - surfaced nowhere at all.
+        if not origin_id:
+            continue
+        try:
+            await vf_repo.update_verdict(
+                origin_id, status="confirmed", confidence=0.98,
+                method="cloud-credential probe: the key authenticated to AWS")
+            await vf_repo.set_metadata(origin_id, {
+                "proven": True,
+                "exploitation": {
+                    "route": "cloud-credential probe",
+                    "account": result.get("account"),
+                    "arn": result.get("arn"),
+                    "permissions": sorted(result.get("allowed") or []),
+                    "note": "the leaked key authenticated to AWS and these "
+                            "read-only probes succeeded",
+                },
+            })
+            confirmed += 1
+            await _say(engagement_id,
+                       f"Cloud-credential probe: {akid[:8]}... is LIVE in account "
+                       f"{result.get('account')} - the leak it came from is now "
+                       f"confirmed, not likely.")
+        except Exception:  # noqa: BLE001 - never fail the run on a verdict write
+            logger.exception("[%s] could not confirm finding %s from the cloud "
+                             "probe", engagement_id, origin_id)
 
     if findings:
         await save_analysis_job(engagement_id, "cloud_creds", findings,
                                 target=eng.target_host or eng.target_url)
-    return {"keys_probed": len(pairs), "live": len(findings)}
+    return {"keys_probed": len(pairs), "live": len(findings),
+            "confirmed": confirmed}
 
 
-def _extract_aws_pairs(vfs) -> List[Tuple[str, str]]:
-    """Pull (access_key_id, secret_access_key) pairs out of finding text."""
-    pairs: List[Tuple[str, str]] = []
+async def _say(engagement_id: str, message: str) -> None:
+    """One line in the live view. Never raises."""
+    try:
+        from app import events
+        await events.emit(engagement_id, events.THOUGHT, message,
+                          level=events.LEVEL_INFO)
+    except Exception:  # noqa: BLE001 - reporting never fails a probe
+        logger.debug("could not emit: %s", message)
+
+
+def _extract_aws_pairs(vfs) -> List[Tuple[str, str, str]]:
+    """Pull (access_key_id, secret_access_key, origin_finding_id) out of findings.
+
+    The finding id rides along so a live key can confirm the leak it came from.
+    Without it the probe's proof had nowhere to land: it wrote a brand-new job
+    finding that this run never validates.
+    """
+    pairs: List[Tuple[str, str, str]] = []
     seen = set()
     for f in vfs:
         blob = " ".join(str(x) for x in (
@@ -100,7 +164,7 @@ def _extract_aws_pairs(vfs) -> List[Tuple[str, str]]:
             key = (akid, secrets[0])
             if key not in seen:
                 seen.add(key)
-                pairs.append(key)
+                pairs.append((akid, secrets[0], str(getattr(f, "id", "") or "")))
     return pairs
 
 

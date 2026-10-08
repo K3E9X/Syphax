@@ -173,11 +173,29 @@ def test_the_runner_cannot_resolve_a_service_name(everything):
 
 
 def test_the_scope_defaults_to_deny_all(everything):
-    """EMPTY MEANS DENY ALL OUTBOUND. A sandbox that silently allows the whole
-    internet is worse than one that fails visibly."""
+    """EMPTY MEANS DENY ALL OUTBOUND, and the allowlist arrives per request.
+
+    SANDBOX_ALLOWED_HOSTS is an optional permanent pin now; the engagement
+    scope is resolved into the iptables chain for each /v1/run call. It stays
+    empty here on purpose - the per-request chain is flushed back to deny-all
+    after every run, so an idle runner still reaches nothing.
+    """
     runner = of_kind(everything, "Deployment", "sandbox-runner")[0]
-    env = {e["name"]: e["value"] for e in containers(runner)["runner"]["env"]}
+    env = {e["name"]: e.get("value") for e in containers(runner)["runner"]["env"]}
     assert env["SANDBOX_ALLOWED_HOSTS"] == ""
+
+
+def test_the_runner_gets_the_token_the_backend_authenticates_with(everything):
+    """The runner keeps CAP_NET_ADMIN so it can write the allowlist, so "only
+    the backend may drive it" is a requirement. A manifest that never passes the
+    token leaves /v1/run open to anything that reaches the port."""
+    runner = of_kind(everything, "Deployment", "sandbox-runner")[0]
+    env = {e["name"]: e for e in containers(runner)["runner"]["env"]}
+    entry = env.get("SANDBOX_RUNNER_TOKEN")
+    assert entry is not None, "the runner never receives SANDBOX_RUNNER_TOKEN"
+    ref = entry.get("valueFrom", {}).get("secretKeyRef", {})
+    assert ref.get("name") == "syphax-secrets", "the token must come from the secret"
+    assert "value" not in entry, "the token must not be inlined in the manifest"
 
 
 # ---- the policies that replace "no route" -----------------------------------

@@ -44,7 +44,16 @@ _PROVIDER_VERIFIED = {"trufflehog"}
 # finding.metadata (see app/analysis/*). We trust that verdict verbatim.
 _ANALYSIS_TOOLS = {"logic", "js-recon", "jwt", "access-control", "cors",
                    "params", "graphql", "exploit", "public-exploits", "cve-checks",
-                   "auth-brute", "llm-recon", "payload-probe"}
+                   "auth-brute", "llm-recon", "payload-probe",
+                   # These write through save_analysis_job exactly like the
+                   # ones above, with their own status/confidence in
+                   # metadata - and were missing from this set, so their
+                   # verdict was discarded and re-derived by the generic
+                   # scanner-match heuristic. For most of them that only
+                   # inflated "unconfirmed" into "likely"; for cloud_creds it
+                   # threw away a probe that had authenticated to AWS.
+                   "cloud_creds", "api_exposure", "auth_posture", "dom_sinks",
+                   "error_disclosure", "http_posture"}
 
 # A dotenv line is an uppercase KEY=VALUE; an .htaccess carries a directive.
 _ENV_LINE = re.compile(r"(?m)^\s*[A-Z][A-Z0-9_]{2,}\s*=\s*\S")

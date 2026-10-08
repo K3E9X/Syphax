@@ -4,8 +4,9 @@ from types import SimpleNamespace
 from app.intel import cloud_creds
 
 
-def _vf(evidence="", poc="", metadata=None):
-    return SimpleNamespace(evidence=evidence, poc=poc, metadata=metadata or {})
+def _vf(evidence="", poc="", metadata=None, id="vf_1"):
+    return SimpleNamespace(id=id, evidence=evidence, poc=poc,
+                           metadata=metadata or {})
 
 
 def test_extract_pairs_from_evidence():
@@ -13,7 +14,21 @@ def test_extract_pairs_from_evidence():
                        "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY in config.js")
     pairs = cloud_creds._extract_aws_pairs([vf])
     assert pairs == [("AKIAIOSFODNN7EXAMPLE",
-                      "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY")]
+                      "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY", "vf_1")]
+
+
+def test_the_origin_finding_rides_along_with_the_key():
+    """Without it the probe's proof has nowhere to land.
+
+    probe_leaked_cloud_creds runs AFTER validate_engagement, so the job finding
+    it writes is never validated in that run - it reaches neither the Findings
+    page nor the report. The only place a live key can be recorded is the
+    finding the key was extracted from, which needs its id.
+    """
+    vf = _vf(id="vf_leak",
+             evidence="AKIAIOSFODNN7EXAMPLE / wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY")
+    pairs = cloud_creds._extract_aws_pairs([vf])
+    assert pairs and pairs[0][2] == "vf_leak"
 
 
 def test_extract_pairs_from_metadata():
