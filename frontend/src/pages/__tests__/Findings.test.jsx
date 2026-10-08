@@ -79,9 +79,33 @@ it('marks a finding as a false positive through the API', async () => {
 });
 
 it('surfaces a load error instead of an empty table', async () => {
-  vi.spyOn(api.engagements, 'findings').mockRejectedValue(new Error('backend down'));
+  vi.spyOn(api.findings, 'list').mockRejectedValue(new Error('backend down'));
   await mount();
   await waitFor(() => expect(screen.getByRole('alert').textContent).toMatch(/backend down/));
+});
+
+it('surfaces a failure to list engagements', async () => {
+  vi.spyOn(api.engagements, 'list').mockRejectedValue(new Error('no engagements'));
+  await mount();
+  await waitFor(() => expect(screen.getByRole('alert').textContent).toMatch(/no engagements/));
+});
+
+it('asks the ENRICHED endpoint, filtered to the selected engagement', async () => {
+  /* The page used to call /api/engagements/{id}/findings on the default view,
+   * which returns the raw ValidatedFinding and flattens nothing out of
+   * metadata. Every detail block rendered empty, every row showed CVSS 0.0 in
+   * the low-severity colour, the knowledge map collapsed to one "Other" card,
+   * and `status` was the validation verdict rather than the triage state - so
+   * the triage chips emptied the table and "Mark reported" looked like a no-op.
+   *
+   * This suite could never catch it: it mocked the thin endpoint with the
+   * ENRICHED shape. So the assertion is on which endpoint is called. */
+  const list = vi.spyOn(api.findings, 'list').mockResolvedValue({ items: ITEMS });
+  const thin = vi.spyOn(api.engagements, 'findings');
+  await mount();
+  await waitFor(() => screen.getByText('SQL injection on /login'));
+  expect(list).toHaveBeenCalledWith(expect.objectContaining({ engagement: 'e1' }));
+  expect(thin).not.toHaveBeenCalled();
 });
 
 it('clicking a category in the knowledge map filters the table', async () => {

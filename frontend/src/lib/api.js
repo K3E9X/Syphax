@@ -128,6 +128,10 @@ export const api = {
     scopeCandidates: (id) => request(`/api/engagements/${id}/scope/candidates`),
     scopeAdd: (id, hosts) => request(`/api/engagements/${id}/scope/add`, {
       method: 'POST',
+      // Without this, fetch() stamps the body text/plain and FastAPI refuses
+      // to parse it: the one action this panel exists for returned 422 every
+      // time, surfacing a raw pydantic message to the operator.
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ hosts }),
     }),
     findings: (id) => request(`/api/engagements/${id}/findings`),

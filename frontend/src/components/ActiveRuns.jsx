@@ -37,7 +37,8 @@ export default function ActiveRuns() {
     return () => clearInterval(t);
   }, [load, pathname]);
 
-  if (pathname.startsWith('/live')) return null;
+  // The live view is /engagements/:id/live; '/live' is only the redirect.
+  if (/\/live$/.test(pathname)) return null;
   if (err) {
     return (
       <div className="active-runs" role="status">
@@ -52,7 +53,11 @@ export default function ActiveRuns() {
 
   function resume(r) {
     rememberEngagement(r.engagement_id);
-    navigate('/live');
+    // Straight to THIS run's engagement. Navigating to /live went through a
+    // redirect that picks the newest engagement from the list, so clicking
+    // resume on target B dropped you into target A's console - on a pentest
+    // tool, another client's run.
+    navigate(`/engagements/${r.engagement_id}/live`);
   }
 
   return (

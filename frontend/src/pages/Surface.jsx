@@ -29,6 +29,9 @@ export default function Surface() {
       const hs = r.hosts || [];
       setHosts(hs);
       setSel(hs.length ? hs[0].host : null);
+      // Without this one transient failure pins a red alert above correct
+      // data for the rest of the session.
+      setLoadError(null);
     }).catch((e) => { setHosts([]); setLoadError(e.message); });
   }, [engId]);
 

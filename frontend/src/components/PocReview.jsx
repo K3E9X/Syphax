@@ -140,7 +140,11 @@ export default function PocReview({ engagementId }) {
   async function runPoc() {
     setBusy(true); setError(null); setResult(null);
     try {
-      const argv = argvStr.trim() ? argvStr.trim().split(/\s+/) : [];
+      // null = let the backend derive the command line from the PoC's own
+      // options and its finding's target; [] would mean "run it bare", which
+      // is the argparse-usage-error this field exists to prevent - and the box
+      // is empty exactly when the guess failed.
+      const argv = argvStr.trim() ? argvStr.trim().split(/\s+/) : null;
       const r = await api.poc.run(open.id, { argv });
       setResult(r.result);
       await load();
@@ -358,7 +362,7 @@ export default function PocReview({ engagementId }) {
               ))}
             </pre>
 
-            {(open.status === 'approved' || open.status === 'executed') && (
+            {open.status !== 'rejected' && (
               <div className="field" style={{ marginTop: 12 }}>
                 <label className="field__label" htmlFor="poc-argv">
                   Arguments{' '}

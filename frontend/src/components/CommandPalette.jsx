@@ -60,6 +60,7 @@ export default function CommandPalette() {
   const [query, setQuery] = useState('');
   const [active, setActive] = useState(0);
   const [live, setLive] = useState({ engagements: [], findings: [] });
+  const [liveError, setLiveError] = useState(null);
   const inputRef = useRef(null);
   const listRef = useRef(null);
   const restoreFocusTo = useRef(null);
@@ -100,6 +101,13 @@ export default function CommandPalette() {
             engagements: eng.status === 'fulfilled' ? (eng.value?.items || []) : [],
             findings: find.status === 'fulfilled' ? (find.value?.items || []) : [],
           });
+          // A rejection became [] and nothing said so, making "No match" also
+          // mean "the backend is down".
+          const why = [eng, find]
+            .filter((r) => r.status === 'rejected')
+            .map((r) => r.reason?.message)
+            .filter(Boolean);
+          setLiveError(why.length ? why.join('; ') : null);
         });
       return () => { alive = false; };
     }
@@ -189,7 +197,11 @@ export default function CommandPalette() {
         />
         <div className="cmd__list" id="cmd-list" ref={listRef} role="listbox">
           {results.length === 0 && (
-            <div className="cmd__empty">No match for “{query}”.</div>
+            <div className="cmd__empty">
+              {liveError
+                ? `Could not load engagements or findings — ${liveError}`
+                : `No match for “${query}”.`}
+            </div>
           )}
           {groups.map((g) => (
             <div key={g.name} className="cmd__group">

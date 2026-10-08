@@ -81,6 +81,10 @@ export default function Settings() {
   return (
     <div className="page">
       <Notice kind="error" message={loadError} />
+      {/* The backend warns when provider keys will not survive a restart.
+          Nothing rendered it, so an operator typed API keys into the
+          Integrations card and was never told. */}
+      <Notice kind="warn" message={s.key_warning} />
       <div style={{ marginBottom: 16 }}>
         <KnowledgeMap categories={[]} confidence={s.llm?.ready ? 100 : 0}
                       title="Settings"

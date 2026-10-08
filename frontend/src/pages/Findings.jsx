@@ -45,7 +45,7 @@ export default function Findings() {
   const [sel, setSel] = useState(null);
   const [toast, setToast] = useState(null);
   const [loadError, setLoadError] = useState(null);
-  const { engagements, engId, setEngId } = useEngagements();
+  const { engagements, engId, setEngId, error: engError } = useEngagements();
   const [chains, setChains] = useState([]);
   const searchRef = useRef(null);
   const flash = (m) => { setToast(m); setTimeout(() => setToast(null), 2000); };
@@ -56,27 +56,34 @@ export default function Findings() {
   const aggregate = engId === ALL_ENGAGEMENTS;
   const load = useCallback(async () => {
     try {
-      if (engId && !aggregate) {
-        const [f, c] = await Promise.all([
-          api.engagements.findings(engId), api.engagements.chains(engId),
-        ]);
-        let items = f.items || [];
-        if (statusFilter !== 'all') items = items.filter((x) => x.status === statusFilter);
-        if (q) {
-          const needle = q.toLowerCase();
-          items = items.filter((x) => `${x.title} ${x.target} ${x.vuln_class}`
-            .toLowerCase().includes(needle));
-        }
-        setRows(items);
-        setChains(c.items || []);
-        return;
-      }
-      setChains([]);   // no kill-chain belongs to "all engagements"
+      // ONE endpoint for both views. The per-engagement branch used to call
+      // /api/engagements/{id}/findings, which returns the raw ValidatedFinding
+      // and flattens nothing out of metadata - so on the default view (an
+      // engagement is auto-selected, so this was ALWAYS the default view)
+      // every block below rendered empty: no repro, no exploitation, no
+      // proof_replay, no oracle, no corroboration. Worse, it misled: cvss was
+      // undefined so every row showed "0.0" with the low-severity colour, the
+      // knowledge map collapsed into a single "Other" card, and `status` was
+      // the validation verdict rather than the triage state, so the triage
+      // chips emptied the table and "Mark reported" looked like a no-op.
+      //
+      // /api/findings already takes an `engagement` filter the frontend never
+      // used. It returns the enriched, deduplicated shape this page is written
+      // against, for one engagement or all of them.
       const r = await api.findings.list({
+        engagement: aggregate ? undefined : engId,
         status: statusFilter !== 'all' ? statusFilter : undefined,
         q: q || undefined,
       });
       setRows(r.items || []);
+      // No kill-chain belongs to "all engagements".
+      if (aggregate || !engId) {
+        setChains([]);
+      } else {
+        const c = await api.engagements.chains(engId);
+        setChains(c.items || []);
+      }
+      setLoadError(null);
     } catch (e) { setLoadError(e.message); }
   }, [statusFilter, q, engId, aggregate]);
   useEffect(() => { load(); }, [load]);
@@ -138,7 +145,7 @@ export default function Findings() {
   return (
     <div className="page fnd">
       <h1 className="sr-only">Findings</h1>
-      <Notice kind="error" message={loadError} />
+      <Notice kind="error" message={loadError || engError} />
 
       {km.categories.length > 0 && (
         <KnowledgeMap categories={km.categories} confidence={km.confidence}
