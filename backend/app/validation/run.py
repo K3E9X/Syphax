@@ -106,6 +106,17 @@ async def validate_engagement(engagement_id: str) -> Dict[str, int]:
         logger.info("[%s] corroboration adjusted %d finding(s)",
                     engagement_id, adjusted)
 
+    # Proof obtained by RUNNING something must survive re-validation.
+    #
+    # replace_for_engagement is a DELETE + INSERT: it rebuilds every row from
+    # the raw job findings, which know nothing about a PoC that was executed
+    # afterwards. So a finding proven by a sandbox run - its "confirmed"
+    # verdict AND the PoC output attached to it - was destroyed the next time
+    # anyone pressed "Re-validate" or "Retest", silently reverting to
+    # "likely/unverified". Carry it across, matched on the dedup key, because
+    # the row ids are reassigned here.
+    await _carry_over_proof(vf_repo, engagement_id, validated)
+
     await vf_repo.replace_for_engagement(engagement_id, validated)
 
     stats = _stats(validated)
@@ -129,3 +140,46 @@ def _stats(validated) -> Dict[str, int]:
     denom = confirmed_or_likely + fp
     out["false_positive_rate_pct"] = round((fp / denom) * 100, 1) if denom else 0
     return out
+
+
+async def _carry_over_proof(vf_repo, engagement_id: str, validated: list) -> int:
+    """Re-attach execution proof to the rebuilt rows, keyed by dedup.
+
+    Only ever UPGRADES: a finding that a PoC proved stays confirmed, and the
+    evidence of how goes with it. Nothing here can demote a fresh verdict.
+    """
+    from app.findings_util import dedup as _dedup
+
+    try:
+        previous = await vf_repo.list(engagement_id)
+    except Exception:  # noqa: BLE001 - a first run has nothing to carry
+        return 0
+
+    proofs = {}
+    for old in previous:
+        meta = old.metadata or {}
+        if meta.get("exploitation") or meta.get("repro") or meta.get("proven"):
+            proofs[_dedup(old.vuln_class, old.target)] = (old, meta)
+
+    carried = 0
+    for vf in validated:
+        key = _dedup(vf.vuln_class, vf.target)
+        found = proofs.get(key)
+        if not found:
+            continue
+        old, meta = found
+        for field in ("exploitation", "repro", "proven", "proof_replay"):
+            if meta.get(field) is not None and vf.metadata.get(field) is None:
+                vf.metadata[field] = meta[field]
+        # It was proven by execution: that outranks anything re-derived from a
+        # scanner's output, so the verdict comes back with it.
+        if str(old.status).lower() == "confirmed":
+            vf.status = old.status
+            vf.confidence = max(float(vf.confidence or 0), float(old.confidence or 0))
+            vf.method = old.method or vf.method
+        carried += 1
+
+    if carried:
+        logger.info("[%s] carried execution proof across re-validation for "
+                    "%d finding(s)", engagement_id, carried)
+    return carried
