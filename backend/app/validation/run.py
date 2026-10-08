@@ -19,7 +19,7 @@ from app.validation.baseline import calibrate
 from app.validation.classes import TOOL_VULN_CLASS, vuln_class_of
 from app.validation.models import ValidatedFinding, ValidationStatus
 from app.validation.safe_poc import SafePoC
-from app.validation.storage import ValidatedFindingRepository, new_vf_id
+from app.validation.storage import ValidatedFindingRepository, stable_vf_id
 from app.validation.validator import FindingValidator
 
 logger = logging.getLogger("syphax.validation.run")
@@ -73,7 +73,10 @@ async def validate_engagement(engagement_id: str) -> Dict[str, int]:
             result = await validator.validate(f, job.tool, vuln_class)
             validated.append(
                 ValidatedFinding(
-                    id=new_vf_id(),
+                    # Stable across re-validations: see stable_vf_id. A fresh
+                    # random id here renamed every row on every re-validation
+                    # and orphaned every staged PoC pointing at one.
+                    id=stable_vf_id(engagement_id, job.tool, f.title, f.target),
                     engagement_id=engagement_id,
                     source_job_id=job.id,
                     tool=job.tool,
@@ -116,6 +119,12 @@ async def validate_engagement(engagement_id: str) -> Dict[str, int]:
     # "likely/unverified". Carry it across, matched on the dedup key, because
     # the row ids are reassigned here.
     await _carry_over_proof(vf_repo, engagement_id, validated)
+
+    # Ids are stable now, so a PoC staged against a finding keeps pointing at
+    # it. Rows written before that change still carry a random id, and so does
+    # any finding whose title a tool reworded between runs - repoint those
+    # rather than leaving a PoC attached to a row about to be deleted.
+    await _repoint_staged_pocs(vf_repo, engagement_id, validated)
 
     await vf_repo.replace_for_engagement(engagement_id, validated)
 
@@ -183,3 +192,44 @@ async def _carry_over_proof(vf_repo, engagement_id: str, validated: list) -> int
         logger.info("[%s] carried execution proof across re-validation for "
                     "%d finding(s)", engagement_id, carried)
     return carried
+
+
+async def _repoint_staged_pocs(vf_repo, engagement_id: str, validated: list) -> int:
+    """Follow a finding's id change with the PoCs staged against it.
+
+    A staged PoC holds finding_id. Before stable_vf_id every re-validation
+    reassigned those ids, so the reference dangled and a clean run of that PoC
+    confirmed nothing - in silence. This closes the two remaining ways it can
+    still dangle: a row created before the ids became stable, and a finding
+    whose title a tool reworded between runs (the title is part of the
+    identity, so the id legitimately changes).
+
+    Matched on the dedup key rather than the identity, because that is the
+    coarser of the two: it survives a reworded title.
+    """
+    from app.findings_util import dedup as _dedup
+    from app.sandbox.staging import StagedPoCRepository
+
+    try:
+        previous = await vf_repo.list(engagement_id)
+    except Exception:  # noqa: BLE001 - a first run has nothing to repoint
+        return 0
+
+    fresh_by_key = {_dedup(vf.vuln_class, vf.target): vf.id for vf in validated}
+    mapping = {}
+    for old in previous:
+        new_id = fresh_by_key.get(_dedup(old.vuln_class, old.target))
+        if new_id and new_id != old.id:
+            mapping[old.id] = new_id
+    if not mapping:
+        return 0
+
+    try:
+        moved = await StagedPoCRepository().repoint_findings(engagement_id, mapping)
+    except Exception:  # noqa: BLE001 - never fail validation on a repair
+        logger.exception("[%s] could not repoint staged PoCs", engagement_id)
+        return 0
+    if moved:
+        logger.info("[%s] repointed %d staged PoC(s) at their finding's new id",
+                    engagement_id, moved)
+    return moved

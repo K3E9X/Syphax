@@ -13,7 +13,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
 from app.audit import audit
 from app import events
@@ -293,14 +293,21 @@ async def run_engagement_loop(run_id: str) -> dict:
     return run.to_public()
 
 
-async def _report_verification_limits(engagement, run) -> None:
+async def _report_verification_limits(engagement, run,
+                                      campaign: Optional[Dict[str, Any]] = None) -> None:
     """Name what kept findings unverified, in the live console.
 
     Everything here was already decided and already discarded: run_cve_checks
     returned {"skipped": 1, "reason": "allow_active_exploit is off"} into a
     dict nobody rendered, and the file-reading tools scanned an empty directory
     and reported nothing - which looks exactly like finding nothing.
+
+    `campaign` is what run_campaign returned. The panel knew nothing about the
+    exploitation phase, so the reasons it could name were never the reasons
+    that bit: an unreachable sandbox, a PoC held back by inspection, a finding
+    with no route at all.
     """
+    campaign = campaign or {}
     try:
         from app.scans.artifacts import js_dir, listdir
         from app.scans.wrappers import _WRAPPERS
@@ -315,6 +322,12 @@ async def _report_verification_limits(engagement, run) -> None:
             captured_js_files=len(listdir(js_dir(engagement.target_url), limit=1)),
             stop_reason=run.stop_reason or "",
             tools_unavailable=[n for n, w in _WRAPPERS.items() if not w.is_available()],
+            sandbox_error=await _sandbox_error(),
+            llm_configured=await _planner_configured(),
+            auto_run_poc=await _auto_run_enabled(),
+            inspection_refusals=_count_inspection_refusals(campaign),
+            routeless_findings=int(campaign.get("skipped") or 0),
+            routeless_reasons=campaign.get("skipped_reasons") or {},
         )
         if not limits:
             return
@@ -325,6 +338,64 @@ async def _report_verification_limits(engagement, run) -> None:
                               limit=limit.key)
     except Exception:  # noqa: BLE001 - explaining must never fail the run
         logger.debug("could not report the verification limits", exc_info=True)
+
+
+async def _sandbox_error() -> str:
+    """Why the sandbox cannot run a PoC, or "" if it can.
+
+    run_poc raises SandboxUnavailable with the exact cause - unreachable, egress
+    never locked, an image that pins its allowlist at boot, no HTTP client - and
+    the campaign turned every one of those into "the exploit did not work", once
+    per PoC.
+    """
+    from app.sandbox import runner_client
+    try:
+        status = await runner_client.health()
+    except Exception as exc:  # noqa: BLE001 - an absent runner is a normal state
+        return (f"the sandbox runner is not reachable at "
+                f"{runner_client.RUNNER_URL} ({exc.__class__.__name__}). "
+                f"Nothing can be executed without it.")
+    if not status.get("egress_locked"):
+        return ("the sandbox runner started without an egress policy, so it "
+                "refuses to run untrusted code.")
+    if str(status.get("egress_mode") or "boot") != "per-request":
+        return ("the sandbox runner image predates per-request egress: it pins "
+                "its allowlist once at boot from SANDBOX_ALLOWED_HOSTS, which "
+                "is empty, so it denies every packet a PoC sends. Rebuild it "
+                "with: docker compose up -d --build sandbox-runner")
+    missing = [n for n, ok in (status.get("clients") or {}).items() if not ok]
+    if "python_requests" in missing:
+        return ("the sandbox runner has no HTTP client for python, so a PoC "
+                "cannot reach the target. Rebuild the sandbox-runner image.")
+    return ""
+
+
+async def _planner_configured() -> bool:
+    """Is there a key for the role that writes exploits?"""
+    try:
+        from app.llm import ROLE_PLANNER, get_router
+        return bool(get_router().get(ROLE_PLANNER).configured)
+    except Exception:  # noqa: BLE001 - assume configured rather than cry wolf
+        return True
+
+
+async def _auto_run_enabled() -> bool:
+    try:
+        from app.exploit.settings_live import auto_run_poc
+        return bool(await auto_run_poc())
+    except Exception:  # noqa: BLE001
+        return True
+
+
+def _count_inspection_refusals(campaign: Dict[str, Any]) -> int:
+    """How many staged PoCs the operator-safety gate held back."""
+    total = 0
+    for plan in campaign.get("plans") or []:
+        for attempt in plan.get("attempts") or []:
+            reason = str(((attempt.get("auto_run") or {}).get("reason") or "")).lower()
+            if "critical signal" in reason or "vetting refused" in reason:
+                total += 1
+    return total
 
 
 async def _llm_budget_exceeded(engagement_id: str):
@@ -554,9 +625,10 @@ async def _finalize_engagement(engagement, run: Run, runs: RunRepository,
         # Outside the active-exploit gate on purpose: fetching a repository and
         # asking a model both happen without touching the target. Executing a
         # staged PoC is where the gate bites, and execute_poc re-checks it.
+        campaign_result: Dict[str, Any] = {}
         try:
             from app.exploit import run_campaign
-            await run_campaign(engagement.id)
+            campaign_result = await run_campaign(engagement.id) or {}
         except Exception:  # noqa: BLE001 - one dead route is not the run
             logger.exception("[%s] exploitation campaign error", run.id)
 
@@ -632,19 +704,36 @@ async def _finalize_engagement(engagement, run: Run, runs: RunRepository,
         except Exception:  # noqa: BLE001 - one dead chain is not the run
             logger.exception("[%s] chain-exploit campaign error", run.id)
 
+        # Re-read the counts. `stats` was captured before run_campaign, the
+        # cloud-credential probe, the judge and the payload prober - and all
+        # four of them move verdicts. Emitting that dict here meant the one
+        # line the operator actually reads said "0 confirmed" even on a run
+        # that had just confirmed several, while the dashboard (which queries
+        # live) disagreed with it.
+        try:
+            from app.validation import ValidatedFindingRepository as _VFRepo
+            final_stats = await _VFRepo().summary(engagement.id)
+        except Exception:  # noqa: BLE001 - a failed count must not fail the run
+            logger.exception("[%s] could not re-read the validation summary", run.id)
+            final_stats = dict(stats)
+
         await audit(
             "engagement.validated",
-            engagement_id=engagement.id, run_id=run.id, stats=stats,
+            engagement_id=engagement.id, run_id=run.id,
+            stats=final_stats,
+            # Kept, and labelled, because the difference between the two is
+            # exactly what the exploitation phase achieved.
+            stats_before_exploitation=stats,
         )
         await events.emit(engagement.id, events.VALIDATED,
-                          f"Validated: {stats.get('confirmed',0)} confirmed, "
-                          f"{stats.get('false_positive',0)} false positive",
-                          run_id=run.id, stats=stats)
+                          f"Validated: {final_stats.get('confirmed',0)} confirmed, "
+                          f"{final_stats.get('false_positive',0)} false positive",
+                          run_id=run.id, stats=final_stats)
 
         # "0 confirmed" reads as "the scanner is broken". Usually it means an
         # oracle existed but a switch kept it from running, or the input it
         # needs was never captured. Say which, or the operator has to guess.
-        await _report_verification_limits(engagement, run)
+        await _report_verification_limits(engagement, run, campaign_result)
         if chains:
             await events.emit(engagement.id, events.CHAIN_BUILT,
                               f"{len(chains)} kill-chain(s) identified",

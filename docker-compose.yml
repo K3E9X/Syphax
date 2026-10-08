@@ -225,16 +225,26 @@ services:
     restart: unless-stopped
     networks: [sandbox-net]
     environment:
-      # Comma-separated engagement scope. EMPTY MEANS DENY ALL OUTBOUND - a
-      # sandbox that silently allows the whole internet is worse than one that
-      # fails visibly. Set per engagement before running a PoC.
+      # OPTIONAL extra pin, applied on top of the per-request allowlist and
+      # never flushed. Leave it empty: the engagement scope is now resolved and
+      # applied per request from what the backend sends, which is the only thing
+      # that can work for a wildcard scope like *.example.com. This variable
+      # used to be the ONLY allowlist, and because nothing ever set it the
+      # sandbox denied every outbound packet while reporting itself healthy.
       - SANDBOX_ALLOWED_HOSTS=${SANDBOX_ALLOWED_HOSTS:-}
       - SANDBOX_MAX_TIMEOUT=${SANDBOX_MAX_TIMEOUT:-120}
-    # NET_ADMIN pins the egress rules at boot; SETUID/SETGID let the root
-    # entrypoint `gosu poc` drop to an unprivileged user (without them gosu
-    # fails with "operation not permitted" and the runner crash-loops). All
-    # three are held only by the entrypoint; after gosu the PoC runs as `poc`
-    # with no capabilities, which no-new-privileges then makes irrevocable.
+      # Shared with the backend through .env. The runner keeps CAP_NET_ADMIN so
+      # it can set the allowlist per request, so "only the backend may drive it"
+      # is a requirement, not hygiene. Deliberately passed one variable at a
+      # time rather than with env_file: this container still gets no API keys
+      # and no database password.
+      - SANDBOX_RUNNER_TOKEN=${SANDBOX_RUNNER_TOKEN:-}
+    # NET_ADMIN lets the runner write the egress allowlist for each request;
+    # SETUID/SETGID let it `gosu poc` the PoC itself, so the untrusted code
+    # holds no capability at all. The server keeps them, the PoC never gets
+    # them, and no-new-privileges makes that irrevocable. An iptables
+    # owner-match rule (see entrypoint.sh) stops the PoC reaching the control
+    # port to ask for a wider allowlist.
     cap_add:
       - NET_ADMIN
       - SETUID

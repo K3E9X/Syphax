@@ -108,10 +108,38 @@ def test_only_approved_code_can_execute():
     assert not can_transition(STATUS_REJECTED, STATUS_EXECUTED)
 
 
-def test_terminal_states_are_terminal():
+def test_rejection_is_final():
     for target in (STATUS_APPROVED, STATUS_EXECUTED, STATUS_REJECTED, STATUS_STAGED):
-        assert not can_transition(STATUS_EXECUTED, target)
         assert not can_transition(STATUS_REJECTED, target)
+
+
+def test_an_executed_poc_can_only_go_back_for_a_fresh_approval():
+    """Not fully terminal any more, and on purpose.
+
+    poc_run used to set "executed" whatever the exit code was, so a PoC that
+    died on an environment problem - no HTTP client in the sandbox image,
+    egress denied, a timeout - was stuck: the API only runs an APPROVED PoC and
+    nothing could leave "executed". The operator had a dead row and no retry.
+
+    poc_run only marks a clean run "executed" now, and re-approval is the one
+    way out, so re-running still costs a deliberate human decision.
+    """
+    assert can_transition(STATUS_EXECUTED, STATUS_APPROVED)
+    assert not can_transition(STATUS_EXECUTED, STATUS_EXECUTED)
+    assert not can_transition(STATUS_EXECUTED, STATUS_STAGED)
+    assert not can_transition(STATUS_EXECUTED, STATUS_REJECTED)
+
+
+def test_a_failed_run_does_not_become_terminal():
+    """The status only advances on a clean run, so a failure is retryable."""
+    import inspect as _inspect
+
+    from app.exploit import poc_run
+
+    src = _inspect.getsource(poc_run.execute_poc)
+    assert "if clean:" in src and "set_status" in src
+    assert src.index("clean = result.exit_code == 0") < src.index(
+        "await repo.set_status"), "the status must depend on the exit code"
 
 
 def test_approval_cannot_be_reused_after_running():

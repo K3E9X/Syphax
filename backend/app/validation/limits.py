@@ -18,7 +18,7 @@ the same function.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Dict, List, Sequence
+from typing import Any, Dict, List, Optional, Sequence
 
 
 @dataclass(frozen=True)
@@ -58,6 +58,18 @@ def limits_for(
     captured_js_files: int = 0,
     stop_reason: str = "",
     tools_unavailable: Sequence[str] = (),
+    # Everything below is a reason that ACTUALLY bites in a normal install.
+    # This function used to report exactly four things, and every default in a
+    # normal install is operator-friendly: allow_active_exploit defaults True,
+    # auto_run_public_poc defaults True, the refine loop defaults to 2 rounds.
+    # So on the run where nothing got proven, the panel printed nothing at all -
+    # which reads as "no limits, the scanner simply found nothing".
+    sandbox_error: str = "",
+    llm_configured: bool = True,
+    auto_run_poc: bool = True,
+    inspection_refusals: int = 0,
+    routeless_findings: int = 0,
+    routeless_reasons: Optional[Dict[str, int]] = None,
 ) -> List[Limit]:
     """Every reason this run verified less than it could have.
 
@@ -94,6 +106,65 @@ def limits_for(
                 "JavaScript was captured through the proxy.",
             fix="Browse the target through the MITM proxy once, then re-run "
                 "the analysis.",
+        ))
+
+    # The sandbox is where every proof happens. An unreachable runner, a runner
+    # whose image predates per-request egress, or one with no HTTP client means
+    # nothing can be proven - and the operator previously saw only "the exploit
+    # did not work" for each PoC in turn.
+    if sandbox_error:
+        out.append(Limit(
+            key="sandbox_unusable",
+            what="No PoC could be executed:",
+            why=sandbox_error,
+            fix="Fix the sandbox runner, then re-run. Until it is usable every "
+                "finding that needs a crafted request stays unproven.",
+        ))
+
+    if not llm_configured and (classes & ACTIVE_ONLY_CLASSES):
+        out.append(Limit(
+            key="no_llm_key",
+            what="The model could not write an exploit for the findings no "
+                 "template or tool covers:",
+            why="no API key is configured for the planner role.",
+            fix="Add a provider key in Settings. The deterministic checks run "
+                "without one; authoring an exploit does not.",
+        ))
+
+    if not auto_run_poc:
+        out.append(Limit(
+            key="auto_run_off",
+            what="PoCs were staged but never executed:",
+            why="`auto_run_poc` is off in Settings, so each one waits for you "
+                "to approve and run it.",
+            fix="Turn it on, or open the PoC testing view and run them.",
+        ))
+
+    if inspection_refusals:
+        out.append(Limit(
+            key="inspection_refused",
+            what=f"{inspection_refusals} PoC(s) were staged but held back:",
+            why="static inspection found a critical signal in them - credential "
+                "theft, a reverse shell, persistence or something destructive - "
+                "which is a risk to YOU, not to the target.",
+            fix="Read them in the PoC testing view and run them yourself if "
+                "they are legitimate. A trojaned PoC in a fake exploit repo is "
+                "a well-documented attack on researchers.",
+        ))
+
+    if routeless_findings:
+        detail = ""
+        if routeless_reasons:
+            top = sorted(routeless_reasons.items(), key=lambda kv: -kv[1])[:2]
+            detail = " Most common: " + "; ".join(f"{r} (x{n})" for r, n in top)
+        out.append(Limit(
+            key="no_exploit_route",
+            what=f"{routeless_findings} finding(s) had no way to be proven:",
+            why="no nuclei template, no tool and nothing the model can author "
+                "covers them." + detail,
+            fix="They stay at the verdict the scanner gave them. If a class "
+                "here should be exploitable, it belongs in "
+                "strategy.AUTHORABLE_CLASSES.",
         ))
 
     for tool in sorted({str(t) for t in tools_unavailable if t}):

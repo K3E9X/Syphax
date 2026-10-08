@@ -125,10 +125,9 @@ _RULES = [
      "escalates privilege"),
 
     # --- Exfiltration primitives ---
-    ("exfiltration", SEV_HIGH,
-     re.compile(r"requests\.(?:post|put)\s*\(|urlopen\s*\(|curl\s+-[a-zA-Z]*[dF]|"
-                r"fetch\s*\(\s*['\"]https?://", re.I),
-     "sends data outward"),
+    # NOTE: the generic "makes an outbound write" primitive is NOT here. It is
+    # applied in `inspect_code` once the destination is known, because on its
+    # own it is not a signal at all - see _WRITE_PRIMITIVE below.
     ("exfiltration", SEV_HIGH,
      re.compile(r"webhook\.site|requestbin|pipedream|ngrok\.io|burpcollaborator|"
                 r"interact\.sh|oastify", re.I),
@@ -140,6 +139,27 @@ _RULES = [
 ]
 
 _URL_RE = re.compile(r"https?://([A-Za-z0-9._-]+(?::\d+)?)")
+
+# An outbound write - POST, PUT, a curl with a body - is what an exploit IS.
+# The authoring prompt demands it ("POST, PUT and DELETE against the target are
+# expected"), and every published RCE PoC does it.
+#
+# Filed unconditionally at SEV_HIGH it forced the verdict to "suspicious", and
+# the campaign's auto-run gate refuses anything that is not "review". The two
+# rules together meant the only PoC that could ever auto-run was one that sent
+# nothing to the target - i.e. one that proves nothing. That is why a run could
+# author an exploit, rehearse it, and still confirm zero findings.
+#
+# It becomes a signal when the DESTINATION is a host the engagement never
+# authorised, and that is precisely what `external_hosts` already computes. So
+# the severity is decided after the destinations are known: SEV_HIGH when the
+# code names an out-of-scope host, SEV_INFO otherwise. The known-collector and
+# attacker-channel rules above stay unconditional - webhook.site is never the
+# target - and `app.exploit.vetting` separately judges what the write does TO
+# the target.
+_WRITE_PRIMITIVE = re.compile(
+    r"requests\.(?:post|put|patch|delete)\s*\(|urlopen\s*\(|"
+    r"curl\s+-[a-zA-Z]*[dF]|fetch\s*\(\s*['\"]https?://", re.I)
 
 # Hosts a PoC legitimately talks to that are not exfiltration.
 _BENIGN_HOSTS = {
@@ -197,6 +217,25 @@ def inspect_code(code: str, *, scope_hosts: Optional[Sequence[str]] = None,
                            line=stripped, detail=detail))
 
     report.external_hosts = external_hosts(code, scope_hosts or [])
+
+    # Now that the destinations are known, judge the outbound-write primitive.
+    write_severity = SEV_HIGH if report.external_hosts else SEV_INFO
+    write_detail = (
+        "sends data outward, and this file also names a host that is not in scope"
+        if report.external_hosts else
+        "writes to the target (POST/PUT/DELETE) - expected of an exploit; no "
+        "out-of-scope destination appears in this file"
+    )
+    for idx, line in enumerate(code.splitlines(), start=1):
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        if _WRITE_PRIMITIVE.search(stripped):
+            report.signals.append(Signal(
+                category="exfiltration" if report.external_hosts else "target_write",
+                severity=write_severity, line_no=idx, line=stripped,
+                detail=write_detail))
+
     for host in report.external_hosts:
         report.signals.append(Signal(
             category="external_host", severity=SEV_HIGH, line_no=0, line=host,

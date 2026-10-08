@@ -1,6 +1,7 @@
 """Postgres storage for validated findings and kill-chains."""
 from __future__ import annotations
 
+import hashlib
 import json
 import secrets
 import time
@@ -48,6 +49,31 @@ db.register_schema(SCHEMA_SQL)
 
 def new_vf_id() -> str:
     return f"vf_{int(time.time() * 1000)}_{secrets.token_hex(2)}"
+
+
+def stable_vf_id(engagement_id: str, tool: str, title: str, target: str) -> str:
+    """The id a finding keeps across re-validations.
+
+    replace_for_engagement is a DELETE + INSERT, and with a time-and-random id
+    every re-validation renamed every row. Anything holding a reference was
+    orphaned - staged_pocs.finding_id above all. A PoC staged on the first run
+    pointed at an id that no longer existed, so when it ran clean the proof was
+    written against a row that was not there: exit 0, nothing confirmed, no
+    event, nothing in the log. The operator saw a PoC marked "executed" and a
+    finding still sitting at "likely".
+    (And _argv_for, resolving the same dead id, derived no target and ran the
+    PoC with no arguments, which is the usage-error exit 2 that
+    app/sandbox/invocation.py exists to prevent.)
+
+    Derived from the same identity the dedup loop uses - tool, title, target -
+    scoped to the engagement so two engagements against the same host do not
+    collide on one primary key.
+    """
+    ident = "\x00".join([
+        str(engagement_id or ""), str(tool or ""),
+        str(title or ""), str(target or ""),
+    ])
+    return "vf_" + hashlib.sha1(ident.encode("utf-8", "replace")).hexdigest()[:20]
 
 
 class ValidatedFindingRepository:

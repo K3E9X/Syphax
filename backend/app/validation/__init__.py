@@ -10,6 +10,7 @@ from app.validation.storage import (
     ChainRepository,
     ValidatedFindingRepository,
     new_vf_id,
+    stable_vf_id,
 )
 
 __all__ = [
@@ -22,4 +23,5 @@ __all__ = [
     "ValidatedFindingRepository",
     "ChainRepository",
     "new_vf_id",
+    "stable_vf_id",
 ]

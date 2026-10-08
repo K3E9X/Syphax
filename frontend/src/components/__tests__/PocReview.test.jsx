@@ -46,7 +46,15 @@ async function mount(engagementId = 'e1') {
 
 beforeEach(() => {
   vi.restoreAllMocks();
-  vi.spyOn(api.poc, 'runnerHealth').mockResolvedValue({ status: 'ok', egress_locked: true });
+  // A REALISTIC health payload. Mocking only {status, egress_locked} described
+  // an image that cannot exist: the runner that reports no egress_mode is the
+  // one that pins its allowlist at boot and therefore denies every packet a
+  // PoC sends. The old mock made the screen look healthy in a state the backend
+  // refuses to send work to.
+  vi.spyOn(api.poc, 'runnerHealth').mockResolvedValue({
+    status: 'ok', egress_locked: true, egress_mode: 'per-request',
+    clients: { python_requests: true, curl: true, node: true },
+  });
 });
 
 describe('the queue', () => {
@@ -160,5 +168,96 @@ describe('opening one', () => {
     await userEvent.click(screen.getByText('idor.py'));
     await waitFor(() => screen.getByRole('button', { name: /run in sandbox/i }));
     expect(screen.getByRole('button', { name: /run in sandbox/i }).disabled).toBe(false);
+  });
+});
+
+/* The sandbox health this screen reports.
+ *
+ * These exist because a review traced the whole proof path and found that in a
+ * normal install nothing could run: the image had no HTTP client, and the
+ * egress allowlist was pinned once at boot from a variable nothing ever set, so
+ * the jail denied every packet while /health still answered "ok". Each PoC then
+ * failed and the operator was told the exploit had not worked. This screen is
+ * where that has to be visible.
+ */
+describe('the sandbox it is going to run in', () => {
+  async function withHealth(health) {
+    vi.spyOn(api.poc, 'runnerHealth').mockResolvedValue(health);
+    vi.spyOn(api.poc, 'list').mockResolvedValue({ items: [AUTHORED] });
+    await mount();
+  }
+
+  it('calls out an image that pins egress at boot', async () => {
+    await withHealth({ status: 'ok', egress_locked: true, egress_mode: 'boot' });
+    expect(await screen.findByText(/sandbox image is out of date/i)).toBeTruthy();
+    expect(screen.getByText(/--build sandbox-runner/)).toBeTruthy();
+  });
+
+  it('treats a runner that reports no egress mode as that same stale image', async () => {
+    // The old image has no egress_mode key at all, and it is the one that
+    // denies everything. Absent must not read as fine.
+    await withHealth({ status: 'ok', egress_locked: true });
+    expect(await screen.findByText(/sandbox image is out of date/i)).toBeTruthy();
+  });
+
+  it('calls out a sandbox with no HTTP client', async () => {
+    await withHealth({
+      status: 'ok', egress_locked: true, egress_mode: 'per-request',
+      clients: { python_requests: false, curl: false, node: true },
+    });
+    expect(await screen.findByText(/no HTTP client/i)).toBeTruthy();
+    expect(screen.getByText(/python_requests, curl/)).toBeTruthy();
+  });
+
+  it('says nothing when the runner is actually usable', async () => {
+    await withHealth({
+      status: 'ok', egress_locked: true, egress_mode: 'per-request',
+      clients: { python_requests: true, curl: true, node: true },
+    });
+    await screen.findByText(/authored by glm-5.2/);
+    expect(screen.queryByText(/out of date/i)).toBeNull();
+    expect(screen.queryByText(/no HTTP client/i)).toBeNull();
+    expect(screen.getByText(/egress pinned per run/i)).toBeTruthy();
+  });
+
+  it('will not let an approved PoC run against a stale sandbox', async () => {
+    vi.spyOn(api.poc, 'runnerHealth').mockResolvedValue({
+      status: 'ok', egress_locked: true, egress_mode: 'boot',
+    });
+    vi.spyOn(api.poc, 'list').mockResolvedValue({
+      items: [{ ...AUTHORED, status: 'approved' }],
+    });
+    vi.spyOn(api.poc, 'get').mockResolvedValue({ ...AUTHORED, status: 'approved' });
+    await mount();
+    await userEvent.click(await screen.findByText(/authored by glm-5.2/));
+    expect((await screen.findByRole('button', { name: /run in sandbox/i })).disabled).toBe(true);
+  });
+});
+
+describe('a PoC that already ran', () => {
+  it('can be approved again, because a failure may have been environmental', async () => {
+    const executed = { ...AUTHORED, status: 'executed' };
+    vi.spyOn(api.poc, 'list').mockResolvedValue({ items: [executed] });
+    vi.spyOn(api.poc, 'get').mockResolvedValue(executed);
+    await mount();
+    await userEvent.click(await screen.findByText(/authored by glm-5.2/));
+    // "executed" used to be a dead end AND was set whatever the exit code was,
+    // so a PoC that died on a missing library could never be retried.
+    expect((await screen.findByRole('button', { name: /approve again to re-run/i })).disabled)
+      .toBe(false);
+  });
+
+  it('says so when an automatic run already failed on a staged PoC', async () => {
+    const tried = {
+      ...AUTHORED,
+      inspection: { ...AUTHORED.inspection,
+                    run_result: { exit_code: 1, stdout: '', stderr: 'connection refused' } },
+    };
+    vi.spyOn(api.poc, 'list').mockResolvedValue({ items: [tried] });
+    vi.spyOn(api.poc, 'get').mockResolvedValue(tried);
+    await mount();
+    await userEvent.click(await screen.findByText(/authored by glm-5.2/));
+    expect(await screen.findByText(/automatic run already tried this one/i)).toBeTruthy();
+    expect(screen.getByRole('button', { name: /^approve$/i }).disabled).toBe(false);
   });
 });
