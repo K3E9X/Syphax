@@ -36,3 +36,15 @@ def test_crawled_fetches_are_scope_enforced_and_bounded():
 def test_a_flow_already_cached_is_not_fetched_again():
     src = inspect.getsource(js_cache._fetch_crawled_js)
     assert "seen_urls" in src
+
+
+def test_js_recon_also_reads_the_cached_bundles():
+    """The regex secret patterns (AWS keys, Google keys, ...) only ever saw
+    proxy traffic. On an autonomous run that meant no secret was ever found in
+    JavaScript, even with every bundle sitting on disk."""
+    from app.analysis import js_recon
+
+    src = inspect.getsource(js_recon.analyze_js)
+    assert "_cached_js(eng)" in src, "js_recon is still proxy-only"
+    helper = inspect.getsource(js_recon._cached_js)
+    assert "js_dir" in helper and "listdir" in helper

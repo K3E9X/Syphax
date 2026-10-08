@@ -67,6 +67,25 @@ _FULLURL_RE = re.compile(r"""['"`](https?://[A-Za-z0-9.\-]+/[A-Za-z0-9_\-/.?=&{}
 _NOISE = ("/api/placeholder", "schema.org", "w3.org", "googleapis.com/css")
 
 
+def _cached_js(eng) -> List[Tuple[str, str]]:
+    """(name, text) for every JavaScript bundle js_cache put on disk."""
+    from app.scans.artifacts import js_dir, listdir
+
+    out: List[Tuple[str, str]] = []
+    try:
+        paths = listdir(js_dir(eng.target_url),
+                        suffixes=(".js", ".mjs", ".ts"), limit=MAX_SCAN_FLOWS)
+    except Exception:  # noqa: BLE001 - an absent cache is a normal state
+        return out
+    for path in paths or []:
+        try:
+            out.append((path.name,
+                        path.read_text(encoding="utf-8", errors="replace")[:MAX_BODY]))
+        except Exception:  # noqa: BLE001 - one unreadable artifact is not fatal
+            continue
+    return out
+
+
 async def analyze_js(engagement_id: str) -> Dict[str, int]:
     eng = await EngagementRepository().get(engagement_id)
     if eng is None:
@@ -128,6 +147,36 @@ async def analyze_js(engagement_id: str) -> Dict[str, int]:
                 u = m.group(1)
                 if eng.host_in_scope((urlparse(u).hostname or "").lower()):
                     endpoints.add(u)
+
+    # The bundles the CRAWL found, downloaded by js_cache. Without this the
+    # regex secret patterns below only ever saw proxy traffic, so an autonomous
+    # run (nobody browsing the target through mitmproxy) found no secret in the
+    # JavaScript at all - even though every bundle was sitting on disk.
+    for path, text in _cached_js(eng):
+        for name, pattern, severity in _SECRET_PATTERNS:
+            for m in pattern.finditer(text):
+                raw = m.group(0)
+                key = f"{name}:{raw[:60]}"
+                if key in secrets_seen:
+                    continue
+                secrets_seen.add(key)
+                findings.append(Finding(
+                    severity=severity,
+                    title=f"Secret leaked in JavaScript: {name}",
+                    description=(f"A {name} appears in {path}, a bundle the crawl "
+                                 "discovered and downloaded."),
+                    target=eng.target_url,
+                    evidence=f"{name} found in {path}\n  match: {_redact(raw)}",
+                    metadata={"vuln_class": "secret_exposure", "status": "confirmed",
+                              "confidence": 0.9, "secret_type": name,
+                              "source": path, "from_cache": True},
+                ))
+        for m in _ENDPOINT_RE.finditer(text):
+            endpoints.add(m.group(1))
+        for m in _FULLURL_RE.finditer(text):
+            u = m.group(1)
+            if eng.host_in_scope((urlparse(u).hostname or "").lower()):
+                endpoints.add(u)
 
     endpoints = {e for e in endpoints if not any(n in e for n in _NOISE)}
 
