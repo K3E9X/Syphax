@@ -13,7 +13,7 @@ from __future__ import annotations
 import json
 import logging
 from dataclasses import dataclass
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional, Set
 
 from app import events
 from app.llm import ROLE_PLANNER, LLMError, get_router
@@ -79,8 +79,16 @@ class Planner:
         except Exception:  # noqa: BLE001 - telling the operator must never break planning
             logger.debug("could not emit the planner degradation notice", exc_info=True)
 
-    async def plan(self, *, max_tasks: int = 12, use_llm: bool = True) -> List[Task]:
-        """Return the next batch of uncovered, applicable tasks."""
+    async def plan(self, *, max_tasks: int = 12, use_llm: bool = True,
+                   skip_phases: Optional[Set[str]] = None) -> List[Task]:
+        """Return the next batch of uncovered, applicable tasks.
+
+        `skip_phases` are phases that have spent their share of the run's job
+        budget. Without it the earliest phase with ANY uncovered work wins
+        forever, and the mapping phase can always produce more work than the
+        budget allows - so the run never reaches vuln_analysis or exploitation.
+        See the comment on `earliest_phase` below.
+        """
         assets = await self.state.assets()
         tech = await self.state.technologies()
 
@@ -104,8 +112,29 @@ class Planner:
 
         # Only advance one phase at a time: take the earliest phase that still
         # has uncovered work, so we always recon/map before we exploit.
-        earliest_phase = candidates[0].phase
-        batch = [t for t in candidates if t.phase == earliest_phase][:max_tasks]
+        #
+        # "Earliest phase with ANY uncovered work" is a trap on its own, and it
+        # is the reason a run on a real site found recon results and nothing
+        # else. Mapping items applied to every endpoint asset, and the mapping
+        # tools (katana, gau, ffuf) CREATE endpoint assets - so mapping
+        # produced work faster than the budget could absorb it: 40 discovered
+        # endpoints were 200 mapping tasks, which is the whole default job
+        # budget, before a single vuln_analysis task existed. The run ended
+        # inside mapping every time, so no injection test, no CVE check, no
+        # exploitation and no authored PoC was ever planned - and every finding
+        # was therefore recon-grade and "info".
+        #
+        # Two things fixed it. The per-host mapping items (whatweb, wafw00f,
+        # katana, ffuf) are `is_base` now, so they run once instead of once per
+        # page they themselves discovered. And `skip_phases` lets the caller cap
+        # each phase's share of the budget, which is what makes reaching
+        # exploitation a guarantee rather than a hope.
+        skip = {str(p) for p in (skip_phases or set())}
+        remaining = [t for t in candidates if t.phase not in skip]
+        if not remaining:
+            return []
+        earliest_phase = remaining[0].phase
+        batch = [t for t in remaining if t.phase == earliest_phase][:max_tasks]
 
         if use_llm:
             batch = await self._llm_reorder(batch, tech)

@@ -150,7 +150,10 @@ CATALOG: List[CatalogItem] = [
         phase=PHASE_MAPPING,
         tool="whatweb",
         description="Fingerprint server, framework, CMS and language.",
-        applies_when={"always": True},
+        # Per host, not per URL. Fingerprinting is a property of the HOST, not
+        # of each URL on it. Run once per discovered endpoint it re-identified
+        # the same stack dozens of times, and spent the job budget doing it.
+        applies_when={"is_base": True},
     ),
     CatalogItem(
         id="MAP-WAF",
@@ -160,7 +163,9 @@ CATALOG: List[CatalogItem] = [
         phase=PHASE_MAPPING,
         tool="wafw00f",
         description="Detect a WAF so later phases can adapt payloads and rate.",
-        applies_when={"always": True},
+        # Per host, not per URL. A WAF sits in front of the host. Detecting it
+        # once is the point; detecting it per URL is the same answer N times.
+        applies_when={"is_base": True},
     ),
     CatalogItem(
         id="MAP-CRAWL",
@@ -171,7 +176,14 @@ CATALOG: List[CatalogItem] = [
         tool="katana",
         description="Crawl endpoints/forms/params, parsing JavaScript and known files.",
         default_options=["-jc", "-known-files", "all"],
-        applies_when={"always": True},
+        # Per host, not per URL. One crawl from the base URL walks the whole
+        # site - that is what `-jc -known-files all` is for. Run per endpoint it
+        # re-crawled the site once for every page it had already found, and each
+        # run ingested more endpoint assets, which created more crawl tasks.
+        # THAT feedback loop is what consumed the entire job budget inside the
+        # mapping phase, so vuln_analysis and exploitation were never planned at
+        # all.
+        applies_when={"is_base": True},
     ),
     CatalogItem(
         id="MAP-CONTENT-DISCOVERY",
@@ -185,7 +197,11 @@ CATALOG: List[CatalogItem] = [
         default_options=["-recursion", "-recursion-depth", "2",
                          "-e", ".bak,.old,.zip,.tar.gz,.sql,.json,.config,~",
                          "-ac"],
-        applies_when={"always": True},
+        # Per host, not per URL. `-recursion -recursion-depth 2` already walks
+        # down from the root. Run per endpoint it brute-forced directory names
+        # underneath individual FILES, and fed the same asset feedback loop as
+        # the crawl.
+        applies_when={"is_base": True},
     ),
     CatalogItem(
         id="MAP-API-ROUTES",
@@ -278,7 +294,9 @@ CATALOG: List[CatalogItem] = [
         tool="testssl",
         description="TLS/SSL audit: ciphers, protocol versions, TLS CVEs.",
         severity_default="medium",
-        applies_when={"is_https": True},
+        # Per host, not per URL. TLS is a property of host:port. Run per
+        # endpoint it re-tested the same handshake once per URL on the host.
+        applies_when={"is_base": True, "is_https": True},
     ),
     CatalogItem(
         id="VULN-WORDPRESS",

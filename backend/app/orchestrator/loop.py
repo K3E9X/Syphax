@@ -23,7 +23,8 @@ from app.orchestrator.executor import Executor
 from app.orchestrator.planner import Planner
 from app.orchestrator.runs import Run, RunRepository
 from app.orchestrator.state import EngagementState
-from app.methodology import PHASE_EXPLOIT, PHASE_VULN
+from app.methodology import (PHASE_EXPLOIT, PHASE_MAPPING, PHASE_RECON,
+                             PHASE_VULN)
 from app.scans.models import JobStatus
 from app.scans.storage import JobRepository
 from app.validation import build_chains, validate_engagement
@@ -32,6 +33,45 @@ logger = logging.getLogger("syphax.orchestrator.loop")
 
 # Safety defaults when the engagement sets no budget.
 DEFAULT_MAX_JOBS = 200
+
+# Each phase's share of the job budget.
+#
+# Without a cap, "the earliest phase with any uncovered work" wins forever, and
+# mapping can always manufacture more work than the budget allows: its tools
+# create endpoint assets and its items applied to every endpoint asset, so 40
+# discovered endpoints were 200 mapping tasks - the entire default budget -
+# before a single vuln_analysis task existed. Every run on a real site ended
+# inside mapping, which is why the only findings were recon-grade and "info",
+# and why no exploitation, no PoC and no authored payload ever happened.
+#
+# A phase that does not use its share leaves the slack to the phases after it:
+# the overall budget is still the only hard stop, so nothing is wasted by
+# reserving. These add to 1.0 for readability, not because they must.
+PHASE_BUDGET_SHARE = {
+    PHASE_RECON: 0.15,
+    PHASE_MAPPING: 0.30,
+    PHASE_VULN: 0.25,
+    PHASE_EXPLOIT: 0.30,
+}
+# Never cap a phase below this many jobs, however small the budget - unless the
+# budget itself is smaller than that times the number of phases, in which case
+# the floor scales down rather than letting the early phases take everything.
+MIN_PHASE_JOBS = 4
+
+
+def phase_allowance(max_jobs: int, phase: str) -> int:
+    """How many jobs `phase` may launch in a run with this budget.
+
+    Exported and used by the loop rather than inlined, so the simulation in
+    tests/test_the_run_reaches_exploitation.py can import the real arithmetic
+    instead of restating it - a test that restates the rule cannot catch the
+    rule being wrong.
+    """
+    share = PHASE_BUDGET_SHARE.get(phase)
+    if share is None:
+        return max_jobs
+    floor = max(1, min(MIN_PHASE_JOBS, max_jobs // max(1, len(PHASE_BUDGET_SHARE))))
+    return max(floor, int(max_jobs * share))
 DEFAULT_MAX_SECONDS = 2 * 60 * 60          # 2 hours
 MAX_ITERATIONS = 50
 BATCH_SIZE = 8
@@ -122,6 +162,9 @@ async def run_engagement_loop(run_id: str) -> dict:
     # proven - and that was reported nowhere, which reads as "the scanner found
     # nothing".
     phases_seen: set = set()
+    # Jobs launched per phase, so no phase can eat the whole budget.
+    jobs_by_phase: Dict[str, int] = {}
+    capped_reported: set = set()
     try:
         for iteration in range(MAX_ITERATIONS):
             # A sign of life, so a worker that dies can be told apart from a
@@ -160,7 +203,32 @@ async def run_engagement_loop(run_id: str) -> dict:
             # planner quirk) must NOT abort the whole run: log it, and only
             # give up after several consecutive failures.
             try:
-                batch = await planner.plan(max_tasks=BATCH_SIZE)
+                exhausted = {
+                    phase for phase in PHASE_BUDGET_SHARE
+                    if jobs_by_phase.get(phase, 0) >= phase_allowance(max_jobs, phase)
+                }
+                for phase in exhausted - capped_reported:
+                    capped_reported.add(phase)
+                    await events.emit(
+                        engagement.id, events.PHASE_CHANGED,
+                        f"Phase '{phase}' reached its share of the job budget "
+                        f"({jobs_by_phase.get(phase, 0)} of {max_jobs} tasks); "
+                        f"moving on so the later phases run.",
+                        run_id=run.id, phase=phase, level=events.LEVEL_INFO)
+
+                batch = await planner.plan(max_tasks=BATCH_SIZE,
+                                           skip_phases=exhausted)
+                # Trim to what this phase has left, not just to BATCH_SIZE.
+                # Checking the cap once per iteration lets a full batch
+                # overshoot it, and on a small budget one overshoot is the
+                # whole reservation: with a 12-task budget, recon took 8 and
+                # mapping the other 4, so exploitation got nothing at all.
+                if batch:
+                    phase = batch[0].phase
+                    left = (phase_allowance(max_jobs, phase)
+                            - jobs_by_phase.get(phase, 0))
+                    if left > 0:
+                        batch = batch[:left]
                 if not batch:
                     logger.info("[%s] coverage saturated after %d iterations", run.id, iteration)
                     run.stop_reason = "coverage_saturated"
@@ -208,6 +276,7 @@ async def run_engagement_loop(run_id: str) -> dict:
                     if job is not None:
                         launched_ids.append(job.id)
                         run.jobs_launched += 1
+                        jobs_by_phase[task.phase] = jobs_by_phase.get(task.phase, 0) + 1
                         await events.emit(
                             engagement.id, events.TASK_LAUNCHED,
                             f"{task.tool} -> {task.asset_value}",
