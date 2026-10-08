@@ -70,16 +70,51 @@ def test_both_routes_run_their_poc():
         assert "_auto_run_staged" in _inspect.getsource(fn), fn.__name__
 
 
-def test_a_public_poc_that_proves_nothing_escalates_to_the_model():
-    """Published exploits are often only a checker - they print VULNERABLE and
-    exit. That is not proof, so the model must then write a real one."""
+def test_the_campaign_walks_every_route_until_one_proves_it():
+    """Taking only plan.best was the bug the operator hit for a week.
+
+    ROUTE_BUNDLED ranks first, so for ANY CVE with a nuclei template the single
+    route chosen was "bundled", whose branch merely records "ran earlier in this
+    phase". The published PoC and the model were never reached, and the finding
+    stayed LIKELY / UNVERIFIED forever.
+    """
     import inspect as _inspect
 
     from app.exploit import campaign
 
     src = _inspect.getsource(campaign.run_campaign)
-    assert "_demonstrated(outcome)" in src
-    assert "_try_authored" in src[src.index("ROUTE_PUBLIC_POC"):]
+    assert "for route in plan.routes:" in src, "still picking a single route"
+    # Ignore comments: the fix is explained in one, and the explanation names
+    # the thing it replaced.
+    code = "\n".join(l for l in src.split("\n")
+                     if not l.lstrip().startswith("#"))
+    assert "plan.best" not in code, "plan.best short-circuits the cascade"
+    # Both real routes are reachable from the loop, and the loop stops on proof.
+    assert "_try_public" in src and "_try_authored" in src
+    assert "_demonstrated(attempt)" in src
+
+
+def test_an_already_confirmed_finding_stops_the_cascade():
+    """If run_known_exploits/prove_impact already settled it there is nothing
+    left to prove - do not re-exploit a confirmed finding."""
+    from app.exploit.campaign import _already_proven
+    assert _already_proven({"status": "confirmed"})
+    assert _already_proven({"metadata": {"proven": True}})
+    assert not _already_proven({"status": "likely"})
+    assert not _already_proven({})
+
+
+def test_active_exploit_off_is_announced():
+    """With it off every PoC is refused at the run gate and everything stays
+    'likely'. An engagement created before it became the default still has it
+    off, which is invisible unless we say so."""
+    import inspect as _inspect
+
+    from app.exploit import campaign
+
+    src = _inspect.getsource(campaign.run_campaign)
+    assert "allow_active_exploit" in src
+    assert "no proof can be" in src
 
 
 @pytest.mark.parametrize("outcome,proved", [
