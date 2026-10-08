@@ -33,7 +33,7 @@ CREATE TABLE IF NOT EXISTS engagements (
     require_exploit_approval BOOLEAN NOT NULL DEFAULT FALSE,
     secondary_auth_json  TEXT,
     primary_auth_json    TEXT,
-    allow_active_exploit BOOLEAN NOT NULL DEFAULT FALSE,
+    allow_active_exploit BOOLEAN NOT NULL DEFAULT TRUE,
     allow_sql_os_cmd     BOOLEAN NOT NULL DEFAULT FALSE,
     allow_data_proof     BOOLEAN NOT NULL DEFAULT FALSE,
     user_agent_mode      TEXT,
@@ -44,7 +44,14 @@ CREATE TABLE IF NOT EXISTS engagements (
 ALTER TABLE engagements ADD COLUMN IF NOT EXISTS require_exploit_approval BOOLEAN NOT NULL DEFAULT FALSE;
 ALTER TABLE engagements ADD COLUMN IF NOT EXISTS secondary_auth_json TEXT;
 ALTER TABLE engagements ADD COLUMN IF NOT EXISTS primary_auth_json TEXT;
-ALTER TABLE engagements ADD COLUMN IF NOT EXISTS allow_active_exploit BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE engagements ADD COLUMN IF NOT EXISTS allow_active_exploit BOOLEAN NOT NULL DEFAULT TRUE;
+ALTER TABLE engagements ALTER COLUMN allow_active_exploit SET DEFAULT TRUE;
+-- Active exploitation is how a finding stops being "likely". An engagement
+-- created before it became the default still carried FALSE, and then every
+-- proof was refused at the run gate: nothing could ever be confirmed, with no
+-- visible reason. Bring the existing ones along rather than leaving a fleet of
+-- engagements that silently cannot prove anything.
+UPDATE engagements SET allow_active_exploit = TRUE WHERE allow_active_exploit = FALSE;
 ALTER TABLE engagements ADD COLUMN IF NOT EXISTS allow_sql_os_cmd BOOLEAN NOT NULL DEFAULT FALSE;
 ALTER TABLE engagements ADD COLUMN IF NOT EXISTS allow_data_proof BOOLEAN NOT NULL DEFAULT FALSE;
 ALTER TABLE engagements ADD COLUMN IF NOT EXISTS user_agent_mode TEXT;
@@ -196,7 +203,7 @@ def _row_to_engagement(row) -> Engagement:
             row["require_exploit_approval"] if "require_exploit_approval" in row else False
         ),
         allow_active_exploit=(
-            row["allow_active_exploit"] if "allow_active_exploit" in row else False
+            row["allow_active_exploit"] if "allow_active_exploit" in row else True
         ),
         allow_sql_os_cmd=(
             row["allow_sql_os_cmd"] if "allow_sql_os_cmd" in row else False

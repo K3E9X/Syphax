@@ -27,6 +27,7 @@ from app.scans.artifacts import js_dir, safe_filename, write_artifact
 
 logger = logging.getLogger("syphax.analysis.js_cache")
 
+MAX_CRAWLED_JS = 60
 MAX_FLOWS = 400
 MAX_BODY = 2 * 1024 * 1024
 
@@ -74,6 +75,61 @@ async def materialise_js(engagement_id: str) -> Dict[str, int]:
         else:
             written += 1
 
-    logger.info("[%s] js-cache: wrote %d file(s), %d unwritable",
-                engagement_id, written, skipped)
-    return {"written": written, "skipped": skipped}
+    # The crawler finds the bundles; nothing downloaded them.
+    #
+    # Until now this read ONLY proxy flows, so on a run where the operator
+    # never browsed the target through mitmproxy the cache stayed empty - and
+    # jsluice (urls AND secrets), retire.js and js_recon all analysed an empty
+    # directory. That is why an autonomous run could finish reporting no
+    # secrets at all while katana had already listed every .js bundle.
+    fetched = await _fetch_crawled_js(eng, seen_urls={f.url for f in in_scope})
+    written += fetched
+
+    logger.info("[%s] js-cache: wrote %d file(s) (%d fetched from crawl), "
+                "%d unwritable", engagement_id, written, fetched, skipped)
+    return {"written": written, "fetched": fetched, "skipped": skipped}
+
+
+async def _fetch_crawled_js(eng, *, seen_urls: set) -> int:
+    """Download the JavaScript the crawl discovered, in scope, read-only.
+
+    One GET per bundle through SafePoC (scope-enforced, GET/HEAD only). Bounded
+    so a crawl that found a thousand chunks does not turn into a thousand
+    requests.
+    """
+    from app.orchestrator.state import EngagementState
+    from app.validation.safe_poc import SafePoC, ScopeError
+
+    try:
+        assets = await EngagementState(eng.id).assets("endpoint")
+    except Exception:  # noqa: BLE001 - no assets is not an error here
+        return 0
+
+    urls = []
+    for a in assets:
+        url = a.value
+        if url in seen_urls or not looks_like_js(url, ""):
+            continue
+        if not eng.host_in_scope((urlparse(url).hostname or "").lower()):
+            continue
+        urls.append(url)
+        if len(urls) >= MAX_CRAWLED_JS:
+            break
+    if not urls:
+        return 0
+
+    safe = SafePoC(in_scope=eng.host_in_scope)
+    written = 0
+    for url in urls:
+        try:
+            resp = await safe.fetch(url, method="GET")
+        except ScopeError:
+            continue
+        except Exception:  # noqa: BLE001 - one unreachable bundle is not fatal
+            continue
+        text = (resp.text if resp else "")[:MAX_BODY]
+        if not text.strip():
+            continue
+        if write_artifact(js_dir(url), safe_filename(url, suffix=".js"), text):
+            written += 1
+    return written
