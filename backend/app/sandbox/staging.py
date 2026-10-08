@@ -273,6 +273,13 @@ class StagedPoCRepository:
                 engagement_id)
         return [_row_to_poc(r) for r in rows]
 
+    async def list_all(self, *, limit: int = 300) -> List[StagedPoC]:
+        """Every staged PoC across engagements, newest first."""
+        async with db.acquire() as conn:
+            rows = await conn.fetch(
+                "SELECT * FROM staged_pocs ORDER BY created_at DESC LIMIT $1", limit)
+        return [_row_to_poc(r) for r in rows]
+
     async def set_status(self, poc_id: str, status: str, *,
                          decided_by: Optional[str] = None) -> None:
         async with db.acquire() as conn:

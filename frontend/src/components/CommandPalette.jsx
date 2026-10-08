@@ -32,6 +32,7 @@ const PAGES = [
   { id: 'p-find', label: 'Findings', group: 'Pages', to: '/findings', keywords: 'vulnerabilities verdicts' },
   { id: 'p-surf', label: 'Surface', group: 'Pages', to: '/surface', keywords: 'assets attack surface hosts' },
   { id: 'p-meth', label: 'Methodology', group: 'Pages', to: '/methodology', keywords: 'wstg attack catalog coverage' },
+  { id: 'p-poc', label: 'PoC testing', group: 'Pages', to: '/poc', keywords: 'poc exploit proof proved tested sandbox result' },
   { id: 'p-sand', label: 'Sandbox', group: 'Pages', to: '/sandbox', keywords: 'poc exploit staged runner' },
   { id: 'p-proxy', label: 'Proxy', group: 'Pages', to: '/proxy', keywords: 'mitm intercept flows capture ca' },
   { id: 'p-rep', label: 'Reports', group: 'Pages', to: '/reports', keywords: 'export markdown pdf sarif' },

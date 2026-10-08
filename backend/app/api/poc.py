@@ -112,6 +112,65 @@ async def list_staged(engagement_id: str) -> Dict[str, Any]:
     return {"items": [p.to_public(include_code=False) for p in items]}
 
 
+@router.get("/overview")
+async def overview(engagement_id: str = "") -> Dict[str, Any]:
+    """Every PoC the tool fetched or wrote, and what running it proved.
+
+    The exploitation story was spread across three screens: the live console
+    said a PoC ran, the Sandbox page held the code, the finding carried the
+    output. This is the one place that answers "what was tried, and did it
+    work" - per PoC, with its origin, its two readings and its exit code.
+    """
+    pocs = (await _repo.list(engagement_id) if engagement_id
+            else await _repo.list_all())
+    engs = {e.id: e for e in await _engagements.list(limit=500)}
+
+    items = []
+    counts = {"total": 0, "executed": 0, "proved": 0, "waiting": 0, "refused": 0}
+    for p in pocs:
+        insp = p.inspection or {}
+        run = insp.get("run_result") or {}
+        vetting = insp.get("vetting") or {}
+        exit_code = run.get("exit_code")
+        proved = bool(run) and exit_code == 0
+        counts["total"] += 1
+        if run:
+            counts["executed"] += 1
+        if proved:
+            counts["proved"] += 1
+        if not vetting.get("allowed", True):
+            counts["refused"] += 1
+        elif p.status == STATUS_STAGED and insp.get("verdict") != "review":
+            counts["waiting"] += 1
+
+        eng = engs.get(p.engagement_id)
+        items.append({
+            "id": p.id,
+            "engagement": (eng.target_host if eng else p.engagement_id),
+            "engagement_id": p.engagement_id,
+            "finding_id": p.finding_id,
+            "origin": insp.get("origin") or "manual",
+            "repo": p.repo, "path": p.path, "language": p.language,
+            "status": p.status, "decided_by": p.decided_by,
+            "created_at": p.created_at,
+            # the two readings
+            "inspection_verdict": insp.get("verdict"),
+            "vetting_allowed": vetting.get("allowed"),
+            "vetting_summary": vetting.get("summary"),
+            # did the model rehearse it, and did that work
+            "rehearsed": (insp.get("refine") or {}).get("iterations"),
+            "demonstrated": (insp.get("refine") or {}).get("demonstrated"),
+            # what running it actually did
+            "ran": bool(run),
+            "exit_code": exit_code,
+            "argv": run.get("argv") or [],
+            "stdout": (run.get("stdout") or "")[:4000],
+            "stderr": (run.get("stderr") or "")[:2000],
+            "proved": proved,
+        })
+    return {"counts": counts, "items": items}
+
+
 @router.get("/{poc_id}")
 async def get_staged(poc_id: str) -> Dict[str, Any]:
     """The full code plus its inspection - what the reviewer actually reads."""

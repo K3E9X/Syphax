@@ -272,6 +272,9 @@ export const api = {
 
   poc: {
     runnerHealth: () => request('/api/poc/runner/health'),
+    // Every PoC and what running it proved, for the PoC-testing view.
+    overview: (engagementId = '') => request(
+      '/api/poc/overview' + (engagementId ? `?engagement_id=${encodeURIComponent(engagementId)}` : '')),
     list: (engagementId) => request(`/api/poc/engagements/${engagementId}`),
     get: (pocId) => request(`/api/poc/${pocId}`),
     stage: (payload) => request('/api/poc/stage', {

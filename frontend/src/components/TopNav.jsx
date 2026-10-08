@@ -18,6 +18,7 @@ const LINKS = [
   { label: 'Findings', to: '/findings' },
   { label: 'Surface', to: '/surface' },
   { label: 'Methodology', to: '/methodology' },
+  { label: 'PoC testing', to: '/poc' },
   { label: 'Sandbox', to: '/sandbox' },
   { label: 'Proxy', to: '/proxy' },
   { label: 'Reports', to: '/reports' },

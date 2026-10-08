@@ -21,6 +21,7 @@ const Findings = React.lazy(() => import('./pages/Findings.jsx'));
 const Surface = React.lazy(() => import('./pages/Surface.jsx'));
 const Methodology = React.lazy(() => import('./pages/Methodology.jsx'));
 const Sandbox = React.lazy(() => import('./pages/Sandbox.jsx'));
+const PocTesting = React.lazy(() => import('./pages/PocTesting.jsx'));
 const Settings = React.lazy(() => import('./pages/Settings.jsx'));
 import './styles.css';
 
@@ -70,6 +71,7 @@ ReactDOM.createRoot(document.getElementById('root')).render(
           <Route path="surface" element={<Surface />} />
           <Route path="methodology" element={<Methodology />} />
           <Route path="sandbox" element={<Sandbox />} />
+          <Route path="poc" element={<PocTesting />} />
           <Route path="proxy" element={<Proxy />} />
           <Route path="reports" element={<Reports />} />
           <Route path="settings" element={<Settings />} />

@@ -21,6 +21,7 @@ export default function Surface() {
   const [picked, setPicked] = useState({});
   const [scopeBusy, setScopeBusy] = useState(false);
   const [scopeMsg, setScopeMsg] = useState(null);
+  const [candError, setCandError] = useState(null);
 
   useEffect(() => {
     if (!engId) return;
@@ -34,8 +35,10 @@ export default function Surface() {
   const loadCandidates = useCallback(() => {
     if (!engId) return;
     api.engagements.scopeCandidates(engId)
-      .then((r) => setCands(r.items || []))
-      .catch(() => setCands([]));
+      .then((r) => { setCands(r.items || []); setCandError(null); })
+      // Swallowing this made "nothing was discovered out of scope" and "the
+      // request failed" render identically: an empty panel either way.
+      .catch((e) => { setCands([]); setCandError(e.message); });
   }, [engId]);
   useEffect(() => { setPicked({}); setScopeMsg(null); loadCandidates(); }, [loadCandidates]);
 
@@ -104,6 +107,8 @@ export default function Surface() {
   return (
     <div className="page">
       <Notice kind="error" message={loadError} />
+      <Notice kind="error" title="Could not list discovered hosts"
+              message={candError} onRetry={() => { setCandError(null); loadCandidates(); }} />
       <Notice kind="error" title="Could not load engagements"
               message={engError} onRetry={reloadEngagements} />
       <div className="lv-head">
