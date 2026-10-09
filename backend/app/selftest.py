@@ -80,23 +80,46 @@ async def check_llm() -> List[str]:
                              "deterministic checks run without it; writing an "
                              "exploit does not."))
             continue
-        try:
-            reply = await client.chat(
-                [{"role": "user", "content": "Reply with the single word: ready"}],
-                temperature=0.0, max_tokens=8)
-        except LLMError as exc:
-            out.append(_line(BROKEN, role, f"{client.model}: {exc}"))
-            continue
-        except Exception as exc:  # noqa: BLE001
-            out.append(_line(BROKEN, role,
-                             f"{client.model}: {exc.__class__.__name__}: {exc}"))
-            continue
+        # Give a reasoning model room to think before it answers.
+        #
+        # This asked for 8 tokens, and a reasoning model spends that budget on
+        # its reasoning and returns empty content - so all three roles were
+        # reported BROKEN on an installation where the very next check had the
+        # SAME model write a 3386-character exploit. The check was wrong, not
+        # the installation.
+        reply = None
+        error = None
+        for budget in (256, 1024):
+            try:
+                reply = await client.chat(
+                    [{"role": "user",
+                      "content": "Answer with one word: ready"}],
+                    temperature=0.0, max_tokens=budget)
+            except LLMError as exc:
+                error = str(exc)
+                break
+            except Exception as exc:  # noqa: BLE001
+                error = f"{exc.__class__.__name__}: {exc}"
+                break
+            if (reply or "").strip():
+                break
+
         model = client.last_used_model or client.model
-        text = (reply or "").strip().replace("\n", " ")[:40]
+        if error is not None:
+            out.append(_line(BROKEN, role, f"{model}: {error}"))
+            continue
+        text = (reply or "").strip().replace("\n", " ")[:60]
         if text:
             out.append(_line(OK, role, f"{model} answered {text!r}"))
         else:
-            out.append(_line(BROKEN, role, f"{model} returned an empty reply"))
+            # The call SUCCEEDED, so the key and the endpoint work; the model
+            # just put everything in its reasoning. Not a broken capability -
+            # claiming otherwise is what sent the operator looking in the
+            # wrong place. The authoring check below is the real proof.
+            out.append(_line(
+                OK, role,
+                f"{model} accepted the call but returned no visible text "
+                f"(reasoning model); see EXPLOIT AUTHORING for the real test"))
     return out
 
 

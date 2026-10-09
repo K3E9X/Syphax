@@ -236,7 +236,10 @@ def test_a_live_call_is_what_makes_a_role_ok():
 
     src = _i.getsource(selftest.check_llm)
     assert "client.chat(" in src, "the role check never calls the model"
-    assert "max_tokens=8" in src, "the check must stay cheap"
+    # Cheap, but not so cheap it cannot tell a reasoning model from a dead key:
+    # see test_the_role_check_gives_a_reasoning_model_room_to_answer.
+    assert "max_tokens=budget" in src
+    assert "1024" in src and "4096" not in src, "the check must stay cheap"
 
 
 def test_the_authoring_check_goes_all_the_way_to_a_vetted_script():
@@ -293,3 +296,109 @@ def test_the_endpoint_is_a_post_because_it_is_not_free():
     src = _i.getsource(scans)
     assert '@router.post("/selftest")' in src, \
         "a GET would be retried by caches and crawlers, and it spends tokens"
+
+
+# ---- the flag that emptied a working template set -------------------------
+
+def _update_template_commands() -> list:
+    """Every place the codebase downloads nuclei templates."""
+    import inspect as _i
+    import pathlib
+
+    from app.orchestrator import loop
+
+    def code_only(text: str) -> str:
+        # Comments mention the flag in order to explain it; matching those
+        # would make this assert its own documentation.
+        return " ".join(
+            line for line in text.splitlines()
+            if not line.lstrip().startswith("#")
+        )
+
+    out = [code_only(_i.getsource(loop._repair_nuclei_templates))]
+    dockerfile = (pathlib.Path(__file__).resolve().parents[1]
+                  / "Dockerfile").read_text()
+    for line in dockerfile.splitlines():
+        if "-update-templates" in line and not line.lstrip().startswith("#"):
+            out.append(line)
+    return out
+
+
+def test_nothing_disables_the_update_check_while_updating_templates():
+    """`-disable-update-check` turns off nuclei's update subsystem, which is
+    what `-update-templates` runs through: asking it to download the templates
+    while forbidding it to check for updates downloads nothing.
+
+    I added that flag to both the Dockerfile and the runtime repair in one
+    commit. The next rebuild emptied a template set of 14036, the build
+    succeeded because of `|| true`, and the repair that was supposed to catch
+    it would have fetched nothing either. The flag belongs on the SCAN
+    command, not on the update.
+    """
+    offenders = [c for c in _update_template_commands()
+                 if "-disable-update-check" in c or "-duc" in c.split()]
+    assert not offenders, (
+        "these download templates with the update check disabled, so they "
+        f"download nothing: {offenders}")
+
+
+def test_the_templates_are_still_downloaded_in_both_places():
+    """Guard the test above against being satisfied by deleting the download."""
+    commands = _update_template_commands()
+    assert any("-update-templates" in c for c in commands), \
+        "nothing downloads the templates any more"
+    assert len(commands) >= 2, \
+        "the build and the runtime repair must both be present"
+
+
+def test_the_scan_command_does_still_disable_it():
+    """On the scan it is right: a scan must not stop to check for updates."""
+    import inspect as _i
+
+    from app.scans.wrappers.nuclei import NucleiWrapper
+
+    src = _i.getsource(NucleiWrapper.build_command)
+    assert "-disable-update-check" in src
+
+
+# ---- the model check that contradicted its own next line ------------------
+
+def test_the_role_check_gives_a_reasoning_model_room_to_answer():
+    """It asked for 8 tokens. A reasoning model spends that on reasoning and
+    returns empty content, so all three roles were reported BROKEN on an
+    installation where the very next check had the SAME model write a
+    3386-character exploit. The check was wrong, not the installation."""
+    import inspect as _i
+
+    from app import selftest
+
+    src = _i.getsource(selftest.check_llm)
+    assert "max_tokens=8" not in src, "8 tokens is not room to answer"
+    assert "for budget in (256, 1024)" in src, \
+        "a single small budget cannot tell a reasoning model from a dead key"
+
+
+def test_an_empty_completion_is_not_a_broken_key():
+    """The call succeeding proves the key and the endpoint work. Calling that
+    BROKEN sent the operator looking in the wrong place."""
+    import inspect as _i
+
+    from app import selftest
+
+    src = _i.getsource(selftest.check_llm)
+    empty_branch = src.split("if text:")[1]
+    assert "_line(\n                OK, role," in empty_branch or \
+        "OK, role," in empty_branch, \
+        "an empty-but-successful completion must not be reported as BROKEN"
+    assert "EXPLOIT AUTHORING" in empty_branch, \
+        "and it must point at the check that does prove the model works"
+
+
+def test_only_an_error_makes_a_role_broken():
+    import inspect as _i
+
+    from app import selftest
+
+    src = _i.getsource(selftest.check_llm)
+    assert "if error is not None:" in src
+    assert src.index("if error is not None:") < src.index("if text:")
