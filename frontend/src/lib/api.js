@@ -183,6 +183,10 @@ export const api = {
 
   scans: {
     tools: () => request('/api/scans/tools'),
+    // Exercises every capability for real - a live completion per model role,
+    // one authored exploit, one PoC search, the sandbox's health - and reports
+    // what works. POST because it is not free.
+    selftest: () => request('/api/scans/selftest', { method: 'POST' }),
     // How the tools may present themselves on the wire. Served, not hardcoded:
     // a UI offering a browser the backend does not know would silently fall
     // back to rotating and nobody would be able to tell.

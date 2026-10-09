@@ -55,6 +55,20 @@ export default function Scans() {
   // looks clean whatever is wrong with it. The image builds them with
   // `|| true`, so a throttled build produces exactly this.
   const crippled = tools.filter((t) => t.available && t.ready === false);
+  const [selftest, setSelftest] = useState(null);
+  const [selftesting, setSelftesting] = useState(false);
+  const [selftestError, setSelftestError] = useState(null);
+
+  async function runSelftest() {
+    setSelftesting(true); setSelftestError(null); setSelftest(null);
+    try {
+      setSelftest(await api.scans.selftest());
+    } catch (e) {
+      setSelftestError(e.message);
+    } finally {
+      setSelftesting(false);
+    }
+  }
 
   // Knowledge map over the jobs: tools are the categories, job status is the
   // quality (done high, running/queued medium, failed low), confidence is the
@@ -162,6 +176,62 @@ export default function Scans() {
             {avail}/{tools.length} tools available in this container
             {crippled.length > 0 && `, ${crippled.length} installed but unusable`}.
           </div>
+
+          {/* "Nothing works" deserves an answer that is not a guess. This
+              exercises each capability for real and says which ones do. */}
+          <div className="key-row" style={{ marginTop: 8 }}>
+            <button type="button" className="btn btn--muted btn--sm"
+                    onClick={runSelftest} disabled={selftesting}>
+              {selftesting ? 'Testing…' : 'Run self-test'}
+            </button>
+            <span className="scan-note">
+              one live model call per role, one authored exploit, one PoC
+              search, the sandbox&apos;s health. No target is touched.
+            </span>
+          </div>
+          {selftestError && (
+            <div className="notice notice--error" role="alert">
+              <div className="notice__body">
+                <strong className="notice__t">Self-test could not run</strong>
+                <span className="notice__m">{selftestError}</span>
+              </div>
+              <button type="button" className="btn btn--muted btn--sm"
+                      onClick={runSelftest}>Retry</button>
+            </div>
+          )}
+          {selftest && (
+            <div className="poc-result" style={{ marginTop: 8 }}>
+              <div className="poc-code-head">
+                Self-test — {selftest.broken === 0
+                  ? 'nothing broken'
+                  : `${selftest.broken} capability(ies) BROKEN`}
+                {' · '}&quot;absent&quot; is a choice, &quot;broken&quot; looks
+                present and does not work
+              </div>
+              {['sandbox', 'model', 'authoring', 'poc_search', 'tools']
+                .filter((k) => (selftest[k] || []).length)
+                .map((k) => (
+                  <div key={k} style={{ marginBottom: 6 }}>
+                    <div className="shadow__reason mono">{k}</div>
+                    <ul style={{ margin: 0, paddingLeft: 18 }}>
+                      {(selftest[k] || [])
+                        .filter((r) => k !== 'tools' || r.status !== 'absent')
+                        .map((r) => (
+                          <li key={r.name} className="scan-note">
+                            <span className={r.status === 'BROKEN'
+                              ? 'st poc-st--rejected' : r.status === 'ok'
+                                ? 'st poc-st--executed' : 'st'}>
+                              {r.status}
+                            </span>{' '}
+                            <code>{r.name}</code>
+                            {r.detail ? ` — ${r.detail}` : ''}
+                          </li>
+                        ))}
+                    </ul>
+                  </div>
+                ))}
+            </div>
+          )}
           {crippled.length > 0 && (
             <div className="notice notice--error" role="alert">
               <div className="notice__body">
