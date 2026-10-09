@@ -504,8 +504,11 @@ async def _repair_nuclei_templates(engagement, run) -> bool:
         "for nothing and every target comes back clean.",
         run_id=run.id, level=events.LEVEL_INFO)
     try:
+        # NO `-disable-update-check`: it switches off the update subsystem that
+        # -update-templates runs through, so the download fetches nothing. The
+        # same mistake in the Dockerfile emptied a template set of 14036.
         proc = await asyncio.create_subprocess_exec(
-            "nuclei", "-update-templates", "-silent", "-disable-update-check",
+            "nuclei", "-update-templates", "-silent",
             stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
         _out, err = await asyncio.wait_for(proc.communicate(), timeout=600)
     except asyncio.TimeoutError:

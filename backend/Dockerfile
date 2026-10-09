@@ -266,7 +266,13 @@ RUN set -eux; \
 # So the build now says which outcome it got, the wrapper reports it at
 # runtime (app/scans/wrappers/nuclei.py: required_data), and the orchestrator
 # re-downloads them at the start of a run if they are missing.
-RUN nuclei -update-templates -silent -disable-update-check || true; \
+# NOT `-disable-update-check` here. That flag turns off nuclei's update
+# subsystem, which is the very thing `-update-templates` needs: asking it to
+# download the templates while forbidding it to check for updates downloads
+# nothing. It belongs on the SCAN command (see wrappers/nuclei.py), not on
+# this one. Adding it here emptied the template set on the next rebuild of an
+# image that had 14036 of them, and `|| true` let the build succeed.
+RUN nuclei -update-templates -silent || true; \
     if find "$HOME/.local/nuclei-templates" "$HOME/nuclei-templates" \
             -type f -name '*.yaml' -print -quit 2>/dev/null | grep -q .; then \
         echo "[build] nuclei templates: OK"; \
