@@ -188,3 +188,108 @@ def test_the_tools_endpoint_exposes_readiness():
 
     entry = available_wrappers()[0]
     assert "ready" in entry and "not_ready_because" in entry
+
+
+# ---- the self-test: one command that says what works ----------------------
+#
+# It exists because five rounds of "read the code, infer a cause, fix, rebuild,
+# no difference" is a failure of method. Each capability is exercised rather
+# than inferred: a model role is "ok" when a live call returned text, not when
+# a key is non-empty.
+
+def test_the_selftest_covers_every_capability_the_operator_asked_about():
+    import inspect as _i
+
+    from app import selftest
+
+    src = _i.getsource(selftest)
+    for capability in ("check_tools", "check_llm", "check_exploit_authoring",
+                       "check_poc_search", "check_sandbox"):
+        assert f"def {capability}" in src, capability
+    # And all of them have to be in the run, not merely defined.
+    run = _i.getsource(selftest.run)
+    for capability in ("check_tools", "check_llm", "check_exploit_authoring",
+                       "check_poc_search", "check_sandbox"):
+        assert capability in run, f"{capability} is never called"
+
+
+def test_the_selftest_hydrates_the_router_before_judging_the_keys():
+    """The LLM keys live in the database and the router is hydrated from them
+    at worker startup. Without that, a self-test on a correctly configured
+    installation would report "no API key" for every role."""
+    import inspect as _i
+
+    from app import selftest
+
+    for fn in (selftest.run, selftest.as_json):
+        src = _i.getsource(fn)
+        assert "apply_saved_on_startup" in src, fn.__name__
+        assert src.index("apply_saved_on_startup") < src.index("check_llm"), \
+            f"{fn.__name__} judges the keys before loading them"
+
+
+def test_a_live_call_is_what_makes_a_role_ok():
+    """A non-empty key is not evidence the model answers."""
+    import inspect as _i
+
+    from app import selftest
+
+    src = _i.getsource(selftest.check_llm)
+    assert "client.chat(" in src, "the role check never calls the model"
+    assert "max_tokens=8" in src, "the check must stay cheap"
+
+
+def test_the_authoring_check_goes_all_the_way_to_a_vetted_script():
+    """"The key works" and "the model can produce a runnable exploit" are
+    different claims, and the operator asked about the second."""
+    import inspect as _i
+
+    from app import selftest
+
+    src = _i.getsource(selftest.check_exploit_authoring)
+    assert "authoring.author(" in src
+    assert "inspect_code(" in src, "it must also report what the gate would say"
+    assert "result.usable" in src, "and what the target-safety vet decided"
+
+
+def test_the_poc_search_check_reports_the_reason_it_found_nothing():
+    import inspect as _i
+
+    from app import selftest
+
+    src = _i.getsource(selftest.check_poc_search)
+    assert "github_poc_search_detailed" in src, \
+        "the plain search swallows the reason"
+    assert "searchsploit" in src
+
+
+def test_absent_and_broken_are_not_the_same_thing():
+    """A tool nobody installed is a choice. A tool that looks present and does
+    not work is the thing that cost five rebuilds."""
+    from app import selftest
+
+    assert selftest.ABSENT != selftest.BROKEN
+    line = selftest._line(selftest.BROKEN, "nuclei", "templates are empty")
+    assert "FAIL" in line and "nuclei" in line
+
+
+def test_the_ui_and_the_cli_cannot_disagree():
+    """as_json parses the same lines the CLI prints, from the same checks."""
+    import inspect as _i
+
+    from app import selftest
+
+    src = _i.getsource(selftest.as_json)
+    for capability in ("check_tools", "check_llm", "check_exploit_authoring",
+                       "check_poc_search", "check_sandbox"):
+        assert capability in src, f"{capability} is missing from the API view"
+
+
+def test_the_endpoint_is_a_post_because_it_is_not_free():
+    import inspect as _i
+
+    from app.api import scans
+
+    src = _i.getsource(scans)
+    assert '@router.post("/selftest")' in src, \
+        "a GET would be retried by caches and crawlers, and it spends tokens"

@@ -62,8 +62,23 @@ async def identities() -> dict:
 
 @router.get("/tools")
 async def list_tools() -> list:
-    """Which wrappers exist and whether their binary is installed."""
+    """Which wrappers exist, whether the binary is installed, and whether it
+    can actually find anything (nuclei without templates cannot)."""
     return available_wrappers()
+
+
+@router.post("/selftest")
+async def selftest() -> dict:
+    """Exercise every capability and report what works.
+
+    POST because it is not free: it makes one small completion per configured
+    model role, asks the model to write one throwaway exploit, runs one GitHub
+    search and calls the sandbox's /health. No target is touched.
+
+    It exists because "nothing works" needed an answer that was not a guess.
+    """
+    from app.selftest import as_json
+    return await as_json()
 
 
 @router.post("", status_code=201)
