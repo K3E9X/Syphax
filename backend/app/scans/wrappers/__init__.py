@@ -84,6 +84,8 @@ def available_wrappers() -> List[Dict[str, object]]:
             "name": w.name,
             "binary": w.binary,
             "available": w.is_available(),
+            "ready": w.readiness().ready,
+            "not_ready_because": w.readiness().reason,
             "description": w.description,
             "category": w.category,
         }
@@ -91,4 +93,27 @@ def available_wrappers() -> List[Dict[str, object]]:
     ]
 
 
-__all__ = ["BaseWrapper", "get_wrapper", "available_wrappers"]
+def preflight() -> List[Dict[str, object]]:
+    """Every tool's real state: installed, and able to find anything.
+
+    The distinction is the whole point. "Installed" is `which nuclei`; "ready"
+    is whether it has its templates. A nuclei with an empty template set runs,
+    exits 0, prints nothing - and a target full of known CVEs comes back clean.
+    The same is true of ffuf without its wordlist and kiterunner without its
+    route database. From the operator's seat all three are indistinguishable
+    from a target that simply has nothing wrong with it, which is how a run on
+    a deliberately vulnerable site can report only "info" findings.
+    """
+    return [w.readiness().to_dict() | {"category": w.category,
+                                       "binary": w.binary,
+                                       "description": w.description}
+            for w in _WRAPPERS.values()]
+
+
+def not_ready() -> List[Dict[str, object]]:
+    """Only the tools that cannot do their job, for the limits panel."""
+    return [r for r in preflight() if not r["ready"]]
+
+
+__all__ = ["BaseWrapper", "get_wrapper", "available_wrappers", "preflight",
+           "not_ready"]
