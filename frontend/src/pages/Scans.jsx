@@ -49,6 +49,12 @@ export default function Scans() {
   }, [loadJobs]);
 
   const avail = tools.filter((t) => t.available).length;
+  // Installed but unable to find anything: nuclei with no templates, ffuf with
+  // no wordlist, kiterunner with no route database. These are worse than an
+  // absent tool - the binary runs, exits 0 and reports nothing, so the target
+  // looks clean whatever is wrong with it. The image builds them with
+  // `|| true`, so a throttled build produces exactly this.
+  const crippled = tools.filter((t) => t.available && t.ready === false);
 
   // Knowledge map over the jobs: tools are the categories, job status is the
   // quality (done high, running/queued medium, failed low), confidence is the
@@ -132,7 +138,13 @@ export default function Scans() {
               <label className="field__label" htmlFor="scan-tool">Tool</label>
               <div className="select-box">
                 <select id="scan-tool" className="select" value={form.tool} onChange={(e) => set({ tool: e.target.value })}>
-                  {tools.map((t) => <option key={t.name} value={t.name} disabled={!t.available}>{t.name}{t.available ? '' : ' (not installed)'}</option>)}
+                  {tools.map((t) => (
+                    <option key={t.name} value={t.name} disabled={!t.available}>
+                      {t.name}
+                      {!t.available ? ' (not installed)'
+                        : t.ready === false ? ' (no data — finds nothing)' : ''}
+                    </option>
+                  ))}
                 </select>
               </div>
             </div>
@@ -146,7 +158,36 @@ export default function Scans() {
             </div>
             <button type="submit" className="btn btn--solid">Run</button>
           </form>
-          <div className="scan-note">{avail}/{tools.length} tools available in this container.</div>
+          <div className="scan-note">
+            {avail}/{tools.length} tools available in this container
+            {crippled.length > 0 && `, ${crippled.length} installed but unusable`}.
+          </div>
+          {crippled.length > 0 && (
+            <div className="notice notice--error" role="alert">
+              <div className="notice__body">
+                <strong className="notice__t">
+                  {crippled.length === 1
+                    ? '1 tool is installed but cannot find anything'
+                    : `${crippled.length} tools are installed but cannot find anything`}
+                </strong>
+                <span className="notice__m">
+                  These run, exit cleanly and report nothing, so every target
+                  they look at comes back clean — whatever is actually wrong
+                  with it.
+                </span>
+                <ul className="notice__m" style={{ margin: 0, paddingLeft: 18 }}>
+                  {crippled.map((t) => (
+                    <li key={t.name}><code>{t.name}</code> — {t.not_ready_because}</li>
+                  ))}
+                </ul>
+                <span className="notice__m">
+                  Rebuild the image, or install the missing data in the
+                  container. <code>nuclei</code> matters most: five catalog
+                  items and every <code>-dast</code> injection family run it.
+                </span>
+              </div>
+            </div>
+          )}
         </div>
       </div>
 

@@ -255,8 +255,26 @@ RUN set -eux; \
     install -m 0755 trufflehog /usr/local/bin/trufflehog; \
     rm -f trufflehog trufflehog.tar.gz
 
-# Pre-download nuclei templates so first scan is fast.
-RUN nuclei -update-templates -silent || true
+# Pre-download nuclei templates.
+#
+# `|| true` is deliberate - a throttled or offline build must still produce an
+# image - but it used to be SILENT, and nuclei with no templates scans for
+# nothing: it exits 0, prints nothing, and a target full of known CVEs comes
+# back clean. Five catalog items and every -dast injection family run nuclei,
+# so that one `|| true` could account for an entire run finding nothing.
+#
+# So the build now says which outcome it got, the wrapper reports it at
+# runtime (app/scans/wrappers/nuclei.py: required_data), and the orchestrator
+# re-downloads them at the start of a run if they are missing.
+RUN nuclei -update-templates -silent -disable-update-check || true; \
+    if find "$HOME/.local/nuclei-templates" "$HOME/nuclei-templates" \
+            -type f -name '*.yaml' -print -quit 2>/dev/null | grep -q .; then \
+        echo "[build] nuclei templates: OK"; \
+    else \
+        echo "[build] WARNING: nuclei templates are MISSING."; \
+        echo "[build]   nuclei will run and find nothing until they exist."; \
+        echo "[build]   The orchestrator retries the download at run start."; \
+    fi
 
 # jsluice - URLs, parameters and secrets out of a real JavaScript AST, which is
 # what a regex pass over a minified bundle cannot do. Built in the stage above.

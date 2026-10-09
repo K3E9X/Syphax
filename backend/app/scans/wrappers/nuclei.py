@@ -19,12 +19,38 @@ def _first_cve(cls_cve, tags, template_id) -> str | None:
             or first_cve(tags if isinstance(tags, (list, tuple)) else (tags or "")))
 
 
+# Where nuclei keeps its templates. It reads NUCLEI_TEMPLATES / the config, and
+# otherwise $HOME/.local/nuclei-templates (v3) or $HOME/nuclei-templates (v2).
+def _template_dir() -> str:
+    override = os.environ.get("NUCLEI_TEMPLATES", "").strip()
+    if override:
+        return override
+    home = os.environ.get("HOME", "/root")
+    for candidate in (os.path.join(home, ".local", "nuclei-templates"),
+                      os.path.join(home, "nuclei-templates")):
+        if os.path.isdir(candidate):
+            return candidate
+    return os.path.join(home, ".local", "nuclei-templates")
+
+
 class NucleiWrapper(BaseWrapper):
     name = "nuclei"
     binary = "nuclei"
     description = "Template-based vulnerability scanner (4000+ community templates)."
     category = "vuln"
     timeout_seconds = 30 * 60
+
+    # WITHOUT THESE, NUCLEI FINDS NOTHING AND EXITS 0.
+    #
+    # Five catalog items run nuclei - VULN-NUCLEI, VULN-EXPOSURES, VULN-AUTH,
+    # EXP-DAST, EXP-RCE - plus the six -dast injection families. The image
+    # downloads the templates with `nuclei -update-templates -silent || true`,
+    # so a build on a throttled or offline network produces a working binary
+    # with an empty template set, and every scan then reports a clean target.
+    # `is_available()` cannot see that: the binary is right there on PATH.
+    @property
+    def required_data(self):
+        return ((_template_dir(), "the nuclei template set"),)
 
     def build_command(self, target: str, options: Sequence[str]) -> List[str]:
         # Out-of-band: nuclei confirms blind SSRF/XXE/RCE via interactsh. By

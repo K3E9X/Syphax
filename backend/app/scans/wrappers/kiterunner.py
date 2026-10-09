@@ -33,6 +33,10 @@ class KiterunnerWrapper(BaseWrapper):
     category = "content_discovery"
     timeout_seconds = 15 * 60
 
+    # Without the .kite route file there are no request templates to replay,
+    # so it reports no API routes - indistinguishable from a service with none.
+    required_data = ((DEFAULT_KITE, "the Assetnote route database"),)
+
     def build_command(self, target: str, options: Sequence[str]) -> List[str]:
         cmd = [
             self.binary, "scan", target,

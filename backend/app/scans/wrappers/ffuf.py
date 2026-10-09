@@ -25,6 +25,10 @@ class FfufWrapper(BaseWrapper):
     # so the job returns partial results instead of being SIGKILLed with none.
     timeout_seconds = int(os.environ.get("FFUF_MAXTIME", "300")) + 60
 
+    # Without the wordlist ffuf fuzzes an empty list: it exits cleanly having
+    # requested nothing, which reads as "no hidden paths on this target".
+    required_data = ((DEFAULT_WORDLIST, "the content-discovery wordlist"),)
+
     def build_command(self, target: str, options: Sequence[str]) -> List[str]:
         # If the caller did not embed FUZZ in the target, assume directory fuzzing.
         url = target if "FUZZ" in target else target.rstrip("/") + "/FUZZ"

@@ -124,6 +124,12 @@ async def run_engagement_loop(run_id: str) -> dict:
     max_jobs = engagement.budget_requests or DEFAULT_MAX_JOBS
     deadline = time.time() + (engagement.budget_seconds or DEFAULT_MAX_SECONDS)
 
+    # Before anything is planned: which tools can actually find something.
+    try:
+        await _report_tool_readiness(engagement, run)
+    except Exception:  # noqa: BLE001 - a preflight must never fail a run
+        logger.exception("[%s] tool preflight failed", run.id)
+
     approvals = ApprovalRepository()
     need_approval = requires_exploit_approval(engagement)
 
@@ -391,7 +397,6 @@ async def _report_verification_limits(engagement, run,
     campaign = campaign or {}
     try:
         from app.scans.artifacts import js_dir, listdir
-        from app.scans.wrappers import _WRAPPERS
         from app.validation import ValidatedFindingRepository
         from app.validation.limits import (limits_for, summary_line,
                                            unverified_classes_of)
@@ -402,7 +407,8 @@ async def _report_verification_limits(engagement, run,
             unverified_classes=unverified_classes_of(findings),
             captured_js_files=len(listdir(js_dir(engagement.target_url), limit=1)),
             stop_reason=run.stop_reason or "",
-            tools_unavailable=[n for n, w in _WRAPPERS.items() if not w.is_available()],
+            tools_unavailable=[],  # superseded by tools_not_ready, below
+            tools_not_ready=_tool_readiness(),
             sandbox_error=await _sandbox_error(),
             llm_configured=await _planner_configured(),
             auto_run_poc=await _auto_run_enabled(),
@@ -435,6 +441,95 @@ def _last_phase(phases_seen: Optional[set]) -> str:
         return ""
     ordered = [p for p in _PHASE_ORDER if p in phases_seen]
     return ordered[-1] if ordered else sorted(phases_seen)[-1]
+
+
+def _tool_readiness() -> list:
+    """Which tools cannot do their job. Never raises."""
+    try:
+        from app.scans.wrappers import not_ready
+        return not_ready()
+    except Exception:  # noqa: BLE001 - a broken preflight must not fail a run
+        logger.exception("could not read tool readiness")
+        return []
+
+
+async def _report_tool_readiness(engagement, run) -> None:
+    """Say, at the START of the run, which tools cannot find anything.
+
+    A tool whose data is missing is worse than an absent one: the binary runs,
+    exits 0 and reports nothing, so the target looks clean. nuclei is the case
+    that matters - five catalog items and six -dast injection families run it,
+    and the image downloads its templates with `|| true`, so a throttled build
+    leaves a working binary with no templates at all. Said up front, because by
+    the end of the run the operator has already drawn their conclusion.
+    """
+    entries = _tool_readiness()
+    broken = [e for e in entries if e.get("installed") and not e.get("ready")]
+
+    # Try to repair the one that is both the most damaging and the most
+    # repairable. The image runs `nuclei -update-templates -silent || true` at
+    # build time, so a throttled or offline build ships a working binary with
+    # no templates - and telling the operator to rebuild is a poor answer when
+    # the fix is one command the worker can run itself.
+    if any(e.get("tool") == "nuclei" for e in broken):
+        if await _repair_nuclei_templates(engagement, run):
+            entries = _tool_readiness()
+            broken = [e for e in entries
+                      if e.get("installed") and not e.get("ready")]
+
+    absent = [e for e in entries if not e.get("installed")]
+    for entry in broken:
+        await events.emit(
+            engagement.id, events.PHASE_CHANGED,
+            f"{entry['tool']} is installed but cannot find anything: "
+            f"{entry['reason']}",
+            run_id=run.id, level=events.LEVEL_INFO, tool=entry["tool"])
+    if absent:
+        await events.emit(
+            engagement.id, events.PHASE_CHANGED,
+            f"{len(absent)} tool(s) are not in this image and will be skipped: "
+            + ", ".join(sorted(e["tool"] for e in absent)[:12]),
+            run_id=run.id, level=events.LEVEL_VERBOSE)
+
+
+async def _repair_nuclei_templates(engagement, run) -> bool:
+    """Download the nuclei templates now. True if it worked.
+
+    Bounded and best-effort: this is a repair, not a dependency. If it fails,
+    the caller reports nuclei as unusable, which is the honest answer.
+    """
+    await events.emit(
+        engagement.id, events.PHASE_CHANGED,
+        "nuclei has no templates - downloading them now. Without them it scans "
+        "for nothing and every target comes back clean.",
+        run_id=run.id, level=events.LEVEL_INFO)
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            "nuclei", "-update-templates", "-silent", "-disable-update-check",
+            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+        _out, err = await asyncio.wait_for(proc.communicate(), timeout=600)
+    except asyncio.TimeoutError:
+        await events.emit(engagement.id, events.PHASE_CHANGED,
+                          "nuclei template download timed out after 10 minutes.",
+                          run_id=run.id, level=events.LEVEL_INFO)
+        return False
+    except Exception as exc:  # noqa: BLE001 - a repair must never fail a run
+        logger.exception("[%s] nuclei template download failed", run.id)
+        await events.emit(
+            engagement.id, events.PHASE_CHANGED,
+            f"nuclei template download failed: {exc.__class__.__name__}.",
+            run_id=run.id, level=events.LEVEL_INFO)
+        return False
+
+    from app.scans.wrappers import get_wrapper
+    ok = get_wrapper("nuclei").readiness().ready
+    await events.emit(
+        engagement.id, events.PHASE_CHANGED,
+        "nuclei templates installed." if ok else
+        f"nuclei templates still missing after the download "
+        f"({(err or b'').decode('utf-8', 'replace')[:200].strip() or 'no error output'}).",
+        run_id=run.id, level=events.LEVEL_INFO)
+    return ok
 
 
 async def _sandbox_error() -> str:

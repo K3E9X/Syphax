@@ -75,6 +75,9 @@ def limits_for(
     # explanation and was reported nowhere.
     reached_exploitation: Optional[bool] = None,
     last_phase: str = "",
+    # From app.scans.wrappers.not_ready(): every tool that cannot do its job,
+    # with whether it is even installed. See the comment at the loop below.
+    tools_not_ready: Optional[Sequence[Dict[str, Any]]] = None,
 ) -> List[Limit]:
     """Every reason this run verified less than it could have.
 
@@ -217,7 +220,29 @@ def limits_for(
                 "strategy.AUTHORABLE_CLASSES.",
         ))
 
-    for tool in sorted({str(t) for t in tools_unavailable if t}):
+    # A tool that is INSTALLED but has no data is the dangerous case, and it
+    # is reported first. nuclei with an empty template set runs, exits 0 and
+    # prints nothing; ffuf without its wordlist fuzzes nothing; kiterunner
+    # without its route database replays nothing. None of them error, so a
+    # target full of known CVEs comes back clean and the run looks successful.
+    # The image builds them with `|| true`, so a throttled build produces
+    # exactly this.
+    for entry in tools_not_ready or ():
+        if not entry.get("installed"):
+            continue
+        out.insert(0, Limit(
+            key=f"tool_has_no_data:{entry.get('tool')}",
+            what=f"{entry.get('tool')} ran but could not find anything:",
+            why=str(entry.get("reason") or "its data files are missing"),
+            fix="Rebuild the image, or install the data by hand in the "
+                "container. Until then every target this tool looks at comes "
+                "back clean whatever is wrong with it.",
+        ))
+
+    missing = sorted({str(t) for t in tools_unavailable if t}
+                     | {str(e.get("tool")) for e in (tools_not_ready or ())
+                        if not e.get("installed")})
+    for tool in missing:
         out.append(Limit(
             key=f"tool_missing:{tool}",
             what=f"Tests belonging to {tool} were skipped:",
