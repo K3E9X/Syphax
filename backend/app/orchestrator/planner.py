@@ -17,13 +17,23 @@ from typing import Any, Dict, List, Optional, Set
 
 from app import events
 from app.llm import ROLE_PLANNER, LLMError, get_router
-from app.methodology import CATALOG, CATALOG_BY_ID, PHASE_ORDER, applies
+from app.methodology import (CATALOG, CATALOG_BY_ID, PHASE_MAPPING,
+                             PHASE_ORDER, PHASE_RECON, applies)
 from app.orchestrator.state import Asset, EngagementState
 from urllib.parse import urlparse
 
 logger = logging.getLogger("syphax.orchestrator.planner")
 
 _SEVERITY_RANK = {"critical": 0, "high": 1, "medium": 2, "low": 3, "info": 4}
+
+# How many planning rounds may be reordered by the model in one run.
+#
+# Every round used to be, at roughly 5k tokens each. With 150 rounds that is
+# close to a million tokens for a single engagement, most of it spent ordering
+# recon tasks whose order does not matter. Twenty covers the rounds where the
+# choice is a real judgement - which weakness to chase on this stack - and the
+# deterministic order (asset quality, then catalog severity) handles the rest.
+MAX_LLM_REORDERS = 20
 
 
 @dataclass
@@ -58,6 +68,9 @@ class Planner:
         # Said once per run, not once per iteration: the loop re-plans every
         # cycle and a per-iteration notice would bury the console.
         self._degradation_reported = False
+        # Model-assisted orderings used so far, and whether the cap was said.
+        self._reorders = 0
+        self._reorder_cap_reported = False
 
     async def _report_degraded(self, reason: str) -> None:
         """Say out loud that planning fell back to the deterministic order.
@@ -226,6 +239,33 @@ class Planner:
     async def _llm_reorder(self, batch: List[Task], tech: List[str]) -> List[Task]:
         if len(batch) <= 1:
             return batch
+
+        # The model is not asked to reorder recon or mapping.
+        #
+        # It was asked on EVERY planning round, in every phase. A round costs
+        # roughly 5k tokens, and raising MAX_ITERATIONS to 150 turned that into
+        # most of a million tokens per run - spent largely on deciding whether
+        # to resolve DNS before probing a port, which does not matter and which
+        # the deterministic order already settles.
+        #
+        # Where it earns its cost is choosing WHICH weakness to chase on a
+        # fingerprinted stack: a Java app and a WordPress one deserve different
+        # orders, and that judgement is the planner role's reason to exist.
+        if batch[0].phase in (PHASE_RECON, PHASE_MAPPING):
+            return batch
+
+        # And a ceiling, so a long run cannot turn into an open tab. Past it
+        # the deterministic order stands, which is the same order the model
+        # starts from.
+        if self._reorders >= MAX_LLM_REORDERS:
+            if not self._reorder_cap_reported:
+                self._reorder_cap_reported = True
+                await self._report_degraded(
+                    f"the planner has used its {MAX_LLM_REORDERS} model-assisted "
+                    f"orderings for this run; the deterministic order continues")
+            return batch
+        self._reorders += 1
+
         client = get_router().get(ROLE_PLANNER)
         if not client.configured:
             await self._report_degraded("no API key or model configured for the "

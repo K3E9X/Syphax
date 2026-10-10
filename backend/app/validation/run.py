@@ -90,7 +90,13 @@ async def validate_engagement(engagement_id: str) -> Dict[str, int]:
                     poc=result.poc,
                     evidence=f.evidence,
                     created_at=time.time(),
-                    metadata=f.metadata or {},
+                    metadata={
+                        **(f.metadata or {}),
+                        # So the UI and the report can say "not tested"
+                        # instead of "unverified", which are different claims.
+                        **({"blocked_by": result.blocked_by}
+                           if result.blocked_by else {}),
+                    },
                 )
             )
             await events.emit(

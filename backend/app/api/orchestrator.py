@@ -180,6 +180,10 @@ async def engagement_state(engagement_id: str) -> dict:
         # Did an oracle decide this, or did a scanner pattern match it? The UI
         # showed both identically, which is the same conflation the report had.
         d["proven"] = is_proven(v)
+        # A third state the UI needs: the check never reached the application,
+        # so this finding is not "unverified" - it is UNTESTED, which is not a
+        # statement about the target at all.
+        d["blocked_by"] = md.get("blocked_by") or ""
         d["corroboration"] = md.get("corroboration") or None
         return d
 

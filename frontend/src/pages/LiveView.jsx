@@ -451,10 +451,22 @@ export default function LiveView() {
                     <div className="finding__top">
                       <span className={'sev sev--' + (f.severity || 'info')}>{f.severity}</span>
                       <span className={'vstatus vstatus--' + f.status}>{f.status} · {Math.round((f.confidence || 0) * 100)}%</span>
-                      <span className={'proof proof--' + (f.proven ? 'yes' : 'no')}
-                            title={f.proven ? 'Reproduced against the target by an oracle'
-                              : 'Reported by a scanner; no oracle could decide it'}>
-                        {f.proven ? 'proven' : 'unverified'}
+                      {/* Three states, not two. "unverified" used to cover
+                          both "we checked and could not reproduce it" - weak
+                          evidence, but evidence - and "a WAF answered, so
+                          nothing was tested". Reading the second as the first
+                          invites the conclusion that the target is clean when
+                          nothing was looked at. */}
+                      <span className={'proof proof--'
+                        + (f.proven ? 'yes' : f.blocked_by ? 'blocked' : 'no')}
+                            title={f.proven
+                              ? 'Reproduced against the target by an oracle'
+                              : f.blocked_by
+                                ? `Not tested: ${f.blocked_by} answered instead of the application. This says nothing about whether the issue is real.`
+                                : 'Reported by a scanner; no oracle could decide it'}>
+                        {f.proven ? 'proven'
+                          : f.blocked_by ? `not tested · ${f.blocked_by}`
+                            : 'unverified'}
                       </span>
                     </div>
                     <div className="finding__title">{f.title}</div>

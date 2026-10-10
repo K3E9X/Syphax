@@ -35,6 +35,13 @@ class ValidationResult:
     method: str                      # how we decided (validator name / "tool-confirmed" / "llm")
     poc: str = ""                    # reproducible proof-of-exploit (curl, payload, evidence)
     detail: str = ""
+    # The barrier that answered instead of the application, when one did.
+    #
+    # UNCONFIRMED used to mean two different things: "the check ran and the
+    # issue did not reproduce" - weak evidence, but evidence - and "a WAF
+    # answered, so nothing was tested". Reading the second as the first invites
+    # the conclusion that the target is clean when nothing was looked at.
+    blocked_by: str = ""
 
     @classmethod
     def confirmed(cls, method: str, poc: str, *, confidence: float = 0.95, detail: str = "") -> "ValidationResult":
@@ -51,6 +58,21 @@ class ValidationResult:
     @classmethod
     def false_positive(cls, method: str, *, detail: str = "") -> "ValidationResult":
         return cls(ValidationStatus.FALSE_POSITIVE, 0.0, method, "", detail)
+
+    @classmethod
+    def blocked(cls, method: str, *, barrier: str, detail: str = "") -> "ValidationResult":
+        """The check never reached the application.
+
+        Confidence stays at the scanner's own level rather than dropping to the
+        unconfirmed floor: we learned NOTHING, so we have no grounds to think
+        less of the finding than we did before trying.
+        """
+        return cls(ValidationStatus.UNCONFIRMED, 0.5, method, "", detail,
+                   blocked_by=barrier)
+
+    @property
+    def was_blocked(self) -> bool:
+        return bool(self.blocked_by)
 
 
 @dataclass
