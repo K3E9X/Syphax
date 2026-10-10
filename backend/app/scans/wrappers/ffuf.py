@@ -8,7 +8,15 @@ import os
 from typing import List, Sequence
 
 from app.scans.models import Finding
-from app.scans.wrappers.base import BaseWrapper, ToolResult
+from app.scans.wrappers.base import as_inventory, BaseWrapper, ToolResult
+
+# Names worth a row of their own whatever they answered.
+_NOTABLE_PATHS = (
+    "admin", "login", "auth", "config", "backup", "dump", "db", "sql",
+    "env", "git", "svn", "secret", "token", "key", "debug", "console",
+    "actuator", "phpinfo", "server-status", "api", "graphql", "upload",
+    "internal", "private", "test", "staging", "old", "bak",
+)
 
 DEFAULT_WORDLIST = os.environ.get(
     "FFUF_WORDLIST",
@@ -85,7 +93,26 @@ class FfufWrapper(BaseWrapper):
                         "length": length,
                         "words": words,
                         "input": input_value,
+                        "vuln_class": "content_discovery",
+                        "asset": url,
+                        "asset_kind": "endpoint",
                     },
                 )
             )
-        return ToolResult(findings=findings)
+
+        # Recursion over a large wordlist returns hundreds of paths, and each
+        # used to be its own finding. What deserves a row is a path that is
+        # protected, redirecting or erroring - a 401/403 says something is
+        # there and guarded - or one whose name is an entry point. A plain 200
+        # on /about is surface.
+        def _worth_a_row(f):
+            meta = f.metadata or {}
+            code = meta.get("status")
+            if isinstance(code, int) and code != 200:
+                return True
+            name = str(meta.get("input") or "").lower()
+            return any(marker in name for marker in _NOTABLE_PATHS)
+
+        return ToolResult(findings=as_inventory(
+            findings, tool="ffuf", target=target, what="discovered path",
+            interesting=_worth_a_row))

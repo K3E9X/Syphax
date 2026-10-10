@@ -17,7 +17,8 @@ import re
 from typing import List, Sequence
 
 from app.scans.models import Finding
-from app.scans.wrappers.base import BaseWrapper, ToolResult, iter_json_lines
+from app.scans.wrappers.base import (as_inventory, BaseWrapper,
+                                     ToolResult, iter_json_lines)
 
 # Assetnote routes wordlist, installed in the image. Overridable.
 DEFAULT_KITE = os.environ.get("KITERUNNER_WORDLIST", "/opt/wordlists/routes-small.kite")
@@ -64,7 +65,7 @@ class KiterunnerWrapper(BaseWrapper):
             findings.append(_route_finding(url, status, method, target))
 
         if findings:
-            return ToolResult(findings=findings)
+            return ToolResult(findings=_as_routes(findings, target))
 
         # No JSON (older kr / text output): parse the status-prefixed lines.
         text = (stdout or b"").decode("utf-8", errors="replace")
@@ -77,7 +78,17 @@ class KiterunnerWrapper(BaseWrapper):
                 continue
             seen.add(url)
             findings.append(_route_finding(url, status, "GET", target))
-        return ToolResult(findings=findings)
+        return ToolResult(findings=_as_routes(findings, target))
+
+
+def _as_routes(findings, target):
+    """An undocumented API route is a lead, not inventory - it is the surface
+    for auth, BOLA and injection tests - so these keep their rows. The cap is
+    higher than for a crawl for that reason, and the count is still reported
+    once when it bites."""
+    return as_inventory(findings, tool="kiterunner", target=target,
+                        what="API route", interesting=lambda f: True,
+                        max_individual=120, max_assets=120)
 
 
 def _route_finding(url: str, status, method: str, target: str) -> Finding:
@@ -92,5 +103,9 @@ def _route_finding(url: str, status, method: str, target: str) -> Finding:
             "method": method,
             "status": status,
             "tool": "kiterunner",
+            # A discovered route is the surface for the auth, BOLA and
+            # injection tests; declared so the ingest aims them at it.
+            "asset": url,
+            "asset_kind": "endpoint",
         },
     )
