@@ -55,7 +55,7 @@ async def run() -> int:
         eng = run_row["engagement_id"]
 
         jobs = await _rows(conn, """
-            SELECT tool, status, exit_code, catalog_item_id, findings_json
+            SELECT tool, status, exit_code, catalog_item_id, findings_json, error
             FROM jobs WHERE engagement_id = $1
         """, eng)
         verdicts = await _rows(conn, """
@@ -83,7 +83,7 @@ async def run() -> int:
             continue
         by_phase[_phase_of(item)] += 1
         slot = per_item.setdefault(item, {"jobs": 0, "with_findings": 0,
-                                          "failed": 0})
+                                          "failed": 0, "skipped": 0})
         slot["jobs"] += 1
         raw = job["findings_json"]
         try:
@@ -95,6 +95,8 @@ async def run() -> int:
         if str(job["status"]).lower() in ("failed", "error") or \
                 (job["exit_code"] not in (0, None)):
             slot["failed"] += 1
+        if str(job.get("error") or "").startswith("not run:"):
+            slot["skipped"] = slot.get("skipped", 0) + 1
 
     out.append("")
     out.append("PHASES REACHED   tasks planned per phase")
@@ -109,7 +111,9 @@ async def run() -> int:
     out.append("PER CATALOG ITEM   jobs / produced findings / non-zero exit")
     for item in sorted(per_item):
         s = per_item[item]
-        flag = (" <- ran and found nothing"
+        flag = (f" <- {s['skipped']} not run (nothing to work on)"
+                if s.get("skipped")
+                else " <- ran and found nothing"
                 if s["jobs"] and not s["with_findings"] and not s["failed"]
                 else " <- FAILED" if s["failed"] else "")
         out.append(f"  {item:24s} {s['jobs']:3d} / {s['with_findings']:3d} / "

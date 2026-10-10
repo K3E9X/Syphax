@@ -97,6 +97,15 @@ class TruffleHogWrapper(BaseWrapper):
                 paths.append(str(d))
         return paths
 
+    def precondition(self, target: str, options: Sequence[str]) -> str:
+        # `trufflehog filesystem` with no path is a usage error: it exits
+        # non-zero every time, which the run recorded as a failed scan of the
+        # target rather than as "there was nothing to scan".
+        if not self.scan_paths(target):
+            return ("nothing has been captured to scan - no JavaScript and no "
+                    "git directory for this target yet")
+        return ""
+
     def build_command(self, target: str, options: Sequence[str]) -> List[str]:
         paths = self.scan_paths(target)
         cmd = [

@@ -37,14 +37,20 @@ class CloudEnumWrapper(BaseWrapper):
 
     def build_command(self, target: str, options: Sequence[str]) -> List[str]:
         keyword = _keyword(target)
-        cmd = [
-            self.binary,
-            "-k", keyword,
-            # Also try the bare host label as a second keyword (e.g. "acme" and
-            # "acme-corp"): many buckets use the short brand, not the FQDN.
-            "-k", _short_label(keyword),
-            "-t", "12",   # thread cap: polite, bounded concurrency
-        ]
+        # Also try the bare host label (e.g. "acme" alongside "acme-corp"):
+        # many buckets use the short brand, not the FQDN. But only when it IS
+        # different - for most targets the two are identical, and passing the
+        # same -k twice doubled the request count for nothing while the comment
+        # claimed a second keyword was being tried.
+        keywords = [keyword]
+        short = _short_label(keyword)
+        if short and short != keyword:
+            keywords.append(short)
+
+        cmd = [self.binary]
+        for word in keywords:
+            cmd += ["-k", word]
+        cmd += ["-t", "12"]   # thread cap: polite, bounded concurrency
         cmd.extend(options)
         return cmd
 
