@@ -71,7 +71,11 @@ _ANALYSIS_TOOLS = {"logic", "js-recon", "jwt", "access-control", "cors",
                    # and we cannot see its database" (unconfirmed), and
                    # rate_limit reports a measured bound. Both verdicts are
                    # more careful than the severity heuristic would be.
-                   "mass_assignment", "rate_limit"}
+                   "mass_assignment", "rate_limit",
+                   # api_sequences knows which object it asked for and what
+                   # was in it, because it wrote the marker. There is no
+                   # stronger oracle in the suite.
+                   "api_sequences"}
 
 # A dotenv line is an uppercase KEY=VALUE; an .htaccess carries a directive.
 _ENV_LINE = re.compile(r"(?m)^\s*[A-Z][A-Z0-9_]{2,}\s*=\s*\S")

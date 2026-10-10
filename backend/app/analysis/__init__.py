@@ -47,6 +47,7 @@ async def run_analysis(engagement_id: str, *, allow_active: bool = True) -> Dict
     from app.analysis.auth_posture import analyze_auth_posture
     from app.analysis.api_exposure import analyze_api_exposure
     from app.analysis.api_inventory import analyze_api_inventory
+    from app.analysis.api_sequences import analyze_api_sequences
     from app.analysis.mass_assignment import analyze_mass_assignment
     from app.analysis.rate_limit import analyze_rate_limit
     from app.analysis.schema_audit import analyze_schema
@@ -87,6 +88,14 @@ async def run_analysis(engagement_id: str, *, allow_active: bool = True) -> Dict
          lambda eid: analyze_mass_assignment(eid, allow_active=allow_active)),
         ("rate_limit",
          lambda eid: analyze_rate_limit(eid, allow_active=allow_active)),
+        # The only check here that sends a SEQUENCE: create an object, learn
+        # its identifier from the response, then ask a second question about
+        # it. That is how the strongest authorisation findings are actually
+        # established, and it is the one thing RESTler had that nothing else
+        # here did - see analysis/api_sequences for why the binary is not
+        # shipped. Starts with a write, so it takes the same gate.
+        ("api_sequences",
+         lambda eid: analyze_api_sequences(eid, allow_active=allow_active)),
         # Client-side: DOM XSS sinks fed from the URL, postMessage handlers.
         ("dom_sinks", analyze_dom_sinks),
         # Identity + authentication. The bypass probe is active (in-scope GETs),
