@@ -56,7 +56,12 @@ _ANALYSIS_TOOLS = {"logic", "js-recon", "jwt", "access-control", "cors",
                    # inflated "unconfirmed" into "likely"; for cloud_creds it
                    # threw away a probe that had authenticated to AWS.
                    "cloud_creds", "api_exposure", "auth_posture", "dom_sinks",
-                   "error_disclosure", "http_posture"}
+                   "error_disclosure", "http_posture",
+                   # api_inventory PROBED both the live version and the
+                   # forgotten one. Its verdict is two responses it holds, so
+                   # re-deriving it from the severity would throw away the
+                   # strongest evidence on the finding.
+                   "api_inventory"}
 
 # A dotenv line is an uppercase KEY=VALUE; an .htaccess carries a directive.
 _ENV_LINE = re.compile(r"(?m)^\s*[A-Z][A-Z0-9_]{2,}\s*=\s*\S")

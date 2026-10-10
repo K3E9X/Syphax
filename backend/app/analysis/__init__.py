@@ -46,6 +46,7 @@ async def run_analysis(engagement_id: str, *, allow_active: bool = True) -> Dict
     from app.analysis.error_disclosure import analyze_error_disclosure
     from app.analysis.auth_posture import analyze_auth_posture
     from app.analysis.api_exposure import analyze_api_exposure
+    from app.analysis.api_inventory import analyze_api_inventory
     from app.analysis.dom_sinks import analyze_dom_sinks
     steps = [
         # Keep the JS on disk current for retire.js/jsluice, in case the
@@ -65,6 +66,11 @@ async def run_analysis(engagement_id: str, *, allow_active: bool = True) -> Dict
         ("error_disclosure", analyze_error_disclosure),
         # Secrets and personal data handed back by the API itself.
         ("api_exposure", analyze_api_exposure),
+        # Shadow and zombie APIs (OWASP API9): the version the application
+        # stopped calling and the endpoint the archives remember. It also runs
+        # before vuln analysis (orchestrator/loop.py) so the forgotten versions
+        # it finds get scanned; here it sees the whole run's traffic.
+        ("api_inventory", analyze_api_inventory),
         # Client-side: DOM XSS sinks fed from the URL, postMessage handlers.
         ("dom_sinks", analyze_dom_sinks),
         # Identity + authentication. The bypass probe is active (in-scope GETs),

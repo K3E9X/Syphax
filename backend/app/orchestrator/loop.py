@@ -287,6 +287,10 @@ async def run_engagement_loop(run_id: str) -> dict:
                         # the traffic recon and mapping just captured, and the
                         # contract tests that read it are planned next.
                         await _synthesise_api_schema(engagement, run)
+                        # The forgotten versions, before the catalog is applied
+                        # to the surface: finding /api/v1 and not scanning it
+                        # would be worse than not finding it.
+                        await _hunt_shadow_apis(engagement, run)
                         await _run_correlation(engagement, run, executor, runs)
 
                 # Human checkpoint before exploitation (spec §11 approval).
@@ -721,6 +725,36 @@ async def _discover_params(engagement, run) -> None:
             )
     except Exception:  # noqa: BLE001 - never block the phase transition
         logger.exception("[%s] parameter discovery failed", run.id)
+
+
+async def _hunt_shadow_apis(engagement, run) -> None:
+    """Find the API versions the application stopped calling, before scanning.
+
+    OWASP API9 is the only item on the API Top 10 that is not a bug in a line
+    of code: /api/v2 is current and reviewed, /api/v1 is still answering two
+    years after anyone thought about it, and the gap between them is three
+    years of security work the old version never received.
+
+    This runs here rather than only in run_analysis because it SEEDS: every
+    forgotten version that answers becomes an endpoint asset, so the vuln
+    phase applies the same catalog to it that the current version gets.
+    Reporting v1 and never scanning it would leave the report claiming the
+    surface was covered while the one unmaintained version was skipped.
+    """
+    try:
+        from app.analysis.api_inventory import analyze_api_inventory
+        result = await analyze_api_inventory(engagement.id)
+        live = int(result.get("live", 0) or 0)
+        seeded = int(result.get("seeded", 0) or 0)
+        if live:
+            await events.emit(
+                engagement.id, events.PHASE_CHANGED,
+                f"Found {live} forgotten API endpoint(s) the application no "
+                f"longer calls; {seeded} added to the scan surface",
+                level=events.LEVEL_INFO, run_id=run.id,
+            )
+    except Exception:  # noqa: BLE001 - never block the phase transition
+        logger.exception("[%s] shadow API hunt failed", run.id)
 
 
 async def _synthesise_api_schema(engagement, run) -> None:
