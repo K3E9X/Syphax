@@ -95,6 +95,25 @@ def _rejected_its_own_arguments(text: str) -> str:
     return ""
 
 
+async def _reap(proc) -> None:
+    """Stop a probe that is still running, and wait for it. Never raises.
+
+    The wait matters as much as the kill: returning before the process is
+    reaped leaves the transport to be closed on a loop that may already be
+    gone, which is the whole bug.
+    """
+    import asyncio
+
+    try:
+        proc.kill()
+    except (ProcessLookupError, OSError):
+        return      # it exited between the timeout and here
+    try:
+        await asyncio.wait_for(proc.wait(), timeout=5)
+    except Exception:  # noqa: BLE001 - a stuck probe must not fail the self-test
+        pass
+
+
 async def check_invocations() -> List[str]:
     """Run every installed tool with the argv its wrapper builds.
 
@@ -135,6 +154,14 @@ async def check_invocations() -> List[str]:
         except asyncio.TimeoutError:
             # It ran long enough to be waiting on the network: its arguments
             # parsed, which is all this check claims to decide.
+            #
+            # Reaped here rather than left to the garbage collector. ffuf, gau,
+            # nmap and nuclei all reach this branch, and a subprocess transport
+            # finalised after asyncio.run() has closed the loop raises
+            # "RuntimeError: Event loop is closed" - which printed a traceback
+            # directly under the word "Nothing broken", in the one tool whose
+            # entire job is to leave no room for a guess.
+            await _reap(proc)
             out.append(_line(OK, name, "accepted its arguments (still running)"))
             continue
         except Exception as exc:  # noqa: BLE001
