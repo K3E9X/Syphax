@@ -62,6 +62,34 @@ async def run_scan(ctx: Dict[str, Any], job_id: str) -> Dict[str, Any]:
         return {"job_id": job_id, "status": "missing"}
 
     wrapper = get_wrapper(job.tool)
+
+    # Does this job have anything to work on? Some wrappers pass FILES as
+    # arguments, and when the artefact directory is empty the command line has
+    # no file in it: `trufflehog filesystem` with no path is a usage error, and
+    # `jsluice urls` with no file silently reads stdin and reports nothing.
+    # Both looked like a finding about the target. Refusing here puts the real
+    # reason on the record instead.
+    try:
+        blocked = wrapper.precondition(job.target, job.args or [])
+    except Exception:  # noqa: BLE001 - a broken check must not block the job
+        logger.exception("[%s] precondition failed for %s", job.id, job.tool)
+        blocked = ""
+    if blocked:
+        job.status = JobStatus.SUCCEEDED
+        job.started_at = job.started_at or time.time()
+        job.finished_at = time.time()
+        job.findings = []
+        job.error = f"not run: {blocked}"
+        await repo.update(job)
+        logger.info("[%s] %s skipped: %s", job.id, job.tool, blocked)
+        if job.engagement_id:
+            from app import events
+            await events.emit(
+                job.engagement_id, events.THOUGHT,
+                f"{job.tool} was not run on {job.target}: {blocked}",
+                level=events.LEVEL_INFO, tool=job.tool, job_id=job.id)
+        return {"job_id": job_id, "status": job.status.value, "skipped": True}
+
     cmd = wrapper.build_command(job.target, job.args)
 
     job.status = JobStatus.RUNNING

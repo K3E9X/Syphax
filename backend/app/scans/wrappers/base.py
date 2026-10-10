@@ -303,6 +303,21 @@ class BaseWrapper:
         """Return the argv to run. Must include the binary as argv[0]."""
         raise NotImplementedError
 
+    def precondition(self, target: str, options: Sequence[str]) -> str:
+        """"" when this job can run, else why it cannot. Checked BEFORE spawning.
+
+        Some wrappers pass FILES as arguments - jsluice and trufflehog read the
+        JavaScript and git artefacts the proxy captured. When that directory is
+        empty the command line has no file in it, and the two tools behave
+        differently and both badly: jsluice falls back to reading stdin and
+        reports nothing, trufflehog rejects `filesystem` with no path. Neither
+        is a finding about the target; both looked like one.
+
+        Saying so here means the job is not launched and the reason is on the
+        record, instead of a non-zero exit that reads as a failed scan.
+        """
+        return ""
+
     def stdin_for(self, target: str, options: Sequence[str]) -> Optional[str]:
         """Text to feed the tool on standard input, or None.
 

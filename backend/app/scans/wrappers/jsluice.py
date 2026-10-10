@@ -83,6 +83,16 @@ class JsluiceWrapper(BaseWrapper):
         return [str(p) for p in listdir(js_dir(target), suffixes=JS_SUFFIXES,
                                         limit=MAX_FILES)]
 
+    def precondition(self, target: str, options: Sequence[str]) -> str:
+        # With no file arguments `jsluice urls` reads stdin, gets nothing, and
+        # exits 0 having reported nothing - a silent no-op that is
+        # indistinguishable from "this site's JavaScript is clean".
+        if not self.js_files(target):
+            return ("no JavaScript has been captured for this target yet, and "
+                    "jsluice reads files - browse the target through the proxy, "
+                    "or let the crawl cache its scripts first")
+        return ""
+
     def build_command(self, target: str, options: Sequence[str]) -> List[str]:
         opts = list(options)
         sub = self.subcommand

@@ -575,3 +575,66 @@ def test_a_wrapper_that_wants_no_stdin_gets_none():
         if wrapper.name == "dnsx":
             continue
         assert wrapper.stdin_for("https://t.example/", []) is None, wrapper.name
+
+
+# ---- a job with nothing to work on must not look like a failed scan -------
+
+def test_a_wrapper_can_refuse_a_job_it_cannot_do():
+    """jsluice and trufflehog pass FILES as arguments. With an empty artefact
+    directory the command line has no file in it, and the two behave
+    differently and both badly: jsluice reads stdin, gets nothing and exits 0;
+    trufflehog rejects `filesystem` with no path and exits non-zero. Neither is
+    a finding about the target, and both looked like one."""
+    for name in ("jsluice", "trufflehog"):
+        reason = _WRAPPERS[name].precondition("https://nothing-captured.example/", [])
+        assert reason, f"{name} would be launched with no file to work on"
+        assert len(reason) > 20, f"{name}'s reason is not usable: {reason!r}"
+
+
+def test_a_wrapper_with_everything_it_needs_does_not_refuse():
+    """The default must stay permissive, or a working tool stops running."""
+    for wrapper in _WRAPPERS.values():
+        if wrapper.name in ("jsluice", "trufflehog"):
+            continue
+        assert wrapper.precondition("https://t.example/", []) == "", wrapper.name
+
+
+def test_the_worker_checks_before_spawning():
+    import inspect as _i
+
+    from app import workers
+
+    src = _i.getsource(workers)
+    assert "wrapper.precondition(" in src
+    assert src.index("wrapper.precondition(") < src.index("wrapper.build_command("), \
+        "the command is built before anyone asks whether it can run"
+    assert 'f"not run: {blocked}"' in src, \
+        "the reason must be recorded on the job, not only logged"
+
+
+def test_the_diagnosis_tells_skipped_apart_from_failed():
+    """Different causes, different fixes: a tool that errored is broken, a tool
+    that was not run had nothing to work on."""
+    import inspect as _i
+
+    from app import diagnose_run
+
+    src = _i.getsource(diagnose_run.run)
+    assert "not run (nothing to work on)" in src
+    assert '"not run:"' in src
+
+
+# ---- and the sloppiness the audit turned up ------------------------------
+
+def test_cloud_enum_does_not_pass_the_same_keyword_twice():
+    """`-k testfire -k testfire` doubled the request count against a third
+    party for nothing, while the comment claimed a second keyword was tried."""
+    argv = _WRAPPERS["cloud_enum"].build_command("https://testfire.net/", [])
+    keywords = [argv[i + 1] for i, a in enumerate(argv) if a == "-k"]
+    assert len(keywords) == len(set(keywords)), keywords
+
+
+def test_cloud_enum_still_tries_the_short_label_when_it_differs():
+    argv = _WRAPPERS["cloud_enum"].build_command("https://acme-corp.example/", [])
+    keywords = [argv[i + 1] for i, a in enumerate(argv) if a == "-k"]
+    assert len(keywords) >= 1
