@@ -47,6 +47,8 @@ async def run_analysis(engagement_id: str, *, allow_active: bool = True) -> Dict
     from app.analysis.auth_posture import analyze_auth_posture
     from app.analysis.api_exposure import analyze_api_exposure
     from app.analysis.api_inventory import analyze_api_inventory
+    from app.analysis.mass_assignment import analyze_mass_assignment
+    from app.analysis.rate_limit import analyze_rate_limit
     from app.analysis.schema_audit import analyze_schema
     from app.analysis.dom_sinks import analyze_dom_sinks
     steps = [
@@ -77,6 +79,14 @@ async def run_analysis(engagement_id: str, *, allow_active: bool = True) -> Dict
         # operations, a request body that accepts any property the caller
         # invents. Sends nothing - it reads the schema already in hand.
         ("schema_audit", analyze_schema),
+        # The two live API checks. Both WRITE or BURST, so both take
+        # allow_active like auth_posture does, and both self-gate on the
+        # engagement's own allow_active_exploit as well - the per-run override
+        # can only ever be more restrictive than the engagement.
+        ("mass_assignment",
+         lambda eid: analyze_mass_assignment(eid, allow_active=allow_active)),
+        ("rate_limit",
+         lambda eid: analyze_rate_limit(eid, allow_active=allow_active)),
         # Client-side: DOM XSS sinks fed from the URL, postMessage handlers.
         ("dom_sinks", analyze_dom_sinks),
         # Identity + authentication. The bypass probe is active (in-scope GETs),
