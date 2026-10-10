@@ -132,6 +132,15 @@ class EngagementState:
         # covers all of them. A parameterised endpoint is always admitted: it
         # is an injection point, and it is what the param-gated catalog items
         # need to exist at all.
+        #
+        # This ceiling is the weaker half of the fix, and deliberately
+        # generous. Bounding the COUNT limits the damage; it does not decide
+        # which assets the budget buys, and the planner used to take them in
+        # insertion order - so an archive-heavy surface meant the exploitation
+        # phase spent its share on archived pages while the login page sat
+        # untested. planner.asset_interest orders them now, which is what makes
+        # a ceiling this high safe: the good targets are tested first, so the
+        # ones past the cap are the ones that were least worth a job anyway.
         if kind == "endpoint" and not has_params:
             if await self._endpoint_count() >= MAX_ENDPOINT_ASSETS:
                 await self._say_capped(value, source)
