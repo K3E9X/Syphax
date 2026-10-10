@@ -18,3 +18,8 @@ boto3==1.35.90
 # No longer capped by mitmproxy: the addon runs in its own container off
 # requirements-proxy.txt, so the API/worker stack is free to track upstream.
 cryptography==50.0.1
+# OpenAPI documents are published as JSON or YAML roughly half and half, and
+# /openapi.yaml is one of the eight locations surface_seed probes. The schema
+# audit parses whichever it finds, so the YAML half needs a parser; yaml.safe_load
+# only, so a document the target controls cannot construct Python objects.
+PyYAML==6.0.2

@@ -7,7 +7,9 @@ Two sources the run never used, both cheap and both high-yield:
     tooling, the export endpoints - and sitemap.xml is their own index of the
     site. Pre-recon already fetched both and nothing read them.
 
-  * the API schema. VULN-API-CONTRACT runs schemathesis, which property-tests
+  * the API schema. It is both what schemathesis tests against and what the
+    contract audit reads, so the document is stored rather than only noted.
+    VULN-API-CONTRACT runs schemathesis, which property-tests
     EVERY documented operation against the API's own OpenAPI contract, and it
     applies only to an asset whose URL says "openapi", "swagger" or
     "api-docs". Nothing ever created such an asset, so the tool was dormant
@@ -92,6 +94,17 @@ async def seed_published_surface(engagement_id: str) -> Dict[str, int]:
             await state.add_asset("endpoint", url, source="api-schema")
         except Exception:  # noqa: BLE001
             logger.debug("could not seed the schema asset")
+        # Keep the document. It was fetched and then thrown away, so the
+        # contract audit (analysis/schema_audit) had to hope the crawl would
+        # fetch it again through the capture proxy. Written beside the
+        # synthesised one, under a different name: this is the vendor's own
+        # contract and the audit must never confuse the two.
+        try:
+            from app.scans.artifacts import OPENAPI, artifact_dir, ensure, write_artifact
+            write_artifact(ensure(artifact_dir(base, OPENAPI)),
+                           "published.json", body)
+        except Exception:  # noqa: BLE001 - the audit can still read the capture
+            logger.debug("could not store the published schema")
         break
 
     await _say(engagement_id, seeded, schema_url)

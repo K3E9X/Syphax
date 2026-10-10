@@ -61,7 +61,11 @@ _ANALYSIS_TOOLS = {"logic", "js-recon", "jwt", "access-control", "cors",
                    # forgotten one. Its verdict is two responses it holds, so
                    # re-deriving it from the severity would throw away the
                    # strongest evidence on the finding.
-                   "api_inventory"}
+                   "api_inventory",
+                   # schema_audit reads the vendor's own published contract.
+                   # "this document declares no security scheme" is a fact
+                   # about a file we hold, not a scanner's guess.
+                   "schema_audit"}
 
 # A dotenv line is an uppercase KEY=VALUE; an .htaccess carries a directive.
 _ENV_LINE = re.compile(r"(?m)^\s*[A-Z][A-Z0-9_]{2,}\s*=\s*\S")

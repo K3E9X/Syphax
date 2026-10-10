@@ -47,6 +47,7 @@ async def run_analysis(engagement_id: str, *, allow_active: bool = True) -> Dict
     from app.analysis.auth_posture import analyze_auth_posture
     from app.analysis.api_exposure import analyze_api_exposure
     from app.analysis.api_inventory import analyze_api_inventory
+    from app.analysis.schema_audit import analyze_schema
     from app.analysis.dom_sinks import analyze_dom_sinks
     steps = [
         # Keep the JS on disk current for retire.js/jsluice, in case the
@@ -71,6 +72,11 @@ async def run_analysis(engagement_id: str, *, allow_active: bool = True) -> Dict
         # before vuln analysis (orchestrator/loop.py) so the forgotten versions
         # it finds get scanned; here it sees the whole run's traffic.
         ("api_inventory", analyze_api_inventory),
+        # The contract itself, read rather than exercised: no security scheme
+        # on the operation that deletes an account, no 429 in three hundred
+        # operations, a request body that accepts any property the caller
+        # invents. Sends nothing - it reads the schema already in hand.
+        ("schema_audit", analyze_schema),
         # Client-side: DOM XSS sinks fed from the URL, postMessage handlers.
         ("dom_sinks", analyze_dom_sinks),
         # Identity + authentication. The bypass probe is active (in-scope GETs),
