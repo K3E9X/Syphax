@@ -26,6 +26,34 @@ function Verdict({ item }) {
   return <span className="sev sev--info">not run</span>;
 }
 
+// Why this one has not run.
+//
+// This used to say, for every unexecuted PoC, "a PoC whose static inspection
+// says it attacks YOU is never run automatically". That is one reason out of
+// several, and it was shown next to PoCs whose inspection said "review" and
+// whose target vetting said "allowed" — i.e. it asserted the opposite of what
+// the two readings right above it reported. Say the reason that applies.
+export function notRunBecause(poc) {
+  if (!poc) return '';
+  if (poc.inspection_verdict === 'hostile') {
+    return 'Not run: static inspection found a critical signal — credential '
+      + 'theft, a reverse shell, persistence or something destructive. That is '
+      + 'a risk to YOU, not to the target, so it waits for a human. Read it on '
+      + 'the Sandbox page and decide there.';
+  }
+  if (poc.vetting_allowed === false) {
+    return 'Not run: the target-safety vet refused it'
+      + (poc.vetting_summary ? ` — ${poc.vetting_summary}` : '')
+      + '. Approving does not override that; the engagement would have to '
+      + 'authorize the capability it needs.';
+  }
+  return 'Not run yet. Both readings passed'
+    + (poc.inspection_verdict ? ` (operator safety: ${poc.inspection_verdict}, ` : ' (')
+    + 'target vetting: allowed), so nothing is blocking it — it was staged and '
+    + 'the run ended before it was executed, or auto-run is off in Settings. '
+    + 'Approve and run it from the Sandbox page.';
+}
+
 export default function PocTesting() {
   const { engagements, engId, setEngId, error: engError } = useEngagements();
   const [data, setData] = useState({ counts: {}, items: [] });
@@ -153,11 +181,7 @@ export default function PocTesting() {
                   {open.stderr && <pre className="detail__pre poc">{open.stderr}</pre>}
                 </>
               ) : (
-                <p className="poc-note">
-                  This one has not run. A PoC whose static inspection says it attacks
-                  YOU is never run automatically — read it on the Sandbox page and
-                  decide there.
-                </p>
+                <p className="poc-note">{notRunBecause(open)}</p>
               )}
             </div>
           )}

@@ -79,8 +79,6 @@ def test_jsonl_reader_survives_binary_and_blank_lines():
 # ---- gau: stdout is a URL list, and garbage used to become assets -----------
 def test_gau_only_accepts_plausible_urls():
     gau = _instance(_WRAPPERS["gau"])
-    good = b"https://a.example.com/x?id=1\nhttp://b.example.com/y\n"
-    assert len(gau.parse(good, b"", 0, TARGET).findings) == 2
 
     # Each of these previously became a "Historical URL" finding, and findings
     # from gau are fed back as assets the scanners then target.
@@ -90,7 +88,70 @@ def test_gau_only_accepts_plausible_urls():
         assert gau.parse(junk, b"", 0, TARGET).findings == [], junk
 
 
+def test_gau_keeps_the_parameterised_urls_separate():
+    """A URL with a query string is an injection point - seven catalog items
+    apply only to an endpoint that has one - so it gets a row of its own and
+    is declared as a scan target. A param-less path is inventory."""
+    gau = _instance(_WRAPPERS["gau"])
+    out = gau.parse(b"https://a.example.com/x?id=1\nhttp://b.example.com/y\n",
+                    b"", 0, TARGET)
+    params = [f for f in out.findings if (f.metadata or {}).get("has_params")]
+    assert len(params) == 1
+    assert params[0].metadata["asset"] == "https://a.example.com/x?id=1"
+    assert params[0].metadata["asset_kind"] == "endpoint"
+
+
 def test_gau_deduplicates():
     gau = _instance(_WRAPPERS["gau"])
     dupes = b"https://a.example.com/x\nhttps://a.example.com/x\n"
-    assert len(gau.parse(dupes, b"", 0, TARGET).findings) == 1
+    kept = [f for f in gau.parse(dupes, b"", 0, TARGET).findings
+            if (f.metadata or {}).get("asset")]
+    assert len(kept) == 1
+
+
+def test_gau_does_not_turn_an_archive_into_two_thousand_findings():
+    """THE defect this parser had.
+
+    gau returns a domain's historical URLs - thousands on a real target - and
+    every one became its own `info` finding AND its own endpoint asset. A run
+    on testfire.net produced 2176 findings of which 2175 were recon, and 2162
+    assets; the planner multiplies assets by the catalog, so the run hit its
+    TIME budget at iteration 8 having launched 62 jobs and tested nothing. The
+    Findings page was 2175 rows of archived URLs.
+    """
+    from app.scans.wrappers.gau import MAX_PARAM_FINDINGS, MAX_PLAIN_ASSETS
+
+    gau = _instance(_WRAPPERS["gau"])
+    lines = []
+    for i in range(2500):
+        if i % 50 == 0:
+            lines.append(f"http://t.example.com/search.jsp?query={i}")
+        elif i % 7 == 0:
+            lines.append(f"http://t.example.com/static/a{i}.css")
+        else:
+            lines.append(f"http://t.example.com/page{i}.jsp")
+
+    out = gau.parse("\n".join(lines).encode(), b"", 0, TARGET)
+    assert len(out.findings) <= MAX_PARAM_FINDINGS + MAX_PLAIN_ASSETS + 1, \
+        f"{len(out.findings)} findings from one archive dump"
+
+    assets = [f for f in out.findings if (f.metadata or {}).get("asset")]
+    assert len(assets) <= MAX_PARAM_FINDINGS + MAX_PLAIN_ASSETS, \
+        "the asset count is what multiplies the planner's task list"
+
+    # The count is not lost - it is said once.
+    summary = [f for f in out.findings if "archived URL(s)" in f.title]
+    assert len(summary) == 1, "the total must still be reported, once"
+    assert summary[0].metadata["archived_total"] >= 2000
+
+
+def test_gau_drops_static_files():
+    """A stylesheet has no parameters and no server-side behaviour; pointing a
+    scanner at one burns a job per file."""
+    gau = _instance(_WRAPPERS["gau"])
+    out = gau.parse(b"https://a.example.com/app.css\n"
+                    b"https://a.example.com/logo.png\n"
+                    b"https://a.example.com/real.jsp\n", b"", 0, TARGET)
+    assets = [f.metadata["asset"] for f in out.findings
+              if (f.metadata or {}).get("asset")]
+    assert assets == ["https://a.example.com/real.jsp"], assets
