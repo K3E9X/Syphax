@@ -402,3 +402,102 @@ def test_only_an_error_makes_a_role_broken():
     src = _i.getsource(selftest.check_llm)
     assert "if error is not None:" in src
     assert src.index("if error is not None:") < src.index("if text:")
+
+
+# ---- a name is not an identity -------------------------------------------
+
+def _requirement_names() -> set:
+    import pathlib
+    import re
+
+    out = set()
+    root = pathlib.Path(__file__).resolve().parents[1]
+    for name in ("requirements.txt", "requirements-proxy.txt"):
+        path = root / name
+        if not path.exists():
+            continue
+        for line in path.read_text().splitlines():
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            match = re.match(r"^([A-Za-z0-9_.\-]+)", line)
+            if match:
+                out.add(match.group(1).lower())
+    return out
+
+
+def test_a_binary_that_shares_its_name_with_a_python_package_must_prove_itself():
+    """`httpx` is ProjectDiscovery's scanner AND the Python HTTP library, whose
+    wheel ships a console script of the same name into the same directory. pip
+    runs last in this image, so /usr/local/bin/httpx was the Python CLI - and
+    `which` cannot tell them apart. Nine RECON-HTTP-PROBE jobs ran the wrong
+    program, exited non-zero and reported nothing, on a run that otherwise
+    looked normal.
+
+    Any wrapper whose binary name collides with a dependency has to carry an
+    identity probe, or the same thing happens silently with a different tool.
+    """
+    packages = _requirement_names()
+    assert packages, "no requirements parsed; re-read this test"
+
+    unproven = [
+        w.name for w in _WRAPPERS.values()
+        if w.binary.lower() in packages and not getattr(w, "identity_probe", None)
+    ]
+    assert not unproven, (
+        f"these binaries share a name with a python dependency and nothing "
+        f"checks which program is on PATH: {unproven}")
+
+
+def test_the_httpx_wrapper_asks_for_the_unambiguous_name():
+    import pathlib
+
+    dockerfile = (pathlib.Path(__file__).resolve().parents[1]
+                  / "Dockerfile").read_text()
+    assert "/usr/local/bin/pd-httpx" in dockerfile, \
+        "nothing installs a name pip cannot overwrite"
+
+    import app.scans.wrappers.httpx as httpx_mod
+
+    assert "pd-httpx" in _inspect.getsource(httpx_mod), \
+        "the wrapper does not ask for the unambiguous name"
+
+
+def test_an_identity_probe_rejects_the_wrong_program():
+    from app.scans.wrappers.base import BaseWrapper
+
+    class _Impostor(BaseWrapper):
+        name = "httpx"
+        binary = "echo"
+        identity_probe = (("i-am-the-python-cli",), "projectdiscovery")
+
+    state = _Impostor().readiness()
+    assert state.installed is True
+    assert state.ready is False
+    assert "not httpx" in state.reason
+
+
+def test_an_identity_probe_accepts_the_right_one():
+    from app.scans.wrappers.base import BaseWrapper
+
+    class _Genuine(BaseWrapper):
+        name = "httpx"
+        binary = "echo"
+        identity_probe = (("projectdiscovery/httpx v1.6",), "projectdiscovery")
+
+    assert _Genuine().readiness().ready is True
+
+
+def test_the_diagnosis_does_not_judge_a_run_that_is_still_going():
+    """Saying "it never planned an exploitation task" about a run three minutes
+    into recon reads as a verdict on a run that has not failed at anything."""
+    from app import diagnose_run
+
+    src = _inspect.getsource(diagnose_run.run)
+    assert 'in ("running", "queued")' in src
+    # The CODE line, not the comment that explains it - a comment mentioning
+    # the phrase comes first and would make this assert its own documentation.
+    verdict = 'out.append("DIAGNOSIS: the run never planned'
+    assert verdict in src
+    assert src.index('in ("running", "queued")') < src.index(verdict), \
+        "the post-mortem is reached before the still-running check"

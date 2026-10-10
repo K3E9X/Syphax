@@ -5,6 +5,8 @@ TLS info, etc. Perfect pipe target for subfinder output.
 """
 from __future__ import annotations
 
+import shutil
+
 from typing import List, Sequence
 
 from app.scans.models import Finding
@@ -12,9 +14,28 @@ from app.scans.wrappers.base import (as_inventory, iter_json_lines,
                                      BaseWrapper, ToolResult)
 
 
+def _resolve_binary() -> str:
+    """ProjectDiscovery's httpx, under whichever name survived the image build.
+
+    `httpx` is an ambiguous name: the Python HTTP library ships a console
+    script of the same name, pip installs it into the same directory as the Go
+    binary, and in this image pip runs last - so /usr/local/bin/httpx was the
+    Python CLI. Running it with ProjectDiscovery's flags exits non-zero and
+    produces nothing, which is exactly what a run showed: nine RECON-HTTP-PROBE
+    jobs, nine failures, no findings.
+
+    pd-httpx is installed by the Dockerfile and cannot be claimed by anything
+    else. The plain name stays as a fallback for an older image, and the
+    identity probe below is what refuses it when it is the wrong program.
+    """
+    return "pd-httpx" if shutil.which("pd-httpx") else "httpx"
+
+
 class HttpxWrapper(BaseWrapper):
     name = "httpx"
-    binary = "httpx"
+    binary = _resolve_binary()
+    # Proven, not assumed: `which` finds a file, not the right program.
+    identity_probe = (("-version",), "projectdiscovery")
     description = "HTTP probe: status, title, tech fingerprint, server, TLS."
     category = "fingerprint"
     timeout_seconds = 15 * 60

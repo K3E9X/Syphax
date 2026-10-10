@@ -229,6 +229,15 @@ class BaseWrapper:
     # the pipeline records as "scanned, found nothing".
     required_data: Sequence = ()
 
+    # (argv, expected substring) proving the binary on PATH is the program we
+    # mean. A NAME IS NOT AN IDENTITY: `httpx` is both ProjectDiscovery's
+    # scanner and the Python HTTP library's console script, pip installs the
+    # latter into the same directory, and `which` cannot tell them apart. Nine
+    # jobs ran the wrong program, exited non-zero and reported nothing.
+    # Declared per wrapper, and only where the name is genuinely ambiguous -
+    # running `--version` on all 26 at every preflight buys little.
+    identity_probe: Optional[tuple] = None
+
     def is_available(self) -> bool:
         return shutil.which(self.binary) is not None
 
@@ -259,7 +268,36 @@ class BaseWrapper:
                     self.name, True, False,
                     f"{what} is {missing} ({path}), so {self.binary} would run "
                     f"and find nothing")
+        wrong = self._wrong_program()
+        if wrong:
+            return Readiness(self.name, True, False, wrong)
         return Readiness(self.name, True, True, "")
+
+    def _wrong_program(self) -> str:
+        """"" when the binary is the program we mean, else why it is not."""
+        if not self.identity_probe:
+            return ""
+        import subprocess
+
+        argv, expected = self.identity_probe
+        try:
+            proc = subprocess.run([self.binary, *argv], capture_output=True,
+                                  text=True, timeout=20)
+        except FileNotFoundError:
+            return f"{self.binary} disappeared between checks"
+        except subprocess.TimeoutExpired:
+            return f"{self.binary} {' '.join(argv)} did not answer in 20s"
+        except OSError as exc:  # noqa: BLE001
+            return f"{self.binary} could not be run: {exc.__class__.__name__}"
+
+        output = f"{proc.stdout}\n{proc.stderr}".lower()
+        if str(expected).lower() in output:
+            return ""
+        first = (proc.stdout or proc.stderr or "").strip().splitlines()
+        return (f"the `{self.binary}` on PATH is not {self.name}: "
+                f"`{self.binary} {' '.join(argv)}` said "
+                f"{first[0][:90] if first else '(nothing)'!r}, which does not "
+                f"mention {expected!r}. Another program has taken the name.")
 
     def build_command(self, target: str, options: Sequence[str]) -> List[str]:
         """Return the argv to run. Must include the binary as argv[0]."""

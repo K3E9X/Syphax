@@ -199,10 +199,22 @@ RUN set -eux; \
     install -m 0755 subfinder /usr/local/bin/subfinder; \
     rm -f subfinder subfinder.zip LICENSE.md README*.md; \
     \
-    # httpx (ProjectDiscovery - not to be confused with the Python httpx library)
+    # httpx (ProjectDiscovery). INSTALLED TWICE, AND THE SECOND NAME IS THE
+    # ONE THAT MATTERS.
+    #
+    # requirements.txt has `httpx[socks]`, the Python HTTP library, and its
+    # wheel ships a console script also called `httpx` into /usr/local/bin.
+    # pip runs in the `app` stage, long after this line, so it OVERWRITES the
+    # Go binary. Every RECON-HTTP-PROBE job then ran the Python CLI with
+    # ProjectDiscovery's flags, exited non-zero and produced nothing - nine
+    # jobs, nine failures, no findings, on a run that looked otherwise normal.
+    # `which httpx` finds a file either way, so nothing noticed.
+    #
+    # pd-httpx is the name the wrapper asks for; nothing else can claim it.
     curl -fsSL -o httpx.zip \
         "https://github.com/projectdiscovery/httpx/releases/download/v${HTTPX_VERSION}/httpx_${HTTPX_VERSION}_linux_${ARCH_SUFFIX}.zip"; \
     unzip -q httpx.zip; \
+    install -m 0755 httpx /usr/local/bin/pd-httpx; \
     install -m 0755 httpx /usr/local/bin/httpx; \
     rm -f httpx httpx.zip LICENSE.md README*.md; \
     \

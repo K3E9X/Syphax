@@ -130,6 +130,25 @@ async def run() -> int:
     # ---- the verdict ------------------------------------------------------
     out.append("")
     out.append("=" * 68)
+
+    # A run that is still going has not failed to reach anything yet, and
+    # saying "it never planned an exploitation task" about one that is three
+    # minutes into recon is worse than saying nothing: it reads as a verdict.
+    if str(run_row["status"]).lower() in ("running", "queued"):
+        out.append(f"This run is STILL {run_row['status'].upper()} - currently "
+                   f"in '{run_row['phase']}', {run_row['jobs_launched']} job(s) "
+                   f"launched.")
+        out.append("  The phases below it have not been skipped, they have not")
+        out.append("  been reached YET. Re-run this once the run finishes for a")
+        out.append("  verdict; what is already worth acting on is any item above")
+        out.append("  marked FAILED - a tool that errors now will error later.")
+        print("\n".join(out))
+        try:
+            await db.close_pool()
+        except Exception:  # noqa: BLE001
+            pass
+        return 0
+
     reached = [p for p in PHASE_ORDER if by_phase.get(p)]
     missing = [p for p in PHASE_ORDER if not by_phase.get(p)]
     if "exploitation" not in reached:
