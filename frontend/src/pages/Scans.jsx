@@ -208,7 +208,7 @@ export default function Scans() {
                 {' · '}&quot;absent&quot; is a choice, &quot;broken&quot; looks
                 present and does not work
               </div>
-              {['sandbox', 'model', 'authoring', 'poc_search', 'tools']
+              {['sandbox', 'invocation', 'model', 'authoring', 'poc_search', 'tools']
                 .filter((k) => (selftest[k] || []).length)
                 .map((k) => (
                   <div key={k} style={{ marginBottom: 6 }}>
