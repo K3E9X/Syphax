@@ -1,12 +1,14 @@
-"""GraphQL discovery + introspection detection helpers."""
+"""GraphQL discovery + introspection detection helpers.
+
+The two renamed helpers moved to app.analysis.graphql_probes when the suite
+grew past introspection: `schema_readable` and `responds_to_graphql` are the
+same questions under names that say which one they answer.
+"""
 import json
 
-from app.analysis.graphql import (
-    _introspection_ok,
-    _is_graphql_path,
-    _looks_like_graphql,
-    _with_query,
-)
+from app.analysis.graphql import _is_graphql_path, _with_query
+from app.analysis.graphql_probes import (responds_to_graphql as _looks_like_graphql,
+                                         schema_readable as _introspection_ok)
 
 
 def test_is_graphql_path():
@@ -38,6 +40,6 @@ def test_introspection_ok_handles_truncated_schema():
 
 
 def test_looks_like_graphql():
-    assert _looks_like_graphql('{"errors":[{"message":"Must provide query string"}]}')
-    assert _looks_like_graphql("Cannot query field x on type Y")
-    assert not _looks_like_graphql('{"users":[]}')
+    assert _looks_like_graphql('{"errors":[{"message":"Must provide query string"}]}', 400)
+    assert _looks_like_graphql("Cannot query field x on type Y", 400)
+    assert not _looks_like_graphql('{"users":[]}', 200)

@@ -300,3 +300,29 @@ def test_the_shape_agrees_with_the_synthesised_schema():
     from app.analysis.openapi_synth import templated
     assert inv._shape("https://t.example/api/v2/users/7").endswith(
         templated("/api/v2/users/7"))
+
+
+# ---- no exploit needed is a reason, not a gap -------------------------
+
+def test_a_shadow_api_finding_says_why_it_needs_no_exploit():
+    """The generic "no route available" reads as a gap in the tool. For this
+    class the response attached to the finding already is the proof."""
+    from app.exploit.strategy import plan_for
+    plan = plan_for({"id": "f1", "title": "Archived endpoint still answering",
+                     "target": "https://t.example/api/v1/x",
+                     "vuln_class": "shadow_api", "severity": "medium",
+                     "status": "confirmed"})
+    assert plan.routes == []
+    assert "the proof" in plan.skipped_because
+    assert "no route available" not in plan.skipped_because
+
+
+def test_the_auth_regression_variant_does_get_a_route():
+    """It is reported as broken_access_control precisely so the exploit layer
+    can demonstrate the unauthenticated read."""
+    from app.exploit.strategy import plan_for
+    plan = plan_for({"id": "f2", "title": "Forgotten version without auth",
+                     "target": "https://t.example/api/v1/users",
+                     "vuln_class": "broken_access_control", "severity": "high",
+                     "status": "confirmed"})
+    assert plan.routes, plan.skipped_because
