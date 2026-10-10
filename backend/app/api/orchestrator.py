@@ -1,6 +1,8 @@
 """Autonomous engagement control: start a run, stop it, read live state."""
 from __future__ import annotations
 
+import logging
+
 import time
 
 from typing import Any, Dict
@@ -24,6 +26,8 @@ from app.validation import (
 )
 
 from app.reporting.mappings import CATEGORY_LABELS, CATEGORY_ORDER
+
+logger = logging.getLogger("syphax.api.orchestrator")
 
 router = APIRouter(prefix="/api/engagements", tags=["orchestrator"])
 
@@ -259,33 +263,58 @@ async def engagement_state(engagement_id: str) -> dict:
 
 @router.post("/{engagement_id}/validate")
 async def run_validation(engagement_id: str) -> dict:
-    """Validate the engagement's findings on demand (e.g. after manual scans),
-    independent of a full autonomous run."""
+    """Re-read what has been captured, re-decide every finding, and try to
+    prove the new ones.
+
+    THIS AND /analyze-traffic WERE THE SAME THREE CALLS in the same order -
+    run_analysis, validate_engagement, build_chains - behind two buttons
+    labelled "Deep analysis" and "Re-validate". There was no difference to
+    choose between, and both are a SUBSET of what a run already does.
+
+    The subset was the problem. The analyzers produce findings - an IDOR in
+    captured traffic, a secret in a bundle, a JWT weakness - and nothing then
+    tried to exploit them, because run_campaign was not in the sequence. The
+    operator pressed the button, got new findings, and they all sat at
+    "likely" forever.
+
+    It is worth keeping as a button, though, and not only as part of a run:
+    after browsing the target through the proxy there is new authenticated
+    traffic to mine, and re-reading it costs a fraction of a full scan.
+    """
     e = await _engagements.get(engagement_id)
     if e is None:
         raise HTTPException(status_code=404, detail="engagement not found")
+
     from app.analysis import run_analysis
-    await run_analysis(engagement_id)
+
+    # The engagement's own gate decides whether the active analyzers run, the
+    # same way the run decides it. The manual path used to ignore it and send
+    # crafted requests at a target whose exploitation had been denied.
+    allow_active = bool(getattr(e, "allow_active_exploit", False))
+    result = await run_analysis(engagement_id, allow_active=allow_active)
     stats = await validate_engagement(engagement_id)
+
+    # The part that was missing: try to PROVE what was just found.
+    proven = {}
+    try:
+        from app.exploit import run_campaign
+        proven = await run_campaign(engagement_id) or {}
+    except Exception:  # noqa: BLE001 - one dead route is not the analysis
+        logger.exception("[%s] campaign after manual analysis failed",
+                         engagement_id)
+
     chains = await build_chains(engagement_id)
-    await audit("engagement.validated_manual", engagement_id=engagement_id, stats=stats)
-    return {"stats": stats, "chains": len(chains)}
+    await audit("engagement.reanalysed", engagement_id=engagement_id,
+                stats=stats, analyzers=result, proven=proven.get("proven", 0))
+    return {"stats": stats, "chains": len(chains), "analyzers": result,
+            "proven": proven.get("proven", 0)}
 
 
 @router.post("/{engagement_id}/analyze-traffic")
 async def analyze_traffic(engagement_id: str) -> dict:
-    """Run all traffic-driven analyzers (logic/IDOR/CSRF/BFLA, JS secrets +
-    endpoints, JWT, access-control) over proxy-captured authenticated traffic,
-    then re-validate and rebuild chains so the new findings show up."""
-    e = await _engagements.get(engagement_id)
-    if e is None:
-        raise HTTPException(status_code=404, detail="engagement not found")
-    from app.analysis import run_analysis
-    result = await run_analysis(engagement_id)
-    await validate_engagement(engagement_id)
-    await build_chains(engagement_id)
-    await audit("engagement.analyzed_traffic", engagement_id=engagement_id, result=result)
-    return result
+    """Kept so an existing client keeps working. It was a duplicate of
+    /validate - the same three calls - and is now literally the same call."""
+    return await run_validation(engagement_id)
 
 
 @router.get("/{engagement_id}/memory")
