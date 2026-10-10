@@ -118,6 +118,9 @@ export const api = {
     // localStorage does not travel to another machine.
     activeRuns: () => request('/api/engagements/runs/active'),
     validate: (id) => request(`/api/engagements/${id}/validate`, { method: 'POST' }),
+    // Was a second endpoint doing the same three things as validate(); the
+    // server now routes it to the same handler. Kept so an older client or a
+    // script does not break; nothing in this UI calls it.
     analyzeTraffic: (id) => request(`/api/engagements/${id}/analyze-traffic`, { method: 'POST' }),
     events: (id, afterId = 0) => request(`/api/engagements/${id}/events?after_id=${afterId}`),
     approvals: (id) => request(`/api/engagements/${id}/approvals`),

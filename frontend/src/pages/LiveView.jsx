@@ -157,17 +157,25 @@ export default function LiveView() {
 
   async function run() { setBusy(true); try { await api.engagements.run(id); await loadState(); } catch (e) { flash(e.message); } finally { setBusy(false); } }
   async function stop() { setBusy(true); try { await api.engagements.stop(id); await loadState(); } catch (e) { flash(e.message); } finally { setBusy(false); } }
-  async function analyze() { setBusy(true); try { await api.engagements.analyzeTraffic(id); await loadState(); flash('Deep analysis complete'); } catch (e) { flash(e.message); } finally { setBusy(false); } }
-  // Validation runs at the end of an autonomous run. This re-runs it on
-  // demand, which is what you want after adding findings by hand from the
-  // Scans page - otherwise they sit unvalidated until the next full run.
-  async function revalidate() {
+  // ONE button, where there were two.
+  //
+  // "Deep analysis" and "Re-validate" called two endpoints that ran the same
+  // three things in the same order, so there was nothing to choose between
+  // them. Both were also a subset of a run - and the subset was the problem:
+  // the analyzers produced findings and nothing then tried to prove them,
+  // because the exploitation campaign was not in the sequence.
+  //
+  // It is still worth having, and not only as part of a run: after browsing
+  // the target through the proxy there is new authenticated traffic to mine,
+  // and re-reading it costs a fraction of a full scan.
+  async function reanalyse() {
     setBusy(true);
     try {
       const r = await api.engagements.validate(id);
       await loadState();
       const st = r.stats || {};
-      flash(`Validated ${st.validated ?? st.total ?? 0} finding(s) · ${r.chains ?? 0} chain(s)`);
+      flash(`Re-analysed: ${st.total ?? st.validated ?? 0} finding(s), `
+        + `${r.proven ?? 0} proven · ${r.chains ?? 0} chain(s)`);
     } catch (e) { flash(e.message); } finally { setBusy(false); }
   }
   async function decide(aid, decision) { try { await api.engagements.decideApproval(id, aid, decision); await loadState(); } catch (e) { flash(e.message); } }
@@ -262,8 +270,10 @@ export default function LiveView() {
         <div className="lv2-head__actions">
           {!active && <button className="btn btn--solid" onClick={run} disabled={busy}>Run</button>}
           {active && <button className="btn btn--danger" onClick={stop} disabled={busy}>Stop</button>}
-          <button className="btn" onClick={analyze} disabled={busy} title="Mine everything captured through the proxy">Deep analysis</button>
-          <button className="btn" onClick={revalidate} disabled={busy} title="Re-run validation and chain building over the current findings">Re-validate</button>
+          <button className="btn" onClick={reanalyse} disabled={busy}
+                  title="Re-read everything captured through the proxy, re-decide every finding, and try to prove the new ones. Use it after browsing the target - it costs a fraction of a full run.">
+            Re-analyse
+          </button>
           <a className="btn btn--muted" href={`/api/engagements/${id}/report.md`} target="_blank" rel="noreferrer">Report .md</a>
           <a className="btn btn--muted" href={`/api/engagements/${id}/report.html`} target="_blank" rel="noreferrer">Print</a>
         </div>

@@ -143,3 +143,55 @@ def test_the_url_spellings_merge_here_too():
 def test_a_single_finding_is_left_alone():
     out = _collapse([_row()])
     assert len(out) == 1 and out[0]["duplicates"] == 1
+
+
+# ---- two buttons, one behaviour, and a missing step ----------------------
+
+def test_the_two_endpoints_are_one_behaviour():
+    """"Deep analysis" and "Re-validate" called two endpoints that ran the
+    same three things in the same order - run_analysis, validate_engagement,
+    build_chains - so there was nothing for the operator to choose between."""
+    import inspect as _i
+
+    from app.api import orchestrator
+
+    src = _i.getsource(orchestrator.analyze_traffic)
+    assert "run_validation(engagement_id)" in src, \
+        "the duplicate still has its own sequence to drift from"
+
+
+def test_re_analysis_tries_to_prove_what_it_just_found():
+    """THE defect behind the two buttons. The analyzers produce findings - an
+    IDOR in captured traffic, a secret in a bundle - and nothing tried to
+    exploit them, because the campaign was not in the sequence. They sat at
+    "likely" forever."""
+    import inspect as _i
+
+    from app.api import orchestrator
+
+    src = _i.getsource(orchestrator.run_validation)
+    assert "run_campaign(engagement_id)" in src
+    assert src.index("validate_engagement(") < src.index("run_campaign("), \
+        "the campaign reads validated findings; it must run after validation"
+
+
+def test_the_manual_path_honours_the_engagement_gate():
+    """It ignored allow_active_exploit and sent crafted requests at a target
+    whose exploitation had been denied."""
+    import inspect as _i
+
+    from app.api import orchestrator
+
+    src = _i.getsource(orchestrator.run_validation)
+    assert "allow_active_exploit" in src
+    assert "allow_active=allow_active" in src
+
+
+def test_a_failed_campaign_does_not_fail_the_analysis():
+    import inspect as _i
+
+    from app.api import orchestrator
+
+    src = _i.getsource(orchestrator.run_validation)
+    campaign_block = src.split("run_campaign(")[1]
+    assert "except Exception" in campaign_block
