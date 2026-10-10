@@ -579,13 +579,23 @@ def test_a_wrapper_that_wants_no_stdin_gets_none():
 
 # ---- a job with nothing to work on must not look like a failed scan -------
 
+# Wrappers whose input is a FILE another part of the run has to produce first.
+# For these, "nothing was captured" is the normal state at the start of a run
+# and must not read as a failed scan of the target.
+_NEEDS_AN_ARTEFACT = ("jsluice", "trufflehog", "schemathesis")
+
+
 def test_a_wrapper_can_refuse_a_job_it_cannot_do():
     """jsluice and trufflehog pass FILES as arguments. With an empty artefact
     directory the command line has no file in it, and the two behave
     differently and both badly: jsluice reads stdin, gets nothing and exits 0;
     trufflehog rejects `filesystem` with no path and exits non-zero. Neither is
-    a finding about the target, and both looked like one."""
-    for name in ("jsluice", "trufflehog"):
+    a finding about the target, and both looked like one.
+
+    schemathesis joined them when it learned to test a schema synthesised from
+    traffic: against a base URL with no schema built, it tries to parse the
+    HTML homepage as OpenAPI and exits non-zero."""
+    for name in _NEEDS_AN_ARTEFACT:
         reason = _WRAPPERS[name].precondition("https://nothing-captured.example/", [])
         assert reason, f"{name} would be launched with no file to work on"
         assert len(reason) > 20, f"{name}'s reason is not usable: {reason!r}"
@@ -594,9 +604,17 @@ def test_a_wrapper_can_refuse_a_job_it_cannot_do():
 def test_a_wrapper_with_everything_it_needs_does_not_refuse():
     """The default must stay permissive, or a working tool stops running."""
     for wrapper in _WRAPPERS.values():
-        if wrapper.name in ("jsluice", "trufflehog"):
+        if wrapper.name in _NEEDS_AN_ARTEFACT:
             continue
         assert wrapper.precondition("https://t.example/", []) == "", wrapper.name
+
+
+def test_a_refusal_is_about_missing_input_never_about_the_target():
+    """The distinction the UI depends on: these wrappers refuse because the run
+    produced nothing for them yet, not because the target is uninteresting."""
+    for name in _NEEDS_AN_ARTEFACT:
+        reason = _WRAPPERS[name].precondition("https://nothing-captured.example/", [])
+        assert "nothing-captured.example" not in reason, name
 
 
 def test_the_worker_checks_before_spawning():

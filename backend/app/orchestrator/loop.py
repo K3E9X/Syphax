@@ -283,6 +283,10 @@ async def run_engagement_loop(run_id: str) -> dict:
                         # See _discover_params: every injection item in the
                         # catalog applies only to an endpoint that has them.
                         await _discover_params(engagement, run)
+                        # The API schema, for the same reason: it is built from
+                        # the traffic recon and mapping just captured, and the
+                        # contract tests that read it are planned next.
+                        await _synthesise_api_schema(engagement, run)
                         await _run_correlation(engagement, run, executor, runs)
 
                 # Human checkpoint before exploitation (spec §11 approval).
@@ -717,6 +721,34 @@ async def _discover_params(engagement, run) -> None:
             )
     except Exception:  # noqa: BLE001 - never block the phase transition
         logger.exception("[%s] parameter discovery failed", run.id)
+
+
+async def _synthesise_api_schema(engagement, run) -> None:
+    """Build an OpenAPI schema from the captured traffic, before vuln analysis.
+
+    The contract tests (schemathesis) are the only thing in the catalog that
+    reasons about an API as a set of OPERATIONS rather than a set of URLs, and
+    they applied only to an asset whose URL names a published schema. Most
+    targets publish none, so on most targets they never ran.
+
+    This builds one from what the crawl was actually seen to speak to, which is
+    both what the application really exposes and, by definition, the half no
+    documentation covers. VULN-API-OBSERVED then tests it with `--url` pointing
+    back at the live target, and refuses itself when nothing was built.
+    """
+    try:
+        from app.analysis.openapi_synth import synthesise
+        result = await synthesise(engagement.id, run_id=run.id)
+        count = int(result.get("operations", 0) or 0)
+        if count:
+            await events.emit(
+                engagement.id, events.PHASE_CHANGED,
+                f"Synthesised an API schema with {count} operation(s) from "
+                f"captured traffic",
+                level=events.LEVEL_VERBOSE, run_id=run.id,
+            )
+    except Exception:  # noqa: BLE001 - never block the phase transition
+        logger.exception("[%s] could not synthesise an API schema", run.id)
 
 
 async def _materialise_js(engagement, run) -> None:

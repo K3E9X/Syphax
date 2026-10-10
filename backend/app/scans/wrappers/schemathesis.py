@@ -16,6 +16,14 @@ Two reasons this reduces false positives rather than adding noise:
     which is the class of endpoint that otherwise produces "no finding"
     because nothing tested it.
 
+Two ways in. If the target URL names a schema, schemathesis fetches it. If it
+does not - which is most targets - we test the schema `analysis.openapi_synth`
+built from the traffic the crawl captured, with `--url` pointing back at the
+live target. The second mode is why this tool runs at all on an application
+that publishes nothing: the oracle is then OBSERVED behaviour rather than a
+published contract, so a conformance failure means "it disagreed with itself",
+and `precondition` refuses the job outright when no schema was built.
+
 The `coverage` phase sends unspecified HTTP methods (PUT/DELETE/TRACE) to
 every operation to see how the API reacts. Against a live target that is a
 write, so the catalog runs the fuzzing/examples phases only; an operator who
@@ -28,7 +36,8 @@ iter_json_lines skips. The failures live on ScenarioFinished events, under
 """
 from __future__ import annotations
 
-from typing import Any, Dict, List, Sequence
+from typing import Any, Dict, List, Optional, Sequence
+from urllib.parse import urlparse
 
 from app.scans.models import Finding
 from app.scans.wrappers.base import BaseWrapper, ToolResult, iter_json_lines
@@ -61,6 +70,17 @@ CHECK_MEANING = {
 DEFAULT_MEANING = ("low", "api_contract_violation")
 
 MAX_FINDINGS = 60
+
+# A target whose URL already names a schema IS the schema: schemathesis fetches
+# it and needs no --url. Anything else is a base URL, and then the schema has to
+# come from the file we synthesised out of the captured traffic.
+_SCHEMA_IN_URL = ("openapi", "swagger", "api-docs", "apidocs", ".yaml", ".yml")
+
+
+def is_schema_url(target: str) -> bool:
+    path = (urlparse(target or "").path or "").lower()
+    query = (urlparse(target or "").query or "").lower()
+    return any(marker in path or marker in query for marker in _SCHEMA_IN_URL)
 
 
 def meaning_of(check: str):
@@ -131,6 +151,15 @@ def failures_of(event: Dict[str, Any]) -> List[Dict[str, Any]]:
     return out
 
 
+def _spec_for(target: str) -> Optional[Any]:
+    """The synthesised schema for this target, or None. Never raises."""
+    try:
+        from app.analysis.openapi_synth import synthesised_spec
+        return synthesised_spec(target)
+    except Exception:  # noqa: BLE001 - a missing module is "no schema"
+        return None
+
+
 class SchemathesisWrapper(BaseWrapper):
     name = "schemathesis"
     binary = "schemathesis"
@@ -138,9 +167,35 @@ class SchemathesisWrapper(BaseWrapper):
     category = "vuln"
     timeout_seconds = 25 * 60
 
+    def precondition(self, target: str, options: Sequence[str]) -> str:
+        """Refuse the observed-schema job when there is no observed schema.
+
+        Without this the job runs `schemathesis run https://target/` against a
+        base URL, schemathesis fails to parse the HTML homepage as a schema,
+        and the non-zero exit reads in the UI as a failed scan of the target
+        rather than as "we never built a schema to test".
+        """
+        if is_schema_url(target):
+            return ""   # the target IS a schema; nothing else is needed
+        if _spec_for(target) is None:
+            return ("no API schema for this target: it publishes none and the "
+                    "captured traffic held no API-shaped request to synthesise "
+                    "one from")
+        return ""
+
     def build_command(self, target: str, options: Sequence[str]) -> List[str]:
+        # Either the target names a schema, or we test the one synthesised
+        # from traffic against the target as its server.
+        schema: str = target
+        extra: List[str] = []
+        if not is_schema_url(target):
+            spec = _spec_for(target)
+            if spec is not None:
+                schema = str(spec)
+                extra = ["--url", target.rstrip("/")]
+
         cmd = [
-            self.binary, "run", target,
+            self.binary, "run", schema,
             "--report", "ndjson",
             "--report-ndjson-path", "/dev/stdout",
             # fuzzing + examples only. The coverage phase sends PUT/DELETE/
@@ -152,6 +207,7 @@ class SchemathesisWrapper(BaseWrapper):
             "--output-sanitize", "true",   # keep credentials out of the report
             "--continue-on-failure",
         ]
+        cmd.extend(extra)
         cmd.extend(options)
         return cmd
 

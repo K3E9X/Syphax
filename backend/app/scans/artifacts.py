@@ -9,8 +9,9 @@ Three of the bundled tools do not speak HTTP - they read files off disk:
 
 So syphax needs one agreed place per host for those files. Layout:
 
-    {data_dir}/artifacts/{host-slug}/git/    recovered source (git-dumper)
-    {data_dir}/artifacts/{host-slug}/js/     client JavaScript (proxy capture)
+    {data_dir}/artifacts/{host-slug}/git/     recovered source (git-dumper)
+    {data_dir}/artifacts/{host-slug}/js/      client JavaScript (proxy capture)
+    {data_dir}/artifacts/{host-slug}/openapi/ the schema synthesised from traffic
 
 The slug is derived from the target, so a wrapper can find the directory from
 nothing but the target string it is given - no engagement id has to be
@@ -32,6 +33,12 @@ from app.config import settings
 
 GIT = "git"
 JS = "js"
+# A schema is a file a tool reads too: schemathesis property-tests an OpenAPI
+# document, and on a target that publishes none we synthesise one from the
+# captured traffic and leave it here. Same contract as the other two - a
+# wrapper finds it from the target string alone.
+OPENAPI = "openapi"
+_KINDS = (GIT, JS, OPENAPI)
 
 # Filenames we will write. Anything outside this is rejected rather than
 # sanitised: a URL-derived name is attacker-influenced input, and a path that
@@ -64,7 +71,7 @@ def host_slug(target: str) -> str:
 def artifact_dir(target: str, kind: str) -> Optional[Path]:
     """Where `kind` artifacts for this target live. None for a junk target."""
     slug = host_slug(target)
-    if not slug or kind not in (GIT, JS):
+    if not slug or kind not in _KINDS:
         return None
     return settings.data_dir / "artifacts" / slug / kind
 

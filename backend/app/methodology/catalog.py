@@ -350,6 +350,22 @@ CATALOG: List[CatalogItem] = [
                                    "swagger.json", ".well-known/openapi"]},
     ),
     CatalogItem(
+        id="VULN-API-OBSERVED",
+        wstg_id="WSTG-INPV-00",
+        attack_techniques=["T1190"],
+        vuln_class="api_contract_violation",
+        phase=PHASE_VULN,
+        tool="schemathesis",
+        description="Property-test the API schema synthesised from the captured "
+                    "traffic, for a target that publishes no contract of its "
+                    "own - the undocumented half of the surface.",
+        severity_default="medium",
+        # The base target, because the schema is per host and the wrapper
+        # supplies it with --url. Its precondition() refuses the job when the
+        # traffic produced no schema, so this costs nothing on a non-API target.
+        applies_when={"is_base": True},
+    ),
+    CatalogItem(
         id="VULN-GIT-DUMP",
         wstg_id="WSTG-CONF-04",
         attack_techniques=["T1213"],
