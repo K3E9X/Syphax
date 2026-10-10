@@ -45,7 +45,14 @@ TOOL_VULN_CLASS: Dict[str, str] = {
     "ffuf": "content_discovery",
 }
 
-SURFACE_CLASSES = {"recon", "fingerprint", "content_discovery", "api_route", "unknown"}
+SURFACE_CLASSES = {"recon", "fingerprint", "content_discovery", "api_route", "unknown",
+                   # js_recon reporting a URL it found in a bundle, and
+                   # param_discovery reporting that an endpoint takes a
+                   # parameter, are both inventory: they say where to test,
+                   # not that something is wrong. Without them here the
+                   # validator sent them down its heuristic branch and
+                   # reported "a parameter exists" as a likely weakness.
+                   "endpoint_discovery", "param_discovery"}
 
 # Classes whose findings are claims about a path existing / being readable.
 # These are the ones a catch-all (soft-404) server manufactures by the hundred,

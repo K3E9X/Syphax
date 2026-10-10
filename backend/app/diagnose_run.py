@@ -7,7 +7,7 @@ answer sat in the database. The self-test (app/selftest.py) says what the
 INSTALLATION can do; this says what a RUN did with it. Between them there is
 no room left for a guess.
 
-Read-only: four SELECTs and no writes.
+Read-only: five SELECTs and no writes.
 """
 from __future__ import annotations
 
@@ -18,6 +18,7 @@ from collections import Counter
 from typing import Any, Dict, List
 
 from app import db
+from app.analysis import ANALYSER_TOOLS
 
 # Catalog item ids are prefixed by phase, so the prefix says how far the run
 # got without needing to join anything.
@@ -61,6 +62,16 @@ async def run() -> int:
         verdicts = await _rows(conn, """
             SELECT severity, status, vuln_class, tool
             FROM validated_findings WHERE engagement_id = $1
+        """, eng)
+        # What the analysers said about themselves. Every one of them emits a
+        # THOUGHT when it declines - "not tested: it needs active
+        # exploitation", "no captured traffic to build a schema from" - and
+        # that sentence is the answer to "why did this find nothing", which
+        # the diagnosis could not previously reach.
+        thoughts = await _rows(conn, """
+            SELECT message FROM events
+            WHERE engagement_id = $1 AND type = 'agent_thought'
+            ORDER BY ts DESC LIMIT 25
         """, eng)
 
     # ---- the run itself ---------------------------------------------------
@@ -118,6 +129,53 @@ async def run() -> int:
                 else " <- FAILED" if s["failed"] else "")
         out.append(f"  {item:24s} {s['jobs']:3d} / {s['with_findings']:3d} / "
                    f"{s['failed']:3d}{flag}")
+
+    # ---- the traffic-driven half ------------------------------------------
+    #
+    # An analyser's job carries no catalog_item_id, so none of them appeared
+    # in the section above: nineteen analysers - every API check, the JWT
+    # pass, access control, the JavaScript mining - could each produce nothing
+    # and the diagnosis would not mention them. That is most of what a run
+    # does on an application.
+    analyser_jobs: Dict[str, Dict[str, int]] = {}
+    for job in jobs:
+        if job["catalog_item_id"]:
+            continue
+        tool = str(job["tool"] or "?")
+        slot = analyser_jobs.setdefault(tool, {"jobs": 0, "findings": 0})
+        slot["jobs"] += 1
+        raw = job["findings_json"]
+        try:
+            slot["findings"] += len(json.loads(raw)) if raw else 0
+        except (TypeError, ValueError):
+            pass
+
+    out.append("")
+    out.append("ANALYSERS   traffic-driven checks: ran? / findings")
+    never_ran = []
+    for tool in ANALYSER_TOOLS:
+        slot = analyser_jobs.get(tool)
+        if slot is None:
+            never_ran.append(tool)
+            continue
+        flag = "" if slot["findings"] else "  <- ran, found nothing"
+        out.append(f"  {tool:20s} {'yes':4s} / {slot['findings']:3d}{flag}")
+    for tool in sorted(set(analyser_jobs) - set(ANALYSER_TOOLS)):
+        slot = analyser_jobs[tool]
+        out.append(f"  {tool:20s} {'yes':4s} / {slot['findings']:3d}  <- not in "
+                   f"ANALYSER_TOOLS")
+    if never_ran:
+        out.append(f"  never ran: {', '.join(never_ran)}")
+        out.append("    An analyser that never ran stored no job at all - it")
+        out.append("    was skipped before it got that far, or the run ended")
+        out.append("    before finalisation. The reasons are below.")
+
+    if thoughts:
+        out.append("")
+        out.append("WHAT THE ANALYSERS SAID   most recent first")
+        for row in thoughts[:12]:
+            message = " ".join(str(row["message"] or "").split())
+            out.append(f"  - {message[:160]}")
 
     # ---- what came out ----------------------------------------------------
     out.append("")

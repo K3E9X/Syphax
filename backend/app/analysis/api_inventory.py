@@ -172,6 +172,12 @@ async def analyze_api_inventory(engagement_id: str) -> Dict[str, int]:
 
     observed, archived = await _surface(eng)
     if not observed and not archived:
+        await _say(engagement_id,
+                   "No in-scope URL to derive API versions from, so the "
+                   "shadow/zombie hunt had nothing to work on. Every candidate "
+                   "here comes from a path the application itself used or the "
+                   "archives recorded - guessing versions on a host we have "
+                   "not seen would be sending requests with no hypothesis.")
         return {"observed": 0, "candidates": 0, "live": 0, "findings": 0}
 
     safe = SafePoC(in_scope=eng.host_in_scope)
@@ -417,6 +423,15 @@ def _zombie_finding(url: str, result: Dict[str, object]) -> Finding:
                   "owasp_api": "API9:2023", "source": "archive",
                   "status": "confirmed", "confidence": 0.85},
     )
+
+
+async def _say(engagement_id: str, message: str) -> None:
+    try:
+        from app import events
+        await events.emit(engagement_id, events.THOUGHT, message,
+                          level=events.LEVEL_INFO)
+    except Exception:  # noqa: BLE001 - reporting never fails the pass
+        logger.debug("could not report the inventory decision")
 
 
 async def _seed(engagement_id: str, eng, urls: List[str]) -> int:

@@ -1,15 +1,27 @@
 """Application-layer analysis over captured proxy traffic.
 
-Four analyzers, each saved as its own synthetic scan job so they stay cleanly
-partitioned in the UI and the report:
+Each analyzer is saved as its own synthetic scan job, so they stay cleanly
+partitioned in the UI and the report and a re-run replaces its own findings
+instead of duplicating them. The traffic-driven half of a run lives here:
 
   * logic            - IDOR/BOLA, CSRF, BFLA/privesc
   * js-recon         - secrets + hidden endpoints mined from JavaScript bundles
   * jwt              - JWT weaknesses (alg=none, weak HMAC, kid/jku, no exp)
   * access-control   - missing-auth replay, method-tampering & mass-assignment flags
+  * api_inventory    - shadow and zombie API versions (API9)
+  * schema_audit     - the published contract itself (API1/2/3/4/8)
+  * mass_assignment  - an injected property the server binds (API3)
+  * rate_limit       - a bounded burst, reported as a measured bound (API4)
+  * api_sequences    - create, learn the identifier, read it back (API1)
 
 `run_analysis` runs them all (best-effort: one failing analyzer never blocks
 the others) and returns a merged summary.
+
+ANALYSER_TOOLS is the list of `tool` names those synthetic jobs carry. It is
+here rather than inside run_analysis because diagnose_run needs it: a job with
+no catalog_item_id was invisible to the diagnosis, which meant the whole
+traffic-driven half of a run - every analyser above - could produce nothing and
+the diagnostic would not mention it.
 """
 from __future__ import annotations
 
@@ -30,7 +42,26 @@ logger = logging.getLogger("syphax.analysis")
 
 __all__ = ["analyze_logic", "analyze_js", "analyze_jwt", "materialise_js",
            "analyze_access_control", "analyze_cors", "analyze_params",
-           "analyze_graphql", "analyze_public_exploits", "run_analysis"]
+           "analyze_graphql", "analyze_public_exploits", "run_analysis",
+           "ANALYSER_TOOLS"]
+
+# The `tool` name each analyser's synthetic job carries. Derived from the
+# save_analysis_job calls, not from run_analysis' step keys - the step key is
+# an underscore name used for the summary dict ("js_recon") while the job's
+# tool is the hyphenated one the UI and the validator know ("js-recon"), and
+# conflating them is how a tool ends up missing from a set that gates its
+# verdict. A test asserts this list is exactly what the source saves.
+ANALYSER_TOOLS = (
+    "js-recon", "params", "logic", "jwt", "access-control", "cors",
+    "http_posture", "error_disclosure", "api_exposure",
+    "api_inventory", "schema_audit", "mass_assignment", "rate_limit",
+    "api_sequences", "dom_sinks", "auth_posture", "graphql", "llm-recon",
+    "cve-checks",
+    # Saved from app/exploit and app/intel, which run in the exploitation
+    # phase and at finalisation rather than from run_analysis, but whose
+    # findings arrive the same way.
+    "exploit", "public-exploits", "auth-brute", "payload-probe", "cloud_creds",
+)
 
 
 async def run_analysis(engagement_id: str, *, allow_active: bool = True) -> Dict[str, Dict]:

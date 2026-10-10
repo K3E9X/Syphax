@@ -424,12 +424,30 @@ async def analyze_schema(engagement_id: str) -> Dict[str, int]:
         audited += 1
         findings.extend(audit(doc, schema_url=url))
 
+    if not audited:
+        await _say(engagement_id,
+                   f"No published API contract to audit ({len(documents)} "
+                   f"candidate document(s) found, none of them a parsable "
+                   f"OpenAPI or Swagger file). The audit reads the vendor's "
+                   f"own schema; the one synthesised from traffic is "
+                   f"deliberately excluded, because it declares no security "
+                   f"scheme for the simple reason that we did not write one.")
+
     await save_analysis_job(engagement_id, "schema_audit", findings,
                             target=eng.target_url)
     logger.info("[%s] schema_audit: documents=%d audited=%d findings=%d",
                 engagement_id, len(documents), audited, len(findings))
     return {"documents": len(documents), "audited": audited,
             "findings": len(findings)}
+
+
+async def _say(engagement_id: str, message: str) -> None:
+    try:
+        from app import events
+        await events.emit(engagement_id, events.THOUGHT, message,
+                          level=events.LEVEL_INFO)
+    except Exception:  # noqa: BLE001 - reporting never fails the pass
+        logger.debug("could not report the schema-audit decision")
 
 
 async def _published_documents(eng) -> List[Tuple[str, str]]:
