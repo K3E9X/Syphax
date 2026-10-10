@@ -142,8 +142,23 @@ async def validate_engagement(engagement_id: str) -> Dict[str, int]:
 
     await vf_repo.replace_for_engagement(engagement_id, validated)
 
+    # Say how much inventory was dropped for pointing at a dead page. The
+    # findings count falls visibly after this change, and an unexplained drop
+    # is as unhelpful as the noise it replaced.
+    dead = [v for v in validated
+            if str(v.method or "").startswith("recorded response")]
+    if dead:
+        await events.emit(
+            engagement_id, events.VALIDATED,
+            f"{len(dead)} inventory finding(s) dropped: the tool that found "
+            f"them had already recorded a 404 or a server error, so they are "
+            f"dead links rather than results. Anything that is a lead - "
+            f"parameters, a guarded 403, a CNAME - was kept.",
+            level=events.LEVEL_INFO)
+
     stats = _stats(validated)
     stats["corroborated"] = adjusted
+    stats["dropped_dead_inventory"] = len(dead)
     stats["catch_all_target"] = 1 if baseline.catch_all else 0
     logger.info("[%s] validated %d findings: %s", engagement_id, len(validated), stats)
     return stats

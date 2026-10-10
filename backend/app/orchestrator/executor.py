@@ -43,6 +43,17 @@ logger = logging.getLogger("syphax.orchestrator.executor")
 MAX_RETRIES_PER_RUN = 10
 
 
+def _dead_page(meta) -> tuple:
+    """Did the tool that found this URL already record a dead answer?
+
+    Shares its rule with app.validation.noise, so a page the report drops and
+    a page the planner skips are the same set.
+    """
+    from app.validation.noise import is_noise
+
+    return is_noise("info", str((meta or {}).get("vuln_class") or "recon"), meta)
+
+
 class Executor:
     def __init__(self, state: EngagementState) -> None:
         self.state = state
@@ -56,6 +67,10 @@ class Executor:
             from app.engagements.storage import EngagementRepository
             self._eng = await EngagementRepository().get(self.state.engagement_id)
         return self._eng
+
+    @staticmethod
+    def _dead_page_check(meta):  # pragma: no cover - see module-level _dead_page
+        return _dead_page(meta)
 
     async def _endpoint_in_scope(self, url: str) -> bool:
         """May a wrapper-declared endpoint become an asset?
@@ -281,6 +296,13 @@ class Executor:
         # nothing above "info" - which is what arjun's own output is.
         declared = (meta.get("asset") or "").strip()
         declared_kind = (meta.get("asset_kind") or "").strip()
+        # A page the discovering tool already found dead is not a scan target.
+        # Admitting it spends budget pointing scanners at a 404 - and with the
+        # asset ceiling raised so the whole live surface is kept, that is the
+        # difference between a large surface and a wasteful one.
+        dead, _why = _dead_page(meta)
+        if dead:
+            declared = ""
         if declared and declared_kind == "endpoint" and _looks_like_http_url(declared):
             if await self._endpoint_in_scope(declared):
                 await self.state.add_asset("endpoint", declared, source=tool)
