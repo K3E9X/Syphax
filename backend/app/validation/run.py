@@ -19,6 +19,7 @@ from app.validation.baseline import calibrate
 from app.validation.classes import TOOL_VULN_CLASS, vuln_class_of
 from app.validation.models import ValidatedFinding, ValidationStatus
 from app.validation.safe_poc import SafePoC
+from app.findings_util import normalise_target
 from app.validation.storage import ValidatedFindingRepository, stable_vf_id
 from app.validation.validator import FindingValidator
 
@@ -65,7 +66,14 @@ async def validate_engagement(engagement_id: str) -> Dict[str, int]:
     for job in jobs:
         for f in job.findings:
             vuln_class = _vuln_class_of(f, job.tool)
-            dedup_key = (job.tool, f.title, f.target)
+            # The target is normalised, the title is not. One resource has
+            # one spelling (http/https, trailing slash, default port), and
+            # each spelling used to produce its own finding. The title stays
+            # in the key because two different issues of the same class on the
+            # same URL are two findings, and the title is all that separates
+            # them - merging on class alone would hide the second.
+            dedup_key = (job.tool, vuln_class,
+                         normalise_target(f.target), f.title)
             if dedup_key in seen:
                 continue
             seen.add(dedup_key)

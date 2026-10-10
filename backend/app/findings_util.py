@@ -3,6 +3,7 @@ stay unit-testable): dedup key, CVSS estimate, HackerOne-format export."""
 from __future__ import annotations
 
 import hashlib
+from urllib.parse import urlparse
 from typing import Any, Dict, List, Optional
 
 TRIAGE_STATUSES = {"new", "triaged", "confirmed", "reported", "false_positive"}
@@ -10,8 +11,44 @@ SEV_RANK = {"critical": 0, "high": 1, "medium": 2, "low": 3, "info": 4}
 CVSS = {"critical": 9.5, "high": 8.0, "medium": 5.5, "low": 3.1, "info": 1.0}
 
 
+def normalise_target(target: str) -> str:
+    """One spelling per resource, so one finding per issue.
+
+    The same page reached as http and https, with and without a trailing
+    slash, with the default port written out or not, or with a fragment, is
+    one resource - and each spelling used to produce its own finding. A run
+    showed the operator several rows for what was one thing.
+
+    Deliberately NOT normalised: the query string. `?id=1` and `?id=2` are the
+    same path but they are not the same test, and an IDOR that only shows on
+    one of them would be merged away.
+    """
+    value = (target or "").strip()
+    if "://" not in value:
+        return value.rstrip("/").lower() or value
+
+    parsed = urlparse(value)
+    host = (parsed.hostname or "").lower()
+    port = parsed.port
+    # A default port written out is the same address as one left off.
+    if port and not ((parsed.scheme == "http" and port == 80)
+                     or (parsed.scheme == "https" and port == 443)):
+        host = f"{host}:{port}"
+    path = parsed.path or "/"
+    if len(path) > 1:
+        path = path.rstrip("/")
+    # The scheme is dropped: http://x/a and https://x/a are the same resource,
+    # and reporting a weakness twice because the site answers on both helps
+    # nobody. A TLS finding is about the host, not the page.
+    rebuilt = f"{host}{path}"
+    if parsed.query:
+        rebuilt += f"?{parsed.query}"
+    return rebuilt
+
+
 def dedup(vuln_class: str, target: str) -> str:
-    return hashlib.sha1(f"{vuln_class}|{target}".encode()).hexdigest()[:16]
+    return hashlib.sha1(
+        f"{vuln_class}|{normalise_target(target)}".encode()).hexdigest()[:16]
 
 
 def cvss_for(severity: str) -> float:
