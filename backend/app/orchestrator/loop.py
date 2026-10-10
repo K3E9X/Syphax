@@ -139,6 +139,21 @@ async def run_engagement_loop(run_id: str) -> dict:
     except Exception:  # noqa: BLE001 - a preflight must never fail a run
         logger.exception("[%s] tool preflight failed", run.id)
 
+    # What the target publishes about itself, before anything is planned.
+    #
+    # robots.txt and sitemap.xml are the owner's own list of paths - including
+    # the ones they asked not to have indexed - and the OpenAPI schema is the
+    # API's own contract. Both were ignored: nothing read robots.txt, and
+    # VULN-API-CONTRACT (schemathesis, which property-tests every documented
+    # operation) applies only to an asset whose URL says "openapi" or
+    # "swagger", which nothing ever created. Seeded here so every later phase
+    # plans against them.
+    try:
+        from app.analysis.surface_seed import seed_published_surface
+        await seed_published_surface(engagement.id)
+    except Exception:  # noqa: BLE001 - seeding must never fail a run
+        logger.exception("[%s] could not seed the published surface", run.id)
+
     approvals = ApprovalRepository()
     need_approval = requires_exploit_approval(engagement)
 
