@@ -53,7 +53,7 @@ class SubfinderWrapper(BaseWrapper):
         # matters, plus the hosts themselves as scan targets.
         return ToolResult(findings=as_inventory(
             findings, tool="subfinder", target=target, what="subdomain",
-            interesting=None, max_assets=200))
+            interesting=None))
 
 
 def _target_to_domain(target: str) -> str:

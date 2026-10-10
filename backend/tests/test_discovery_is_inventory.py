@@ -15,7 +15,7 @@ import json
 
 import pytest
 
-from app.scans.wrappers import _WRAPPERS
+from app.scans.wrappers import _WRAPPERS  # noqa: F401
 
 TARGET = "https://t.example/"
 N = 800
@@ -59,29 +59,53 @@ def _parse(name: str):
 
 
 @pytest.mark.parametrize("name", sorted(FLOODS))
-def test_a_flood_does_not_become_a_finding_each(name):
-    findings = _parse(name)
-    assert len(findings) < N / 2, (
-        f"{name} produced {len(findings)} findings from {N} discovered items")
+def test_every_discovered_endpoint_becomes_a_scan_target(name):
+    """THE requirement. Point the tool at a URL and the job is to find the
+    endpoints and APIs behind it AND TEST THEM.
 
-
-@pytest.mark.parametrize("name", sorted(FLOODS))
-def test_the_real_total_is_still_reported(name):
-    """Bounding the output must not hide how much surface there is."""
-    findings = _parse(name)
-    summary = [f for f in findings if (f.metadata or {}).get("inventory")]
-    assert len(summary) == 1, [f.title for f in findings[:5]]
-    assert summary[0].metadata["total"] >= N
-
-
-@pytest.mark.parametrize("name", sorted(FLOODS))
-def test_what_is_kept_is_declared_as_a_scan_target(name):
-    """The point of keeping any of it: the planner aims tools at assets."""
+    An earlier version of this file asserted the opposite - that a flood is
+    trimmed - and that was wrong: trimming live discovery throws away exactly
+    the surface the operator asked to have found. What bounds the work is the
+    planner's ranking and the per-phase budget, not a ceiling on what gets
+    recorded.
+    """
     findings = _parse(name)
     assets = [f for f in findings if (f.metadata or {}).get("asset")]
-    assert assets, f"{name} kept nothing the planner can use"
+    assert len(assets) >= N, (
+        f"{name} discovered {N} items and kept only {len(assets)} as scan "
+        f"targets")
     for f in assets:
         assert f.metadata["asset_kind"] in ("endpoint", "host")
+
+
+@pytest.mark.parametrize("name", sorted(FLOODS))
+def test_nothing_is_summarised_away_when_nothing_is_hidden(name):
+    """The summary row exists to report what was NOT listed. With live
+    discovery keeping everything, there is nothing to report - and a summary
+    claiming otherwise would be noise."""
+    findings = _parse(name)
+    summary = [f for f in findings if (f.metadata or {}).get("inventory")]
+    assert summary == [], [f.title for f in summary]
+
+
+def test_archive_material_is_the_one_thing_still_bounded():
+    """gau returns a domain's HISTORICAL URLs, most of them long dead. That is
+    the material worth trimming - and a parameterised archived URL is still an
+    injection point, so it is the generous half of the two limits."""
+    from app.scans.wrappers.gau import MAX_PARAM_FINDINGS, MAX_PLAIN_ASSETS
+
+    lines = [f"{TARGET}archive/p{i}.jsp" for i in range(2500)]
+    lines += [f"{TARGET}old.jsp?id={i}" for i in range(500)]
+    out = _WRAPPERS["gau"].parse("\n".join(lines).encode(), b"", 0, TARGET)
+
+    assets = [f for f in out.findings if (f.metadata or {}).get("asset")]
+    assert len(assets) <= MAX_PARAM_FINDINGS + MAX_PLAIN_ASSETS
+    params = [f for f in assets if (f.metadata or {}).get("has_params")]
+    assert len(params) == MAX_PARAM_FINDINGS, len(params)
+
+    summary = [f for f in out.findings if "archived URL(s)" in f.title]
+    assert len(summary) == 1
+    assert summary[0].metadata["archived_total"] >= 2000
 
 
 # ---- and the few that are leads keep their row --------------------------
@@ -113,14 +137,12 @@ def test_dnsx_keeps_a_cname():
     assert len(kept) == 1
 
 
-def test_kiterunner_keeps_more_than_a_crawl_does():
+def test_every_api_route_is_kept():
     """An undocumented API route IS the surface for the auth, BOLA and
-    injection tests, so its cap is deliberately higher than a crawl's."""
+    injection tests. Capping these was the worst of the trimming."""
     routes = [f for f in _parse("kiterunner")
               if (f.metadata or {}).get("vuln_class") == "api_route"]
-    crawled = [f for f in _parse("katana") if (f.metadata or {}).get("asset")]
-    assert len(routes) > 60, len(routes)
-    assert len(routes) >= len(crawled) - 60
+    assert len(routes) == N, len(routes)
 
 
 # ---- a short run is untouched ------------------------------------------
@@ -147,3 +169,54 @@ def test_a_handful_of_results_passes_through_unchanged(name):
     findings = wrapper.parse(small, b"", 0, TARGET).findings
     assert len(findings) == 1, [f.title for f in findings]
     assert not (findings[0].metadata or {}).get("inventory")
+
+
+@pytest.mark.parametrize("name", sorted(FLOODS))
+def test_the_ingest_cap_never_drops_a_scan_target(name):
+    """The per-job cap is about how much one job may add to the REPORT. A row
+    that declares an asset is a target, and the planner decides what to do with
+    it - so the cap must not be the thing that unfinds an endpoint."""
+    from app.scans.wrappers.base import cap_findings
+
+    wrapper = _WRAPPERS[name]
+    findings = _parse(name)
+    before = [f for f in findings if (f.metadata or {}).get("asset")]
+    after = [f for f in cap_findings(findings, tool=name,
+                                     category=wrapper.category)
+             if (f.metadata or {}).get("asset")]
+    assert len(after) == len(before), (
+        f"the ingest cap dropped {len(before) - len(after)} scan targets")
+
+
+def test_gau_terminates_when_there_are_fewer_urls_than_the_allowance():
+    """A round-robin whose exit condition is "every list is empty" never ends,
+    because the lists are never drained - it hung the whole test suite. The
+    exit has to be "a full pass added nothing"."""
+    out = _WRAPPERS["gau"].parse(
+        (f"{TARGET}a.jsp?id=1\n{TARGET}b.jsp?id=2\n{TARGET}plain.jsp\n").encode(),
+        b"", 0, TARGET)
+    params = [f for f in out.findings if (f.metadata or {}).get("has_params")]
+    assert len(params) == 2
+
+
+def test_gau_spreads_its_allowance_across_distinct_paths():
+    """One endpoint archived under five hundred timestamps must not use the
+    whole allowance and hide the other endpoints behind it."""
+    lines = [f"{TARGET}hot.jsp?t={i}" for i in range(500)]
+    lines += [f"{TARGET}other{i}.jsp?id=1" for i in range(20)]
+    out = _WRAPPERS["gau"].parse("\n".join(lines).encode(), b"", 0, TARGET)
+    kept = [f.target for f in out.findings
+            if (f.metadata or {}).get("has_params")]
+    distinct = {u.split("?")[0] for u in kept}
+    assert len(distinct) == 21, len(distinct)
+
+
+def test_gau_reads_past_the_first_few_thousand_lines():
+    """An archive commonly returns thousands of plain paths before the first
+    parameterised one. Stopping at 2000 input lines meant the injection points
+    - the whole reason to look at an archive - were never seen."""
+    lines = [f"{TARGET}archive/p{i}.jsp" for i in range(5000)]
+    lines += [f"{TARGET}late.jsp?id=1"]
+    out = _WRAPPERS["gau"].parse("\n".join(lines).encode(), b"", 0, TARGET)
+    assert any((f.metadata or {}).get("has_params") for f in out.findings), \
+        "the parameterised URL after 5000 plain ones was never reached"
