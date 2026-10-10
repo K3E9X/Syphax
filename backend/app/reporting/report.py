@@ -331,7 +331,15 @@ def _render_findings(L: List[str], findings: List) -> None:
             L.append(f"- **Status:** {f.status} (confidence {int(f.confidence*100)}%)")
             L.append(f"- **Affected:** `{f.target}`")
             L.append(f"- **Tool / method:** {f.tool} / {f.method}")
-            L.append(f"- **WSTG:** {m['wstg']} · **ATT&CK:** {', '.join(m['attack'])} · **CWE:** {m['cwe']}")
+            standards = (f"- **WSTG:** {m['wstg']} · **ATT&CK:** "
+                         f"{', '.join(m['attack'])} · **CWE:** {m['cwe']}")
+            # The API Top 10 item where there is one. It answers a different
+            # question from the WSTG id - "which API control is missing"
+            # rather than "which test is this" - and it is the vocabulary an
+            # API owner reads the report in.
+            if m.get("owasp_api"):
+                standards += f" · **OWASP API:** {m['owasp_api']}"
+            L.append(standards)
             corr = (getattr(f, "metadata", None) or {}).get("corroboration") or {}
             if corr.get("note"):
                 L.append(f"- **Corroboration:** {corr['note']}")

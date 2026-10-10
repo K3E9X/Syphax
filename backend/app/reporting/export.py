@@ -19,6 +19,7 @@ def findings_json(engagement, findings, chains) -> Dict[str, Any]:
             "tool": f.tool, "status": f.status, "confidence": f.confidence,
             "method": f.method, "evidence": f.evidence, "poc": f.poc,
             "cwe": m["cwe"], "wstg": m["wstg"], "attack": m["attack"],
+            "owasp_api": m.get("owasp_api", ""),
             "remediation": m["remediation"],
         })
     return {
@@ -40,7 +41,9 @@ def sarif(engagement, findings) -> Dict[str, Any]:
                 "id": rule_id,
                 "name": rule_id,
                 "shortDescription": {"text": f.title},
-                "properties": {"cwe": m["cwe"], "wstg": m["wstg"], "attack": m["attack"]},
+                "properties": {"cwe": m["cwe"], "wstg": m["wstg"],
+                               "attack": m["attack"],
+                               "owasp_api": m.get("owasp_api", "")},
             }
         results.append({
             "ruleId": rule_id,

@@ -440,3 +440,118 @@ def test_each_new_analyser_explains_itself_when_it_declines(tool):
     if "_say(" not in source:
         pytest.skip(f"{tool} cannot decline: it reads what is already in hand")
     assert "async def _say" in source
+
+
+# ---- the report says something specific about every class -----------
+
+def test_every_class_the_codebase_emits_has_a_report_mapping():
+    """Without an entry the report prints WSTG-INFO-00, CWE-0, category
+    "other" and "review the finding and apply standard hardening". Fifteen
+    classes were doing that, the whole API suite among them: a high-severity
+    finding whose remediation line is "apply standard hardening" is not a
+    report, it is a row."""
+    from app.reporting.mappings import MAPPING, _FALLBACK
+    unmapped = {name: where for name, where in _emitted_classes().items()
+                if name not in MAPPING}
+    assert not unmapped, (
+        f"these fall back to {_FALLBACK['wstg']} / {_FALLBACK['cwe']} / "
+        f"'{_FALLBACK['category']}': {unmapped}")
+
+
+def test_every_class_the_strategy_accepts_has_one_too():
+    """A class the campaign is willing to author a PoC for, whose finding the
+    report then cannot categorise, is the same gap one step later."""
+    from app.exploit.strategy import AUTHORABLE_CLASSES
+    from app.reporting.mappings import MAPPING
+    missing = sorted(set(AUTHORABLE_CLASSES) - set(MAPPING))
+    assert not missing, missing
+
+
+def test_every_mapping_is_complete_and_specific():
+    from app.reporting.mappings import CATEGORY_ORDER, MAPPING
+    for name, entry in MAPPING.items():
+        assert entry["category"] in CATEGORY_ORDER, name
+        assert entry["wstg"].startswith("WSTG-"), name
+        assert entry["cwe"].startswith("CWE-") and entry["cwe"] != "CWE-0", name
+        assert entry["attack"], name
+        # A remediation that could be pasted onto any finding is not one.
+        assert len(entry["remediation"]) > 60, name
+        assert "standard hardening" not in entry["remediation"], name
+
+
+@pytest.mark.parametrize("vuln_class,item", [
+    ("broken_access_control", "API1:2023"),
+    ("idor", "API1:2023"),
+    ("broken_authentication", "API2:2023"),
+    ("jwt", "API2:2023"),
+    ("mass_assignment", "API3:2023"),
+    ("rate_limit", "API4:2023"),
+    ("privilege_escalation", "API5:2023"),
+    ("ssrf", "API7:2023"),
+    ("api_contract_violation", "API8:2023"),
+    ("graphql_introspection", "API8:2023"),
+    ("shadow_api", "API9:2023"),
+    ("api_route", "API9:2023"),
+])
+def test_the_api_classes_carry_their_owasp_api_item(vuln_class, item):
+    """It answers a different question from the WSTG id - which API control
+    is missing, rather than which test this is - and it is the vocabulary an
+    API owner reads the report in."""
+    from app.reporting.mappings import owasp_api_for_class
+    assert owasp_api_for_class(vuln_class) == item
+
+
+@pytest.mark.parametrize("vuln_class", ["path_traversal", "vulnerable_component",
+                                        "weak_tls", "xss", "sql_injection"])
+def test_a_web_class_with_no_honest_api_item_carries_none(vuln_class):
+    """Mapping these to the nearest item would send a reader to the wrong
+    control. Empty is a real answer here, not a missing one."""
+    from app.reporting.mappings import owasp_api_for_class
+    assert owasp_api_for_class(vuln_class) == ""
+
+
+def test_every_declared_api_item_is_a_real_one():
+    from app.reporting.mappings import MAPPING
+    valid = {f"API{n}:2023" for n in range(1, 11)}
+    for name, entry in MAPPING.items():
+        item = entry.get("owasp_api")
+        if item:
+            assert item in valid, f"{name}: {item}"
+
+
+def test_the_item_reaches_the_report_and_both_exports():
+    """A mapping nothing prints is a mapping nobody reads."""
+    from app.reporting import export, report
+    assert "OWASP API" in _inspect.getsource(report._render_findings)
+    assert '"owasp_api"' in _inspect.getsource(export.findings_json)
+    assert '"owasp_api"' in _inspect.getsource(export.sarif)
+
+
+def test_a_finding_with_no_api_item_gets_no_empty_owasp_label():
+    """An "OWASP API:" label with nothing after it is worse than no label.
+
+    Rendered rather than grepped: the standards line is built for a finding
+    whose class has no API item and one whose class has, and compared."""
+    from app.reporting.report import _render_findings
+
+    class _F:
+        def __init__(self, vuln_class):
+            self.vuln_class = vuln_class
+            self.title = "t"
+            self.severity = "high"
+            self.status = "confirmed"
+            self.confidence = 0.9
+            self.target = "https://t.example/x"
+            self.tool = "x"
+            self.method = "m"
+            self.metadata = {}
+            self.evidence = ""
+            self.poc = ""
+
+    web: list = []
+    _render_findings(web, [_F("path_traversal")])
+    assert not any("OWASP API" in line for line in web)
+
+    api: list = []
+    _render_findings(api, [_F("shadow_api")])
+    assert any("**OWASP API:** API9:2023" in line for line in api)
