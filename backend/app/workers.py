@@ -38,6 +38,7 @@ from app.orchestrator.loop import run_engagement_loop
 from app.scans.models import Finding, JobStatus
 from app.scans.storage import JobRepository
 from app.scans.wrappers import get_wrapper
+from app.scans.wrappers.base import cap_findings
 
 logger = logging.getLogger("syphax.worker")
 
@@ -147,7 +148,21 @@ async def run_scan(ctx: Dict[str, Any], job_id: str) -> Dict[str, Any]:
     # Normal completion.
     try:
         result = wrapper.parse(bytes(stdout_buf), bytes(stderr_buf), exit_code, job.target)
-        findings: List[Finding] = result.findings
+        # Bound what one job may contribute, here rather than in each wrapper:
+        # a discovery tool reports one item per thing it finds, and on a real
+        # target that is thousands. gau turned an archive into 2175 findings
+        # and 2162 assets, and since the planner builds a task per (catalog
+        # item x asset) the run then spent its entire TIME budget on them.
+        # katana, ffuf, httpx, subfinder, dnsx and kiterunner have the same
+        # shape; this is the one place all of their output passes through.
+        # Nothing critical or high is ever dropped - see cap_findings.
+        before = len(result.findings)
+        findings: List[Finding] = cap_findings(
+            result.findings, tool=job.tool,
+            category=getattr(wrapper, "category", ""))
+        if len(findings) != before:
+            logger.info("[%s] %s produced %d findings; capped to %d",
+                        job.id, job.tool, before, len(findings))
     except Exception as exc:  # noqa: BLE001
         logger.exception("[%s] parse failed", job.id)
         findings = []

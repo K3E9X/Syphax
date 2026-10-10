@@ -14,7 +14,7 @@ import json
 
 import shutil
 from dataclasses import dataclass
-from typing import List, Sequence
+from typing import Dict, List, Optional, Sequence
 
 from app.scans.models import Finding
 
@@ -36,6 +36,83 @@ class Readiness:
     def to_dict(self) -> dict:
         return {"tool": self.tool, "installed": self.installed,
                 "ready": self.ready, "reason": self.reason}
+
+
+# How many findings one job may contribute, by wrapper category.
+#
+# Discovery tools report one item per thing they find, and on a real target
+# that is thousands: gau turned an archive into 2175 findings and 2162 assets,
+# the Findings page became unreadable, and the planner - which builds a task
+# per (catalog item x asset) - spent the run's whole TIME budget on them. gau
+# was fixed in its own parser, but katana, ffuf, httpx, subfinder, dnsx and
+# kiterunner all have the same shape and no cap at all, so the limit belongs
+# here, at the one place every wrapper's output passes through.
+FINDING_CAP = {
+    "recon": 120,
+    "fingerprint": 120,
+    "content_discovery": 150,
+}
+DEFAULT_FINDING_CAP = 400
+
+# Severities that are NEVER dropped, however many there are. A flood of
+# criticals is a signal, not noise, and losing one to a display limit would be
+# far worse than the flood this guards against.
+_NEVER_DROP = ("critical", "high")
+_SEV_RANK = {"critical": 0, "high": 1, "medium": 2, "low": 3, "info": 4}
+
+
+def cap_findings(findings: List[Finding], *, tool: str = "",
+                 category: str = "", limit: Optional[int] = None) -> List[Finding]:
+    """Bound one job's findings, keeping the most severe and saying what was cut.
+
+    Pure, so the rule is testable on its own. Nothing is lost quietly: the
+    remainder is summarised in one finding carrying the counts.
+    """
+    if limit is None:
+        limit = FINDING_CAP.get(category, DEFAULT_FINDING_CAP)
+    if len(findings) <= limit:
+        return findings
+
+    kept: List[Finding] = []
+    rest: List[Finding] = []
+    for finding in findings:
+        if str(getattr(finding, "severity", "") or "").lower() in _NEVER_DROP:
+            kept.append(finding)
+        else:
+            rest.append(finding)
+
+    rest.sort(key=lambda f: _SEV_RANK.get(
+        str(getattr(f, "severity", "") or "info").lower(), 9))
+    room = max(0, limit - len(kept))
+    dropped = rest[room:]
+    kept.extend(rest[:room])
+    if not dropped:
+        return kept
+
+    by_severity: Dict[str, int] = {}
+    for finding in dropped:
+        sev = str(getattr(finding, "severity", "") or "info").lower()
+        by_severity[sev] = by_severity.get(sev, 0) + 1
+    breakdown = ", ".join(f"{n} {sev}" for sev, n in sorted(
+        by_severity.items(), key=lambda kv: _SEV_RANK.get(kv[0], 9)))
+    sample = "\n".join(str(getattr(f, "title", ""))[:120] for f in dropped[:20])
+
+    kept.append(Finding(
+        severity="info",
+        title=f"{len(dropped)} further {tool or 'tool'} result(s) not listed "
+              f"individually",
+        description=(
+            f"This job produced {len(findings)} results; the {limit} most "
+            f"severe are listed. The remainder ({breakdown}) are summarised "
+            f"here. Nothing critical or high is ever cut - only lower "
+            f"severities, and only past the cap."),
+        target=str(getattr(findings[0], "target", "") or ""),
+        evidence=sample or "(no titles)",
+        metadata={"tool": tool, "vuln_class": "recon", "capped": True,
+                  "total": len(findings), "listed": limit,
+                  "dropped": len(dropped), "dropped_by_severity": by_severity},
+    ))
+    return kept
 
 
 def _missing_data(path: str) -> str:
