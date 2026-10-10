@@ -29,6 +29,7 @@ from app.validation.baseline import NO_BASELINE, Baseline, matches as baseline_m
 from app.validation.barrier import describe as describe_barrier
 from app.validation.barrier import detect as detect_barrier
 from app.validation.classes import DISCOVERY_CLASSES, SURFACE_CLASSES
+from app.validation.noise import is_noise
 from app.validation.models import ValidationResult, ValidationStatus
 from app.validation.safe_poc import SafePoC, ScopeError
 
@@ -146,6 +147,21 @@ class FindingValidator:
             reflected = await self._check_reflection(finding)
             if reflected is not None:
                 return reflected
+
+        # 2b-bis. inventory that points at a page the discovering tool already
+        # found dead. A run produces hundreds of `info` rows - every archived
+        # URL, every crawled page - and a 404 among them is not a finding, it
+        # is a dead link. Dropped BEFORE the baseline check, because there is
+        # nothing to re-request: the answer is already on the finding, written
+        # there by the tool that fetched it.
+        #
+        # Only inventory classes, and never a page that is a lead: a 403 is
+        # "this exists and is guarded", a 404 with parameters is still an
+        # injection point, and a weakness is never silenced for a status code.
+        drop, why = is_noise(finding.severity, vuln_class, finding.metadata)
+        if drop:
+            return ValidationResult.false_positive(
+                "recorded response", detail=f"{finding.target}: {why}")
 
         # 2c. path-existence claim on a catch-all server: the answer is the
         # same page the target returns for any nonexistent path, so the claim
