@@ -115,6 +115,58 @@ def cap_findings(findings: List[Finding], *, tool: str = "",
     return kept
 
 
+def as_inventory(findings: List[Finding], *, tool: str, target: str,
+                 what: str = "result", interesting=None,
+                 max_individual: int = 60, max_assets: int = 120
+                 ) -> List[Finding]:
+    """Split a discovery tool's output into findings and inventory.
+
+    A crawled URL, a resolved subdomain, a DNS record: these are SURFACE, and
+    the project already models surface as ASSETS rather than findings. Every
+    discovery wrapper nonetheless emitted one finding per item it found, with
+    no cap - gau turned an archive into 2175 findings and 2162 assets, and
+    katana, ffuf, httpx, subfinder, dnsx and kiterunner all have the same
+    shape.
+
+    So: the subset `interesting` selects keeps a row of its own; the rest is
+    reported as ONE summary carrying the real total, and still contributes its
+    assets (bounded) so the planner can aim tools at them.
+
+    Each input finding must already declare its asset in
+    metadata["asset"]/["asset_kind"], which is what the ingest turns into a
+    scan target.
+    """
+    if not findings:
+        return []
+    picked = [f for f in findings if interesting and interesting(f)]
+    rest = [f for f in findings if f not in picked] if picked else list(findings)
+
+    out: List[Finding] = list(picked[:max_individual])
+    overflow = picked[max_individual:]
+    kept_rest = rest[:max(0, max_assets - len(out))]
+
+    hidden = len(overflow) + (len(rest) - len(kept_rest))
+    if hidden or len(findings) > len(out) + len(kept_rest):
+        sample = "\n".join(str(f.target or f.title)[:120]
+                           for f in (kept_rest or rest)[:30])
+        out.append(Finding(
+            severity="info",
+            title=f"{len(findings)} {what}(s) found by {tool}",
+            description=(
+                f"{len(picked)} worth a row of their own ({len(out)} listed); "
+                f"the remaining {len(findings) - len(picked)} are inventory. "
+                f"{len(kept_rest)} of them are kept as scan targets. Surface, "
+                f"not findings."),
+            target=target,
+            evidence=sample or "(nothing to sample)",
+            metadata={"tool": tool, "vuln_class": "recon", "inventory": True,
+                      "total": len(findings), "listed": len(out),
+                      "kept_as_targets": len(kept_rest), "not_listed": hidden},
+        ))
+    out.extend(kept_rest)
+    return out
+
+
 def _missing_data(path: str) -> str:
     """"" when the data is usable, else why it is not."""
     import os

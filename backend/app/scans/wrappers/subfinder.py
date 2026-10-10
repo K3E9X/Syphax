@@ -5,7 +5,8 @@ from typing import List, Sequence
 from urllib.parse import urlparse
 
 from app.scans.models import Finding
-from app.scans.wrappers.base import iter_json_lines, BaseWrapper, ToolResult
+from app.scans.wrappers.base import (as_inventory, iter_json_lines,
+                                     BaseWrapper, ToolResult)
 
 
 class SubfinderWrapper(BaseWrapper):
@@ -42,10 +43,17 @@ class SubfinderWrapper(BaseWrapper):
                     description=f"Discovered via {source or 'unknown source'}.",
                     target=host,
                     evidence=f"source={source} input={domain}",
-                    metadata={"source": source, "parent_domain": domain},
+                    metadata={"source": source, "parent_domain": domain,
+                              "vuln_class": "recon",
+                              "asset": host, "asset_kind": "host"},
                 )
             )
-        return ToolResult(findings=findings)
+        # A subdomain is surface. Enumeration on a large organisation returns
+        # hundreds, and each used to be a finding of its own; the count is what
+        # matters, plus the hosts themselves as scan targets.
+        return ToolResult(findings=as_inventory(
+            findings, tool="subfinder", target=target, what="subdomain",
+            interesting=None, max_assets=200))
 
 
 def _target_to_domain(target: str) -> str:

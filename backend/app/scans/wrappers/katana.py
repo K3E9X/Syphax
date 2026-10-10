@@ -9,7 +9,8 @@ from __future__ import annotations
 from typing import List, Sequence
 
 from app.scans.models import Finding
-from app.scans.wrappers.base import iter_json_lines, BaseWrapper, ToolResult
+from app.scans.wrappers.base import (as_inventory, iter_json_lines,
+                                     BaseWrapper, ToolResult)
 
 
 class KatanaWrapper(BaseWrapper):
@@ -62,10 +63,12 @@ class KatanaWrapper(BaseWrapper):
             if content_length is not None:
                 desc_bits.append(f"{content_length} bytes")
 
+            has_params = "?" in endpoint and "=" in endpoint
             findings.append(
                 Finding(
                     severity="info",
-                    title=f"Endpoint: {endpoint}",
+                    title=("Endpoint with parameters: " if has_params
+                           else "Endpoint: ") + endpoint,
                     description=" - ".join(desc_bits),
                     target=endpoint,
                     evidence=f"method={method} status={status} size={content_length}",
@@ -74,7 +77,18 @@ class KatanaWrapper(BaseWrapper):
                         "status_code": status,
                         "content_length": content_length,
                         "source": obj.get("source"),
+                        "has_params": has_params,
+                        "vuln_class": "recon",
+                        # Declared so the ingest turns it into a scan target.
+                        "asset": endpoint,
+                        "asset_kind": "endpoint",
                     },
                 )
             )
-        return ToolResult(findings=findings)
+        # A crawl of a real site returns thousands of URLs, and every one used
+        # to be its own finding. What deserves a row is the subset carrying
+        # query parameters: those are injection points, and the param-gated
+        # catalog items need one to exist. The rest is surface.
+        return ToolResult(findings=as_inventory(
+            findings, tool="katana", target=target, what="crawled URL",
+            interesting=lambda f: bool((f.metadata or {}).get("has_params"))))

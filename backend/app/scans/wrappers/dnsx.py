@@ -9,7 +9,8 @@ from typing import List, Sequence
 from urllib.parse import urlparse
 
 from app.scans.models import Finding
-from app.scans.wrappers.base import iter_json_lines, BaseWrapper, ToolResult
+from app.scans.wrappers.base import (as_inventory, iter_json_lines,
+                                     BaseWrapper, ToolResult)
 
 
 class DnsxWrapper(BaseWrapper):
@@ -63,10 +64,17 @@ class DnsxWrapper(BaseWrapper):
                     target=host,
                     evidence="; ".join(records),
                     metadata={"a": a, "aaaa": aaaa, "cname": cname, "mx": mx,
-                              "ns": ns, "txt": txt, "tool": "dnsx"},
+                              "ns": ns, "txt": txt, "tool": "dnsx",
+                              "vuln_class": "recon",
+                              "asset": host, "asset_kind": "host"},
                 )
             )
-        return ToolResult(findings=findings)
+        # A CNAME is the one record that is a lead rather than inventory: it
+        # points somewhere else, which is where a subdomain takeover lives.
+        return ToolResult(findings=as_inventory(
+            findings, tool="dnsx", target=target, what="DNS record set",
+            interesting=lambda f: bool((f.metadata or {}).get("cname")),
+            max_assets=200))
 
 
 def _target_to_host(target: str) -> str:

@@ -8,7 +8,8 @@ from __future__ import annotations
 from typing import List, Sequence
 
 from app.scans.models import Finding
-from app.scans.wrappers.base import iter_json_lines, BaseWrapper, ToolResult
+from app.scans.wrappers.base import (as_inventory, iter_json_lines,
+                                     BaseWrapper, ToolResult)
 
 
 class HttpxWrapper(BaseWrapper):
@@ -73,7 +74,20 @@ class HttpxWrapper(BaseWrapper):
                         "scheme": scheme,
                         "content_type": content_type,
                         "content_length": content_length,
+                        "vuln_class": "recon",
+                        "asset": url,
+                        "asset_kind": "endpoint",
                     },
                 )
             )
-        return ToolResult(findings=findings)
+        # One probe per URL, and a crawl can hand it hundreds. The ones worth
+        # reading are those that answered something other than a plain 200, or
+        # that disclosed a server banner - the rest is "it is up".
+        def _worth_a_row(f):
+            meta = f.metadata or {}
+            code = meta.get("status_code")
+            return bool(meta.get("server")) or (code is not None and code != 200)
+
+        return ToolResult(findings=as_inventory(
+            findings, tool="httpx", target=target, what="live URL",
+            interesting=_worth_a_row))
