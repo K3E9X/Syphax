@@ -26,6 +26,8 @@ from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 
 from app.scans.models import Finding
 from app.validation.baseline import NO_BASELINE, Baseline, matches as baseline_matches
+from app.validation.barrier import describe as describe_barrier
+from app.validation.barrier import detect as detect_barrier
 from app.validation.classes import DISCOVERY_CLASSES, SURFACE_CLASSES
 from app.validation.models import ValidationResult, ValidationStatus
 from app.validation.safe_poc import SafePoC, ScopeError
@@ -236,6 +238,19 @@ class FindingValidator:
             return None
         if resp is None:
             return None
+
+        # Did the application answer, or did something in front of it?
+        #
+        # A barrier's 403 is not an answer about the path. Reading it as one
+        # would let a WAF decide a finding is real or not, and the result would
+        # be filed as if we had tested it.
+        barrier = detect_barrier(resp.status_code,
+                                 getattr(resp, "text", "") or "",
+                                 dict(getattr(resp, "headers", {}) or {}))
+        if barrier:
+            return ValidationResult.blocked(
+                "re-request", barrier=barrier,
+                detail=describe_barrier(barrier, resp.status_code))
 
         # The server distinguishes missing paths and says this one is missing.
         if resp.status_code in (404, 410):

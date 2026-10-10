@@ -32,7 +32,11 @@ def _scored(f) -> dict:
     """{"cvss": value, "score_basis": ..., "score_explain": ...} for one row."""
     out = score_for(f)
     return {"cvss": out["value"], "score_basis": out["basis"],
-            "score_explain": out["explain"]}
+            "score_explain": out["explain"],
+            # "" unless a WAF or rate limiter answered instead of the
+            # application, in which case the finding was never tested and must
+            # not be read as "we looked and found nothing".
+            "blocked_by": out.get("blocked_by", "")}
 
 
 router = APIRouter(tags=["findings"])

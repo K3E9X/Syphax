@@ -275,3 +275,10 @@ body { background: var(--bg); color: var(--text-primary); font: var(--font-body)
 @media (prefers-reduced-motion: reduce) { .active-runs__dot { animation: none; } }
 .active-runs__item--err { border-left-color: var(--severity-medium); cursor: default; }
 .active-runs__item--err:hover { border-color: var(--border); }
+
+/* A check that never reached the application. Amber, not green and not grey:
+   it is neither proof nor a failed reproduction - nothing was tested. */
+.proof--blocked {
+  color: var(--warn, #d9a441);
+  border-color: color-mix(in srgb, var(--warn, #d9a441) 45%, transparent);
+}

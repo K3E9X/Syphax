@@ -63,7 +63,14 @@ def score_for(finding) -> Dict[str, Any]:
                 "explain": f"published CVSS score for this issue ({published})"}
 
     base = cvss_for(severity)
-    factor = _STATUS_FACTOR.get(status, 0.6)
+    barrier = str(meta.get("blocked_by") or "")
+    if barrier:
+        # Nothing was learned, so there are no grounds to think less of the
+        # finding than before the attempt. Scoring it like a failed
+        # reproduction would quietly bury issues a WAF happens to cover.
+        factor = 0.7
+    else:
+        factor = _STATUS_FACTOR.get(status, 0.6)
     value = round(base * factor, 1)
 
     # Proof outranks the band it was found in: a finding a PoC demonstrated is
@@ -71,6 +78,11 @@ def score_for(finding) -> Dict[str, Any]:
     if meta.get("proven") or status == "confirmed":
         value = max(value, round(base, 1))
 
+    if barrier:
+        explain = (f"{severity} impact ({base}), NOT TESTED - {barrier} "
+                   f"answered instead of the application")
+        return {"value": value, "basis": "risk", "explain": explain,
+                "blocked_by": barrier}
     explain = (f"{severity} impact ({base}) x {status or 'unrated'} "
                f"({factor:g})")
     if meta.get("proven"):
