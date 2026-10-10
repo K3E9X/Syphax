@@ -24,7 +24,15 @@ logger = logging.getLogger("syphax.orchestrator.state")
 # How many PARAM-LESS endpoints may become scan targets for one engagement.
 # Endpoints with query parameters are never capped: they are injection points,
 # and seven catalog items apply only to an endpoint that has them.
-MAX_ENDPOINT_ASSETS = 300
+# A SAFETY VALVE, not a policy. Pointing the tool at a URL and asking it to
+# find the endpoints and APIs behind it is the job, so the surface it keeps
+# must not be trimmed to a round number: a site with 2000 endpoints is a site
+# with 2000 endpoints. This exists only so a runaway tool cannot fill the
+# database, and it sits far above any real application.
+#
+# What decides which of them actually get tested is planner.asset_interest
+# (best targets first) and the per-phase share of the job budget - not this.
+MAX_ENDPOINT_ASSETS = 5000
 
 SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS assets (
@@ -133,14 +141,11 @@ class EngagementState:
         # is an injection point, and it is what the param-gated catalog items
         # need to exist at all.
         #
-        # This ceiling is the weaker half of the fix, and deliberately
-        # generous. Bounding the COUNT limits the damage; it does not decide
-        # which assets the budget buys, and the planner used to take them in
-        # insertion order - so an archive-heavy surface meant the exploitation
-        # phase spent its share on archived pages while the login page sat
-        # untested. planner.asset_interest orders them now, which is what makes
-        # a ceiling this high safe: the good targets are tested first, so the
-        # ones past the cap are the ones that were least worth a job anyway.
+        # Ordering, not counting, is what protects the run: the planner takes
+        # the best targets first (planner.asset_interest) and stops when the
+        # phase's share of the budget is spent. So a large surface costs
+        # nothing except rows in a table, and trimming it would only throw away
+        # endpoints the operator asked to have found and tested.
         if kind == "endpoint" and not has_params:
             if await self._endpoint_count() >= MAX_ENDPOINT_ASSETS:
                 await self._say_capped(value, source)

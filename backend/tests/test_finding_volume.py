@@ -130,14 +130,38 @@ def test_the_discovery_tools_are_in_a_capped_category():
 
 # ---- and the asset side, which is what actually starved the run ----------
 
-def test_the_asset_count_is_capped_too():
-    """Findings make the page unreadable; ASSETS make the planner multiply.
-    2162 of them is what spent the time budget."""
+def test_the_asset_ceiling_is_a_safety_valve_not_a_policy():
+    """It must sit far above any real application.
+
+    An earlier version capped it at 300, which was wrong: pointing the tool at
+    a URL and asking it to find the endpoints and APIs behind it is the job,
+    and a site with 2000 endpoints is a site with 2000 endpoints. What decides
+    which of them get TESTED is planner.asset_interest and the per-phase budget
+    share - not a ceiling on what gets recorded.
+    """
     from app.orchestrator.state import MAX_ENDPOINT_ASSETS, EngagementState
 
-    assert 0 < MAX_ENDPOINT_ASSETS <= 1000
+    assert MAX_ENDPOINT_ASSETS >= 2000, (
+        f"{MAX_ENDPOINT_ASSETS} would trim the surface of a large application")
     src = _inspect.getsource(EngagementState.add_asset)
     assert "MAX_ENDPOINT_ASSETS" in src
-    # A parameterised endpoint is an injection point: never capped.
+    # A parameterised endpoint is an injection point: never capped at all.
     assert "not has_params" in src, \
-        "the ceiling must not apply to endpoints that carry parameters"
+        "the valve must not apply to endpoints that carry parameters"
+
+
+def test_the_budget_can_actually_test_a_discovered_surface():
+    """200 jobs and 2 hours was enough to map a small site and nothing else -
+    a run on a real target ended with `time budget reached` during mapping,
+    having proven nothing."""
+    from app.orchestrator.loop import (DEFAULT_MAX_JOBS, DEFAULT_MAX_SECONDS,
+                                       MAX_ITERATIONS, BATCH_SIZE,
+                                       PHASE_BUDGET_SHARE, phase_allowance)
+
+    assert DEFAULT_MAX_JOBS >= 500
+    assert DEFAULT_MAX_SECONDS >= 4 * 60 * 60
+    # The iteration count must never be the thing that stops a run.
+    assert MAX_ITERATIONS * BATCH_SIZE > DEFAULT_MAX_JOBS
+    # And exploitation must get a real share of it.
+    assert phase_allowance(DEFAULT_MAX_JOBS, "exploitation") >= 100, \
+        PHASE_BUDGET_SHARE

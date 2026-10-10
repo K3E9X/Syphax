@@ -96,7 +96,11 @@ class Planner:
         assets = await self.state.assets()
         tech = await self.state.technologies()
 
-        candidates = await self._candidate_tasks(assets, tech)
+        # Enough to fill several batches of the earliest phase that has work,
+        # with room for the LLM re-ordering pass to choose from.
+        skip = {str(p) for p in (skip_phases or set())}
+        candidates = await self._candidate_tasks(
+            assets, tech, enough=max(max_tasks * 20, 200), skip_phases=skip)
         if not candidates:
             return []
 
@@ -133,7 +137,7 @@ class Planner:
         # page they themselves discovered. And `skip_phases` lets the caller cap
         # each phase's share of the budget, which is what makes reaching
         # exploitation a guarantee rather than a hope.
-        skip = {str(p) for p in (skip_phases or set())}
+        # Already filtered in _candidate_tasks; kept as a guard.
         remaining = [t for t in candidates if t.phase not in skip]
         if not remaining:
             return []
@@ -145,9 +149,39 @@ class Planner:
 
         return batch
 
-    async def _candidate_tasks(self, assets: List[Asset], tech: List[str]) -> List[Task]:
+    async def _candidate_tasks(self, assets: List[Asset], tech: List[str],
+                               *, enough: int = 0,
+                               skip_phases: Optional[Set[str]] = None) -> List[Task]:
+        """Applicable, uncovered (item, asset) pairs.
+
+        This is O(catalog x assets) and runs EVERY planning round. That was
+        harmless while the asset ceiling was a few hundred; now that a large
+        application keeps its whole surface - which is the point - it is not:
+        5000 assets against 40 catalog items is 200000 pairs built and thrown
+        away per round, 150 rounds per run.
+
+        So the assets are visited best-first (asset_interest, the same ranking
+        the final sort uses) and the walk stops once `enough` candidates exist.
+        Stopping early is safe BECAUSE the order is right: what is left behind
+        is always less promising than what was taken. It also makes the limit
+        self-correcting - the next round re-ranks against whatever the last one
+        covered.
+        """
+        assets = sorted(
+            assets,
+            key=lambda a: (asset_interest(a.value, source=a.source or ""),
+                           a.value))
+        skip = {str(p) for p in (skip_phases or set())}
         tasks: List[Task] = []
         for item in CATALOG:
+            # Phases that have spent their share are skipped HERE, not after
+            # the fact: with an early exit, building candidates for a phase
+            # that will be discarded can use up the whole allowance and leave
+            # the run with nothing to plan at all.
+            if item.phase in skip:
+                continue
+            if enough and len(tasks) >= enough:
+                break
             for asset in assets:
                 # "port" assets are surface data for the UI (host:port + service),
                 # not scannable targets: their value is "80/tcp . host . svc", and

@@ -26,9 +26,17 @@ from app.scans.wrappers.base import BaseWrapper, ToolResult
 # An archived URL is INVENTORY, not a finding. What is worth a finding is the
 # small subset that carries query parameters: those are injection points, and
 # every param-gated catalog item needs one to exist.
-MAX_URLS = 2000             # how many lines of gau output we read at all
-MAX_PARAM_FINDINGS = 60     # parameterised URLs reported individually
-MAX_PLAIN_ASSETS = 40       # distinct param-less paths kept as scan targets
+# How many LINES we read. High on purpose: stopping early is how the valuable
+# URLs get missed. An archive commonly returns thousands of plain paths before
+# the first parameterised one, and reading only the first 2000 meant the
+# injection points - the whole reason to look at an archive - were never seen.
+# Every line is now classified; the limits below apply to the OUTPUT.
+MAX_URLS = 200_000
+# Archive material is the ONE thing that stays bounded, because most of it is
+# long dead - but a parameterised archived URL is still an injection point, so
+# it is the generous one of the two.
+MAX_PARAM_FINDINGS = 200    # parameterised URLs reported individually
+MAX_PLAIN_ASSETS = 150      # distinct param-less paths kept as scan targets
 
 # Nothing to test on these: no parameters, no server-side behaviour.
 _STATIC_EXT = (".css", ".js", ".map", ".png", ".jpg", ".jpeg", ".gif", ".svg",
@@ -82,6 +90,8 @@ class GauWrapper(BaseWrapper):
             total += 1
             if total > MAX_URLS:
                 break
+            # Classification continues to the end of the output: what is
+            # bounded is what comes out, not what is looked at.
             if _is_static(url):
                 static += 1
                 continue
@@ -94,10 +104,31 @@ class GauWrapper(BaseWrapper):
 
         findings: List[Finding] = []
 
-        # The parameterised URLs, individually. These are the only ones worth a
-        # row of their own: a URL with a query string is an injection point,
-        # and seven catalog items apply ONLY to an endpoint that has one.
-        for url in with_params[:MAX_PARAM_FINDINGS]:
+        # The parameterised URLs, individually, and preferring distinct paths
+        # so one endpoint archived under five hundred timestamps does not use
+        # the whole allowance. These are the only ones worth a row of their
+        # own: a URL with a query string is an injection point, and seven
+        # catalog items apply ONLY to an endpoint that has one.
+        by_path: dict = {}
+        for url in with_params:
+            by_path.setdefault(urlparse(url).path or "/", []).append(url)
+        # Round-robin across paths. The exit is "a full pass added nothing",
+        # NOT "every list is empty": the lists are never drained, so the latter
+        # is true forever and the loop never ends once the allowance exceeds
+        # the number of URLs available.
+        ranked: List[str] = []
+        round_no = 0
+        while len(ranked) < MAX_PARAM_FINDINGS:
+            added = 0
+            for urls in by_path.values():
+                if round_no < len(urls) and len(ranked) < MAX_PARAM_FINDINGS:
+                    ranked.append(urls[round_no])
+                    added += 1
+            if not added:
+                break
+            round_no += 1
+
+        for url in ranked:
             findings.append(Finding(
                 severity="info",
                 title="Archived URL with parameters: " + url[:120],

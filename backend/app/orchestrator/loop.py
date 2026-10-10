@@ -32,7 +32,12 @@ from app.validation import build_chains, validate_engagement
 logger = logging.getLogger("syphax.orchestrator.loop")
 
 # Safety defaults when the engagement sets no budget.
-DEFAULT_MAX_JOBS = 200
+# Sized for what the tool is for: discover the endpoints and APIs behind a URL
+# and TEST them. The old 200 jobs / 2 hours was enough to map a small site and
+# nothing else - a run on a real target ended with `time budget reached` during
+# mapping, having proven nothing. Both are per-engagement overridable
+# (budget_requests / budget_seconds) for a deliberately small run.
+DEFAULT_MAX_JOBS = 600
 
 # Each phase's share of the job budget.
 #
@@ -72,8 +77,10 @@ def phase_allowance(max_jobs: int, phase: str) -> int:
         return max_jobs
     floor = max(1, min(MIN_PHASE_JOBS, max_jobs // max(1, len(PHASE_BUDGET_SHARE))))
     return max(floor, int(max_jobs * share))
-DEFAULT_MAX_SECONDS = 2 * 60 * 60          # 2 hours
-MAX_ITERATIONS = 50
+DEFAULT_MAX_SECONDS = 6 * 60 * 60          # 6 hours
+# 150 x BATCH_SIZE is 1200 planning slots, comfortably above the job budget, so
+# the iteration count is never the thing that stops a run.
+MAX_ITERATIONS = 150
 BATCH_SIZE = 8
 POLL_INTERVAL = 3.0                        # seconds between job-status polls
 ITERATION_WAIT_CAP = 45 * 60               # max wait for one batch to finish

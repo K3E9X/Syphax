@@ -76,7 +76,15 @@ def cap_findings(findings: List[Finding], *, tool: str = "",
     kept: List[Finding] = []
     rest: List[Finding] = []
     for finding in findings:
-        if str(getattr(finding, "severity", "") or "").lower() in _NEVER_DROP:
+        severity = str(getattr(finding, "severity", "") or "").lower()
+        declares_asset = bool((getattr(finding, "metadata", None) or {}).get("asset"))
+        # A row that declares an asset is a SCAN TARGET, and the point of
+        # pointing the tool at a URL is to find the endpoints and APIs behind
+        # it and test them. Dropping one to keep a page tidy throws away the
+        # surface the operator asked for. This cap is about how much one job
+        # may add to the report, not about how much of the application gets
+        # tested - the planner's ranking and the per-phase budget decide that.
+        if severity in _NEVER_DROP or declares_asset:
             kept.append(finding)
         else:
             rest.append(finding)
@@ -104,8 +112,9 @@ def cap_findings(findings: List[Finding], *, tool: str = "",
         description=(
             f"This job produced {len(findings)} results; the {limit} most "
             f"severe are listed. The remainder ({breakdown}) are summarised "
-            f"here. Nothing critical or high is ever cut - only lower "
-            f"severities, and only past the cap."),
+            f"here. Nothing critical or high is ever cut, and neither is "
+            f"anything that is a scan target - only lower-severity rows that "
+            f"carry nothing, and only past the cap."),
         target=str(getattr(findings[0], "target", "") or ""),
         evidence=sample or "(no titles)",
         metadata={"tool": tool, "vuln_class": "recon", "capped": True,
@@ -115,9 +124,14 @@ def cap_findings(findings: List[Finding], *, tool: str = "",
     return kept
 
 
+# No ceiling. Used by the tools that discover the LIVE application - the
+# surface the operator actually asked to have pentested.
+UNBOUNDED = 10 ** 9
+
+
 def as_inventory(findings: List[Finding], *, tool: str, target: str,
                  what: str = "result", interesting=None,
-                 max_individual: int = 60, max_assets: int = 120
+                 max_individual: int = 60, max_assets: int = UNBOUNDED
                  ) -> List[Finding]:
     """Split a discovery tool's output into findings and inventory.
 
@@ -135,6 +149,18 @@ def as_inventory(findings: List[Finding], *, tool: str, target: str,
     Each input finding must already declare its asset in
     metadata["asset"]/["asset_kind"], which is what the ingest turns into a
     scan target.
+
+    `max_assets` defaults to UNBOUNDED, and that default is the point. Giving
+    the tool a URL and asking it to find the endpoints and APIs behind it is
+    the job; dropping half of them to keep a page tidy defeats it. What is
+    bounded is how many get a ROW OF THEIR OWN in the report - the rest are
+    still kept, still become scan targets, and are still counted in the
+    summary. Only material that is historical rather than live (gau's archive)
+    passes a real ceiling, because most of it is long dead.
+
+    What protects the run from a large surface is no longer a ceiling at all:
+    it is planner.asset_interest, which spends the budget on the best targets
+    first, and the per-phase budget shares.
     """
     if not findings:
         return []

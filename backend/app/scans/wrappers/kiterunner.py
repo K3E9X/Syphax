@@ -17,7 +17,7 @@ import re
 from typing import List, Sequence
 
 from app.scans.models import Finding
-from app.scans.wrappers.base import (as_inventory, BaseWrapper,
+from app.scans.wrappers.base import (UNBOUNDED, as_inventory, BaseWrapper,
                                      ToolResult, iter_json_lines)
 
 # Assetnote routes wordlist, installed in the image. Overridable.
@@ -88,7 +88,7 @@ def _as_routes(findings, target):
     once when it bites."""
     return as_inventory(findings, tool="kiterunner", target=target,
                         what="API route", interesting=lambda f: True,
-                        max_individual=120, max_assets=120)
+                        max_individual=UNBOUNDED)
 
 
 def _route_finding(url: str, status, method: str, target: str) -> Finding:

@@ -73,8 +73,7 @@ class DnsxWrapper(BaseWrapper):
         # points somewhere else, which is where a subdomain takeover lives.
         return ToolResult(findings=as_inventory(
             findings, tool="dnsx", target=target, what="DNS record set",
-            interesting=lambda f: bool((f.metadata or {}).get("cname")),
-            max_assets=200))
+            interesting=lambda f: bool((f.metadata or {}).get("cname"))))
 
 
 def _target_to_host(target: str) -> str:
