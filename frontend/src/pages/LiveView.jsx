@@ -471,7 +471,22 @@ export default function LiveView() {
                     </div>
                     <div className="finding__title">{f.title}</div>
                     <div className="finding__target">{f.target}</div>
-                    <div className="finding__meta">{f.tool} · {f.vuln_class}{f.method ? ' · ' + f.method : ''}</div>
+                    <div className="finding__meta">
+                      {/* The tools that agreed, not just the first one. Two
+                          tools reporting the same weakness is a signal; the
+                          list used to show it as two separate findings. */}
+                      {(f.tools?.length > 1 ? f.tools.join(', ') : f.tool)}
+                      {f.duplicates > 1 && (
+                        <span className="dedup" title={
+                          `Reported ${f.duplicates} times — merged. `
+                          + (f.tools?.length > 1
+                            ? `Independently by: ${f.tools.join(', ')}.`
+                            : 'Same tool, several spellings of the URL.')}>
+                          {' · '}<b>{f.duplicates}×</b>
+                        </span>
+                      )}
+                      {' · '}{f.vuln_class}{f.method ? ' · ' + f.method : ''}
+                    </div>
                     {(f.metadata || {}).description && <div className="finding__desc">{f.metadata.description}</div>}
                     {f.corroboration && f.corroboration.note && (
                       <div className={'corr' + (f.corroboration.demoted ? ' corr--down' : '')}>

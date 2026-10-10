@@ -169,6 +169,53 @@ async def engagement_state(engagement_id: str) -> dict:
     from app.reporting.mappings import category_for_class
     from app.reporting.report import is_proven
 
+    def _collapse_duplicates(rows: list) -> list:
+        """One row per issue, with the tools that agreed on it.
+
+        The global Findings page has grouped since it was written; this list
+        never did, so the live view showed the same weakness once per tool that
+        reported it and once per spelling of its URL. The operator was reading
+        the same thing several times and could not tell how many real issues
+        there were.
+
+        Two tools agreeing is a signal, not noise - so they are MERGED, not
+        dropped: the surviving row names them and says how many there were.
+        The strongest verdict wins, because one tool proving something is not
+        weakened by another failing to.
+        """
+        from app.findings_util import SEV_RANK, dedup as _dedup_key
+
+        order = {"confirmed": 0, "likely": 1, "unconfirmed": 2,
+                 "false_positive": 3}
+        best: dict = {}
+        for row in rows:
+            key = _dedup_key(row.get("vuln_class") or "", row.get("target") or "")
+            current = best.get(key)
+            if current is None:
+                row["duplicates"] = 1
+                row["tools"] = [row.get("tool")] if row.get("tool") else []
+                best[key] = row
+                continue
+            current["duplicates"] += 1
+            if row.get("tool") and row["tool"] not in current["tools"]:
+                current["tools"].append(row["tool"])
+            # Keep whichever row says more: proven first, then verdict, then
+            # severity.
+            better = (
+                (not current.get("proven") and row.get("proven"))
+                or (current.get("proven") == row.get("proven")
+                    and order.get(str(row.get("status")), 9)
+                    < order.get(str(current.get("status")), 9))
+                or (current.get("status") == row.get("status")
+                    and SEV_RANK.get(str(row.get("severity")), 9)
+                    < SEV_RANK.get(str(current.get("severity")), 9))
+            )
+            if better:
+                row["duplicates"] = current["duplicates"]
+                row["tools"] = current["tools"]
+                best[key] = row
+        return list(best.values())
+
     def _vf_public(v) -> dict:
         d = v.to_public()
         d["category"] = category_for_class(v.vuln_class)
@@ -202,7 +249,8 @@ async def engagement_state(engagement_id: str) -> dict:
         "jobs": [j.to_public() for j in jobs],
         "findings": findings,
         "findings_count": len(findings),
-        "validated_findings": [_vf_public(v) for v in validated],
+        "validated_findings": _collapse_duplicates(
+            [_vf_public(v) for v in validated]),
         "validation_summary": validation_summary,
         "chains": chains,
         "categories": _CATEGORY_META,

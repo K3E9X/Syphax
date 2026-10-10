@@ -69,9 +69,11 @@ def stable_vf_id(engagement_id: str, tool: str, title: str, target: str) -> str:
     scoped to the engagement so two engagements against the same host do not
     collide on one primary key.
     """
+    from app.findings_util import normalise_target
+
     ident = "\x00".join([
         str(engagement_id or ""), str(tool or ""),
-        str(title or ""), str(target or ""),
+        str(title or ""), normalise_target(str(target or "")),
     ])
     return "vf_" + hashlib.sha1(ident.encode("utf-8", "replace")).hexdigest()[:20]
 
