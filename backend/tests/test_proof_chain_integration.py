@@ -336,3 +336,39 @@ def test_the_poc_the_model_writes_is_the_shape_the_gate_has_to_accept():
         f"this PoC no longer exercises the gate ({report.verdict}): "
         f"{report.summary}")
     assert report.verdict != "hostile", "and it must not be refused outright"
+
+
+def test_the_same_published_exploit_is_staged_once(monkeypatch):
+    """Two findings sharing a CVE each staged their own copy, so the queue
+    filled with identical rows - four of RoflSecurity/nodeloris/nodeloris.js in
+    one engagement - and a reviewer had to read the same script four times."""
+    H.install(monkeypatch, sandbox=_sandbox_ok, llm_reply=None)
+    for i in (1, 2):
+        H.FakeVFRepo.store[f"vf_cve{i}"] = _vf(
+            id=f"vf_cve{i}", vuln_class="cve", tool="nuclei", severity="critical",
+            title=f"CVE-2021-41773 on host {i}",
+            target=f"https://app.example.com/{i}",
+            metadata={"vuln_class": "cve", "cve_id": "CVE-2021-41773"})
+
+    from app.exploit import campaign
+
+    async def _files(owner, name, *, token=None):
+        return [{"path": "exploit.py", "language": "python", "size": 400}]
+
+    async def _file(owner, name, path, *, token=None):
+        return "import sys, requests\nprint(requests.get(sys.argv[1]).text)\n"
+
+    async def _pocs_by_cve(_eid):
+        return {"CVE-2021-41773": [
+            {"source": "github", "ref": "https://github.com/x/CVE-2021-41773",
+             "runnable": "sandbox", "title": "poc"}]}
+
+    monkeypatch.setattr(campaign, "fetch_repo_files", _files)
+    monkeypatch.setattr(campaign, "fetch_file", _file)
+    monkeypatch.setattr(campaign, "_public_exploits_by_cve", _pocs_by_cve)
+
+    asyncio.run(campaign.run_campaign("eng_1"))
+
+    pocs = asyncio.run(H.FakeStagedRepo().list("eng_1"))
+    same = [p for p in pocs if p.repo == "x/CVE-2021-41773"]
+    assert len(same) == 1, f"{len(same)} copies of the same published exploit"

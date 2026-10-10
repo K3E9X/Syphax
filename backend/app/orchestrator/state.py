@@ -11,12 +11,20 @@ aggregates them rather than duplicating storage.
 """
 from __future__ import annotations
 
+import logging
 import time
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 from urllib.parse import urlparse
 
 from app import db
+
+logger = logging.getLogger("syphax.orchestrator.state")
+
+# How many PARAM-LESS endpoints may become scan targets for one engagement.
+# Endpoints with query parameters are never capped: they are injection points,
+# and seven catalog items apply only to an endpoint that has them.
+MAX_ENDPOINT_ASSETS = 300
 
 SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS assets (
@@ -112,6 +120,23 @@ class EngagementState:
         is_https = value.startswith("https://")
         if kind == "host" and "://" in value:
             value = urlparse(value).hostname or value
+
+        # A ceiling on scan targets, as a structural guard rather than a tuning
+        # knob. The planner builds one task per (catalog item x asset), so the
+        # asset count multiplies everything downstream: a single gau run that
+        # turned 2162 archived URLs into assets made a run exhaust its TIME
+        # budget at iteration 8, having launched 62 jobs and tested nothing.
+        #
+        # gau no longer does that (see wrappers/gau.py), but the next tool that
+        # discovers a lot of URLs would, so the limit lives here where it
+        # covers all of them. A parameterised endpoint is always admitted: it
+        # is an injection point, and it is what the param-gated catalog items
+        # need to exist at all.
+        if kind == "endpoint" and not has_params:
+            if await self._endpoint_count() >= MAX_ENDPOINT_ASSETS:
+                await self._say_capped(value, source)
+                return
+
         async with db.acquire() as conn:
             await conn.execute(
                 """
@@ -121,6 +146,33 @@ class EngagementState:
                 """,
                 self.engagement_id, kind, value, has_params, is_https, source, time.time(),
             )
+
+    async def _endpoint_count(self) -> int:
+        async with db.acquire() as conn:
+            row = await conn.fetchrow(
+                "SELECT COUNT(*) AS n FROM assets "
+                "WHERE engagement_id=$1 AND kind='endpoint' AND has_params=FALSE",
+                self.engagement_id)
+        return int(row["n"]) if row else 0
+
+    async def _say_capped(self, value: str, source: Optional[str]) -> None:
+        """Say it once per run, not once per discarded URL."""
+        if getattr(self, "_capped_reported", False):
+            return
+        self._capped_reported = True
+        try:
+            from app import events
+            await events.emit(
+                self.engagement_id, events.THOUGHT,
+                f"Reached the ceiling of {MAX_ENDPOINT_ASSETS} param-less "
+                f"endpoints to scan; further ones (from {source or 'a tool'}) "
+                f"are recorded as findings but not queued as targets. Endpoints "
+                f"WITH parameters are still admitted - those are the injection "
+                f"points. Raise it only if the budget can afford it: every "
+                f"asset multiplies the task count.",
+                level=events.LEVEL_INFO)
+        except Exception:  # noqa: BLE001 - never fail an ingest on reporting
+            logger.debug("could not report the asset ceiling")
 
     async def assets(self, kind: Optional[str] = None) -> List[Asset]:
         async with db.acquire() as conn:

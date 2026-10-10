@@ -70,14 +70,40 @@ async def stage(req: StageRequest) -> Dict[str, Any]:
                             detail="repo_url must be a github.com repository URL")
     owner, name = parsed
 
-    candidates = await fetch_repo_files(owner, name)
+    try:
+        candidates = await fetch_repo_files(owner, name)
+    except Exception as exc:  # noqa: BLE001 - never answer a bare 500
+        # "Internal Server Error" in the Sandbox panel told the operator
+        # nothing at all. GitHub throttling, a network failure and a private
+        # repository each need a different response from them.
+        logger.exception("staging %s/%s failed", owner, name)
+        raise HTTPException(
+            status_code=502,
+            detail=f"could not reach github for {owner}/{name}: "
+                   f"{exc.__class__.__name__}. If this repeats, the search API "
+                   f"is likely rate-limited - set a GitHub token in Settings."
+        ) from exc
     if not candidates:
-        raise HTTPException(status_code=404,
-                            detail="no runnable PoC file found in that repository")
+        raise HTTPException(
+            status_code=404,
+            detail=f"no runnable PoC file found in {owner}/{name}. The "
+                   f"repository may hold only a README, or the listing was "
+                   f"throttled (a GitHub token in Settings raises the limit).")
 
     staged: List[Dict[str, Any]] = []
     for c in candidates:
-        code = await fetch_file(owner, name, c["path"])
+        # Already staged for this engagement: hand back the existing row
+        # instead of a second identical one for the reviewer to read.
+        already = await _repo.find_by_source(eng.id, f"{owner}/{name}", c["path"])
+        if already is not None:
+            staged.append(already.to_public(include_code=False))
+            continue
+        try:
+            code = await fetch_file(owner, name, c["path"])
+        except Exception as exc:  # noqa: BLE001 - one bad file is not the batch
+            logger.warning("could not fetch %s/%s/%s: %s",
+                           owner, name, c["path"], exc)
+            continue
         if not code:
             continue
         # Inspected at stage time, not at run time: the reviewer needs the

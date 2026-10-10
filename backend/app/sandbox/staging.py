@@ -275,6 +275,22 @@ class StagedPoCRepository:
             row = await conn.fetchrow("SELECT * FROM staged_pocs WHERE id=$1", poc_id)
         return _row_to_poc(row) if row else None
 
+    async def find_by_source(self, engagement_id: str, repo: str,
+                             path: str) -> Optional[StagedPoC]:
+        """An already-staged copy of the same file, if there is one.
+
+        Two findings that share a CVE each staged their own copy of the same
+        published exploit, so the PoC queue filled with identical rows - four
+        of `RoflSecurity/nodeloris / nodeloris.js` in one engagement - and a
+        reviewer had to read the same script four times to clear them.
+        """
+        async with db.acquire() as conn:
+            row = await conn.fetchrow(
+                "SELECT * FROM staged_pocs WHERE engagement_id=$1 AND repo=$2 "
+                "AND path=$3 ORDER BY created_at LIMIT 1",
+                engagement_id, repo, path)
+        return _row_to_poc(row) if row else None
+
     async def repoint_findings(self, engagement_id: str,
                                mapping: Dict[str, str]) -> int:
         """Move PoCs from an old finding id to its replacement.

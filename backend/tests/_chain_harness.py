@@ -101,6 +101,14 @@ class FakeStagedRepo:
             poc.status = status
             poc.decided_by = decided_by
 
+    async def find_by_source(self, engagement_id: str, repo: str, path: str):
+        for poc in self.store.values():
+            if (poc.engagement_id == engagement_id
+                    and getattr(poc, "repo", None) == repo
+                    and getattr(poc, "path", None) == path):
+                return poc
+        return None
+
     async def repoint_findings(self, engagement_id: str, mapping: Dict[str, str]) -> int:
         moved = 0
         for poc in self.store.values():
