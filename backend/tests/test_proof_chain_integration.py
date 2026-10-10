@@ -372,3 +372,64 @@ def test_the_same_published_exploit_is_staged_once(monkeypatch):
     pocs = asyncio.run(H.FakeStagedRepo().list("eng_1"))
     same = [p for p in pocs if p.repo == "x/CVE-2021-41773"]
     assert len(same) == 1, f"{len(same)} copies of the same published exploit"
+
+
+def test_a_poc_that_was_not_run_records_why(monkeypatch):
+    """The decision was printed once into the live console and thrown away with
+    the attempt record, so a PoC sitting at "not run" carried no trace of the
+    reason - and the review panel guessed, wrongly, that its inspection said it
+    attacks the operator."""
+    H.install(monkeypatch, sandbox=_sandbox_ok, llm_reply=WORKING_POC)
+
+    async def _off():
+        return False
+
+    monkeypatch.setattr("app.exploit.settings_live.auto_run_poc", _off)
+    H.FakeVFRepo.store["vf_1"] = _vf()
+
+    from app.exploit.campaign import run_campaign
+    asyncio.run(run_campaign("eng_1"))
+
+    pocs = asyncio.run(H.FakeStagedRepo().list("eng_1"))
+    assert pocs, "nothing was staged"
+    auto = (pocs[0].inspection or {}).get("auto_run") or {}
+    assert auto.get("ran") is False
+    assert "auto-run is off" in auto.get("reason", ""), auto
+
+
+def test_a_poc_that_did_run_records_that_too(monkeypatch):
+    H.install(monkeypatch, sandbox=_sandbox_ok, llm_reply=WORKING_POC)
+
+    async def _no_refine():
+        return 0
+
+    monkeypatch.setattr("app.exploit.settings_live.refine_iterations", _no_refine)
+    H.FakeVFRepo.store["vf_1"] = _vf()
+
+    from app.exploit.campaign import run_campaign
+    asyncio.run(run_campaign("eng_1"))
+
+    pocs = asyncio.run(H.FakeStagedRepo().list("eng_1"))
+    auto = (pocs[0].inspection or {}).get("auto_run") or {}
+    assert auto.get("ran") is True
+    assert auto.get("exit_code") == 0
+
+
+def test_every_exit_from_the_gate_is_recorded():
+    """A branch that forgets to record leaves exactly the blank the review
+    panel used to fill with a guess."""
+    import inspect as _i
+
+    from app.exploit import campaign
+
+    src = _i.getsource(campaign._auto_run_staged)
+    returns = [ln.strip() for ln in src.splitlines()
+               if ln.strip().startswith("return ")]
+    assert returns, "no return found; re-read this test"
+    # The single exemption, and it is not a gap: there is no row left to record
+    # anything on. Anything else that skips the record leaves exactly the blank
+    # the review panel used to fill with a guess.
+    missed = [r for r in returns
+              if "_record_auto_run" not in r
+              and "no longer exists" not in r]
+    assert not missed, f"these exits record nothing: {missed}"

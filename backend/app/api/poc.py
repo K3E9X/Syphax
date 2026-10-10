@@ -193,6 +193,11 @@ async def overview(engagement_id: str = "") -> Dict[str, Any]:
             "stdout": (run.get("stdout") or "")[:4000],
             "stderr": (run.get("stderr") or "")[:2000],
             "proved": proved,
+            # Why the campaign did or did not run it. Recorded on the PoC by
+            # campaign._record_auto_run, because the decision used to be printed
+            # once into the live console and then discarded - leaving the
+            # review panel to guess, and to guess wrong.
+            "not_run_because": (insp.get("auto_run") or {}).get("reason"),
         })
     return {"counts": counts, "items": items}
 
