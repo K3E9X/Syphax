@@ -82,12 +82,30 @@ async def run_scan(ctx: Dict[str, Any], job_id: str) -> Dict[str, Any]:
     stderr_buf = bytearray()
     proc: Optional[asyncio.subprocess.Process] = None
 
+    # Some tools read their targets from standard input rather than a flag.
+    # Without this the subprocess inherited no usable stdin, so a wrapper had
+    # no way to express it - dnsx failed on every job for want of one line.
+    stdin_text = None
+    try:
+        stdin_text = wrapper.stdin_for(job.target, job.args or [])
+    except Exception:  # noqa: BLE001 - a wrapper quirk is not a launch failure
+        logger.exception("[%s] stdin_for failed for %s", job.id, job.tool)
+
     try:
         proc = await asyncio.create_subprocess_exec(
             *cmd,
+            stdin=asyncio.subprocess.PIPE if stdin_text is not None else None,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
+        if stdin_text is not None and proc.stdin is not None:
+            try:
+                proc.stdin.write(stdin_text.encode())
+                await proc.stdin.drain()
+            except (BrokenPipeError, ConnectionResetError):
+                pass          # the tool exited before reading; its error says why
+            finally:
+                proc.stdin.close()
 
         try:
             await asyncio.wait_for(

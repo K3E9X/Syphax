@@ -5,7 +5,7 @@ Useful for mapping infra and spotting CNAMEs that hint at takeover targets.
 """
 from __future__ import annotations
 
-from typing import List, Sequence
+from typing import List, Optional, Sequence
 from urllib.parse import urlparse
 
 from app.scans.models import Finding
@@ -20,11 +20,19 @@ class DnsxWrapper(BaseWrapper):
     category = "recon"
     timeout_seconds = 10 * 60
 
-    def build_command(self, target: str, options: Sequence[str]) -> List[str]:
+    def stdin_for(self, target: str, options: Sequence[str]) -> Optional[str]:
+        """The host to resolve. dnsx reads these from standard input."""
         host = _target_to_host(target)
+        return f"{host}\n" if host else None
+
+    def build_command(self, target: str, options: Sequence[str]) -> List[str]:
+        # NO `-d`. In dnsx, -d/-domain means "bruteforce subdomains of this
+        # domain" and is refused without a wordlist: it exited 1 on every job
+        # with "missing wordlist(w) flag required with domain(d) input", and
+        # the engagement lost its DNS records entirely. Plain resolution reads
+        # the hosts from stdin - see stdin_for.
         cmd = [
             self.binary,
-            "-d", host,
             "-json",
             "-silent",
             "-a", "-aaaa", "-cname",

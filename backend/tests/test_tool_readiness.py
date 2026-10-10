@@ -501,3 +501,77 @@ def test_the_diagnosis_does_not_judge_a_run_that_is_still_going():
     assert verdict in src
     assert src.index('in ("running", "queued")') < src.index(verdict), \
         "the post-mortem is reached before the still-running check"
+
+
+# ---- does the binary accept the command line we build for it? -------------
+#
+# Neither "is it installed" nor "does it have its data" asks that, and two
+# tools were failing every job because of it. The symptom is a non-zero exit
+# and no findings, which is indistinguishable from a clean target unless
+# somebody reads the stderr.
+
+def test_the_usage_error_detector_knows_the_two_real_ones():
+    from app.selftest import _rejected_its_own_arguments
+
+    httpx_said = "Usage: httpx [OPTIONS] URL\nError: No such option '-u'."
+    dnsx_said = "[FTL] missing wordlist(w) flag required with domain(d) input"
+    assert _rejected_its_own_arguments(httpx_said)
+    assert _rejected_its_own_arguments(dnsx_said)
+
+
+def test_it_does_not_cry_wolf_over_an_unreachable_target():
+    """A tool that complains about the network has already proved its
+    arguments parse - that is the whole point of aiming at a dead port."""
+    from app.selftest import _rejected_its_own_arguments
+
+    for benign in ("connection refused", "dial tcp 127.0.0.1:1: connect: "
+                   "connection refused", "no results found", "i/o timeout",
+                   "Could not resolve host"):
+        assert not _rejected_its_own_arguments(benign), benign
+
+
+def test_the_selftest_runs_it():
+    import inspect as _i
+
+    from app import selftest
+
+    for fn in (selftest.run, selftest.as_json):
+        assert "check_invocations" in _i.getsource(fn), fn.__name__
+
+
+# ---- dnsx: -d means bruteforce, which it refuses without a wordlist -------
+
+def test_dnsx_does_not_ask_for_a_bruteforce_it_cannot_do():
+    """`dnsx -d host` exits 1 with "missing wordlist(w) flag required with
+    domain(d) input" - every DNS job failed and the engagement lost its
+    records."""
+    wrapper = _WRAPPERS["dnsx"]
+    argv = wrapper.build_command("https://t.example/", [])
+    assert "-d" not in argv, argv
+    assert "-domain" not in argv, argv
+
+
+def test_dnsx_gets_its_host_on_stdin():
+    wrapper = _WRAPPERS["dnsx"]
+    assert wrapper.stdin_for("https://t.example/", []) == "t.example\n"
+
+
+def test_the_runner_feeds_stdin_when_a_wrapper_asks_for_it():
+    """The subprocess was given no stdin at all, so a wrapper had no way to
+    express "this tool reads its targets from standard input"."""
+    import inspect as _i
+
+    from app import workers
+
+    src = _i.getsource(workers)
+    assert "wrapper.stdin_for(" in src
+    assert "stdin=asyncio.subprocess.PIPE" in src
+    assert "proc.stdin.close()" in src, "an unclosed stdin hangs a tool at EOF"
+
+
+def test_a_wrapper_that_wants_no_stdin_gets_none():
+    """The default must stay None, or every tool suddenly waits on a pipe."""
+    for wrapper in _WRAPPERS.values():
+        if wrapper.name == "dnsx":
+            continue
+        assert wrapper.stdin_for("https://t.example/", []) is None, wrapper.name

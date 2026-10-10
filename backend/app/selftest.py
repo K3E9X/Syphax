@@ -60,6 +60,103 @@ def check_tools() -> List[str]:
     return out
 
 
+# Phrases a command-line tool prints when it REJECTS ITS OWN ARGUMENTS. These
+# are unambiguous: they mean the wrapper is calling the binary wrongly, not
+# that the target was unreachable.
+#
+# Two tools were doing exactly this and nothing noticed, because the symptom is
+# a non-zero exit and no findings - which is indistinguishable from a clean
+# target unless someone reads the stderr:
+#
+#   httpx  "Usage: httpx [OPTIONS] URL / Error: No such option '-u'"
+#          (pip's httpx console script had overwritten the Go binary)
+#   dnsx   "missing wordlist(w) flag required with domain(d) input"
+#          (-d means bruteforce; plain resolution reads stdin)
+_USAGE_ERROR = (
+    "no such option", "unknown flag", "unknown shorthand flag",
+    "flag provided but not defined", "unrecognized option", "invalid option",
+    "flag needs an argument", "required with", "usage:", "unknown command",
+    "unexpected argument",
+)
+
+# Somewhere nothing listens, so a tool that gets this far is failing on its
+# arguments rather than on the network.
+_DEAD_TARGET = "http://127.0.0.1:1/"
+_INVOCATION_TIMEOUT = 20
+
+
+def _rejected_its_own_arguments(text: str) -> str:
+    low = (text or "").lower()
+    for marker in _USAGE_ERROR:
+        if marker in low:
+            line = next((ln.strip() for ln in (text or "").splitlines()
+                         if marker in ln.lower()), "")
+            return line[:140] or marker
+    return ""
+
+
+async def check_invocations() -> List[str]:
+    """Run every installed tool with the argv its wrapper builds.
+
+    Not "is the binary there" and not "does it have its data" - does it ACCEPT
+    THE COMMAND LINE WE GIVE IT. That question had never been asked, and two
+    tools had been failing every job because of it.
+
+    The target is a dead local port: anything that gets as far as complaining
+    about the network has already proved its arguments parse.
+    """
+    import asyncio
+
+    from app.scans.wrappers import _WRAPPERS
+
+    out = ["", "INVOCATION  each tool, with the command line its wrapper builds"]
+    bad = 0
+    for name in sorted(_WRAPPERS):
+        wrapper = _WRAPPERS[name]
+        if not wrapper.is_available():
+            continue
+        try:
+            argv = wrapper.build_command(_DEAD_TARGET, [])
+            stdin_text = wrapper.stdin_for(_DEAD_TARGET, [])
+        except Exception as exc:  # noqa: BLE001
+            out.append(_line(BROKEN, name,
+                             f"the wrapper could not build a command: {exc}"))
+            bad += 1
+            continue
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                *argv,
+                stdin=asyncio.subprocess.PIPE if stdin_text else asyncio.subprocess.DEVNULL,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE)
+            raw = (stdin_text or "").encode() or None
+            streams = await asyncio.wait_for(proc.communicate(raw),
+                                             timeout=_INVOCATION_TIMEOUT)
+        except asyncio.TimeoutError:
+            # It ran long enough to be waiting on the network: its arguments
+            # parsed, which is all this check claims to decide.
+            out.append(_line(OK, name, "accepted its arguments (still running)"))
+            continue
+        except Exception as exc:  # noqa: BLE001
+            out.append(_line(BROKEN, name,
+                             f"could not be launched: {exc.__class__.__name__}"))
+            bad += 1
+            continue
+
+        text = b"\n".join(x or b"" for x in streams).decode("utf-8", "replace")
+        complaint = _rejected_its_own_arguments(text)
+        if complaint:
+            out.append(_line(BROKEN, name,
+                             f"rejects the command line we give it: {complaint}"))
+            bad += 1
+        else:
+            out.append(_line(OK, name, "accepted its arguments"))
+
+    if not bad:
+        out.append(_line(OK, "every installed tool", "accepts its command line"))
+    return out
+
+
 # --------------------------------------------------------------------------- #
 # the model: a live call per role, not a key check
 
@@ -298,6 +395,7 @@ async def run() -> int:
         lines.append(_line(OK, "settings", "loaded from the database"))
 
     lines += check_tools()
+    lines += await check_invocations()
     lines += await check_llm()
     lines += await check_exploit_authoring()
     lines += await check_poc_search()
@@ -334,6 +432,7 @@ async def as_json() -> dict:
 
     sections = {
         "tools": check_tools(),
+        "invocation": await check_invocations(),
         "model": await check_llm(),
         "authoring": await check_exploit_authoring(),
         "poc_search": await check_poc_search(),

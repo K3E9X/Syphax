@@ -303,6 +303,18 @@ class BaseWrapper:
         """Return the argv to run. Must include the binary as argv[0]."""
         raise NotImplementedError
 
+    def stdin_for(self, target: str, options: Sequence[str]) -> Optional[str]:
+        """Text to feed the tool on standard input, or None.
+
+        Several ProjectDiscovery tools take their input that way and have no
+        flag for a single value: dnsx resolves what it reads on stdin, and its
+        -d flag means "bruteforce this domain" and refuses to run without a
+        wordlist ("missing wordlist(w) flag required with domain(d) input").
+        The runner gave the subprocess no stdin at all, so there was no way to
+        express it and the job failed every time.
+        """
+        return None
+
     def parse(self, stdout: bytes, stderr: bytes, exit_code: int, target: str) -> ToolResult:
         raise NotImplementedError
 
