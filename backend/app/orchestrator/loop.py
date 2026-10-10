@@ -131,8 +131,10 @@ async def run_engagement_loop(run_id: str) -> dict:
     max_jobs = engagement.budget_requests or DEFAULT_MAX_JOBS
     deadline = time.time() + (engagement.budget_seconds or DEFAULT_MAX_SECONDS)
 
-    # Before anything is planned: which tools can actually find something.
+    # Before anything is planned: which tools can actually find something,
+    # and whether the crawl's traffic is being captured for the analysers.
     try:
+        await _report_capture(engagement, run)
         await _report_tool_readiness(engagement, run)
     except Exception:  # noqa: BLE001 - a preflight must never fail a run
         logger.exception("[%s] tool preflight failed", run.id)
@@ -448,6 +450,51 @@ def _last_phase(phases_seen: Optional[set]) -> str:
         return ""
     ordered = [p for p in _PHASE_ORDER if p in phases_seen]
     return ordered[-1] if ordered else sorted(phases_seen)[-1]
+
+
+async def _report_capture(engagement, run) -> None:
+    """Say whether this run will have traffic to analyse.
+
+    IDOR, BFLA, broken access control, JWT and secrets-in-bundles all read the
+    captured flows. Nothing routed tool traffic through the capture proxy, so
+    on an automated run that table was empty and all of them ran against
+    nothing - called, with no input. The difference between a run that can find
+    those classes and one that cannot is worth one line at the start.
+    """
+    try:
+        from app.network.privacy import get_network_manager
+        from app.proxy.capture import capture_proxy_url
+        from app.scans.identity import CAPTURE_WORTH_IT
+
+        anonymity = await get_network_manager().proxy_for_tools_shared()
+        if anonymity:
+            await events.emit(
+                engagement.id, events.PHASE_CHANGED,
+                "Crawl traffic will NOT be captured: an anonymity proxy is "
+                "configured and a tool takes one proxy flag. Leaking the real "
+                "IP is the worse trade. The IDOR, access-control, JWT and "
+                "secret-in-JavaScript checks will have nothing to read unless "
+                "you browse the target through the proxy yourself.",
+                run_id=run.id, level=events.LEVEL_INFO)
+            return
+        url = capture_proxy_url()
+        if url:
+            await events.emit(
+                engagement.id, events.PHASE_CHANGED,
+                f"Crawl traffic is being captured ({', '.join(sorted(CAPTURE_WORTH_IT))} "
+                f"-> {url}), so the IDOR, access-control, JWT and "
+                f"secret-in-JavaScript checks have something to read.",
+                run_id=run.id, level=events.LEVEL_INFO)
+        else:
+            await events.emit(
+                engagement.id, events.PHASE_CHANGED,
+                "Crawl traffic will NOT be captured: the capture proxy is not "
+                "reachable. The traffic-driven checks (IDOR, access control, "
+                "JWT, secrets in JavaScript) will find nothing - they read "
+                "captured flows, and there will be none.",
+                run_id=run.id, level=events.LEVEL_INFO)
+    except Exception:  # noqa: BLE001 - reporting must never fail a run
+        logger.exception("[%s] could not report the capture state", run.id)
 
 
 def _tool_readiness() -> list:

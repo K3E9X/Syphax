@@ -416,3 +416,27 @@ def proxy_args(tool: str, proxy_url: str) -> List[str]:
 
 def supports_proxy(tool: str) -> bool:
     return tool in _PROXY_FLAG
+
+
+# Tools whose traffic is worth CAPTURING, as opposed to merely anonymising.
+#
+# The traffic-driven analysers - IDOR and BFLA (analysis/logic.py), broken
+# access control, JWT, secrets in JavaScript bundles - all read
+# FlowRepository, and nothing routed tool traffic through the capture proxy.
+# So on an automated run that table was EMPTY and every one of them read
+# nothing: they were called, and they had no input. That is why those classes
+# only ever appeared after someone browsed the target by hand.
+#
+# Only these two are routed, and the restraint is the point. katana fetches
+# the application's pages AND its JavaScript, which is what js_recon, jsluice,
+# retire.js and trufflehog need; httpx fetches each discovered endpoint with
+# its headers and body, which is what the access-control and posture checks
+# compare. ffuf, nuclei, sqlmap and commix each make thousands of requests
+# that are payloads rather than application behaviour - capturing those would
+# fill the flow store (2 MiB per body, no cap) and teach the analysers
+# nothing.
+CAPTURE_WORTH_IT = frozenset({"katana", "httpx"})
+
+
+def should_capture(tool: str) -> bool:
+    return tool in CAPTURE_WORTH_IT and tool in _PROXY_FLAG

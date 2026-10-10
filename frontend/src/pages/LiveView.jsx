@@ -157,27 +157,17 @@ export default function LiveView() {
 
   async function run() { setBusy(true); try { await api.engagements.run(id); await loadState(); } catch (e) { flash(e.message); } finally { setBusy(false); } }
   async function stop() { setBusy(true); try { await api.engagements.stop(id); await loadState(); } catch (e) { flash(e.message); } finally { setBusy(false); } }
-  // ONE button, where there were two.
+  // There is no "Deep analysis" / "Re-validate" button, on purpose.
   //
-  // "Deep analysis" and "Re-validate" called two endpoints that ran the same
-  // three things in the same order, so there was nothing to choose between
-  // them. Both were also a subset of a run - and the subset was the problem:
-  // the analyzers produced findings and nothing then tried to prove them,
-  // because the exploitation campaign was not in the sequence.
+  // They called two endpoints that ran the same three things in the same
+  // order, and a RUN ALREADY DOES ALL OF IT - loop.py calls run_analysis in
+  // finalisation. The only case they covered that a run does not is mining
+  // traffic captured by browsing the target through the proxy afterwards, and
+  // that is not how this operator works. Two buttons that duplicate the Run
+  // button are worse than no buttons: this bar should hold decisions.
   //
-  // It is still worth having, and not only as part of a run: after browsing
-  // the target through the proxy there is new authenticated traffic to mine,
-  // and re-reading it costs a fraction of a full scan.
-  async function reanalyse() {
-    setBusy(true);
-    try {
-      const r = await api.engagements.validate(id);
-      await loadState();
-      const st = r.stats || {};
-      flash(`Re-analysed: ${st.total ?? st.validated ?? 0} finding(s), `
-        + `${r.proven ?? 0} proven · ${r.chains ?? 0} chain(s)`);
-    } catch (e) { flash(e.message); } finally { setBusy(false); }
-  }
+  // The endpoints remain (POST /validate and /analyze-traffic) for a script;
+  // nothing in this UI calls them.
   async function decide(aid, decision) { try { await api.engagements.decideApproval(id, aid, decision); await loadState(); } catch (e) { flash(e.message); } }
   async function retest(fid) {
     flash('Re-testing...');
@@ -270,10 +260,6 @@ export default function LiveView() {
         <div className="lv2-head__actions">
           {!active && <button className="btn btn--solid" onClick={run} disabled={busy}>Run</button>}
           {active && <button className="btn btn--danger" onClick={stop} disabled={busy}>Stop</button>}
-          <button className="btn" onClick={reanalyse} disabled={busy}
-                  title="Re-read everything captured through the proxy, re-decide every finding, and try to prove the new ones. Use it after browsing the target - it costs a fraction of a full run.">
-            Re-analyse
-          </button>
           <a className="btn btn--muted" href={`/api/engagements/${id}/report.md`} target="_blank" rel="noreferrer">Report .md</a>
           <a className="btn btn--muted" href={`/api/engagements/${id}/report.html`} target="_blank" rel="noreferrer">Print</a>
         </div>

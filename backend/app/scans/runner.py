@@ -139,6 +139,7 @@ class Runner:
         # explicit caller-supplied flag still wins.
         try:
             from app.scans.identity import identity_args, proxy_args
+            from app.proxy.capture import capture_proxy_url
 
             # The engagement's identity choice, when there is one. Loaded from
             # the row the authorization gate already fetched above, so this
@@ -151,7 +152,20 @@ class Runner:
             ) + options
             proxy = await netmgr.proxy_for_tools_shared()
             if proxy:
+                # Anonymity wins. A tool takes one proxy flag, and leaking the
+                # real IP is worse than missing some captured traffic.
                 options = proxy_args(tool, proxy) + options
+            else:
+                # Otherwise route the crawl through our own capture proxy, so
+                # the traffic-driven analysers have something to read. Without
+                # this the flows table is empty on an automated run and the
+                # IDOR, access-control, JWT and secrets-in-bundles checks all
+                # run against nothing.
+                from app.scans.identity import should_capture
+
+                capture = capture_proxy_url() if should_capture(tool) else ""
+                if capture:
+                    options = proxy_args(tool, capture) + options
         except Exception:  # noqa: BLE001 - never block a scan on identity wiring
             logger.exception("identity wiring failed for %s", tool)
 
