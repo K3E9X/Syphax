@@ -19,6 +19,7 @@ from app import events
 from app.llm import ROLE_PLANNER, LLMError, get_router
 from app.methodology import CATALOG, CATALOG_BY_ID, PHASE_ORDER, applies
 from app.orchestrator.state import Asset, EngagementState
+from urllib.parse import urlparse
 
 logger = logging.getLogger("syphax.orchestrator.planner")
 
@@ -32,6 +33,9 @@ class Task:
     tool: str
     options: List[str]
     phase: str
+    # Where the asset came from. "engagement" is the operator's own target,
+    # which outranks everything inferred from it when the budget is spent.
+    asset_source: str = ""
 
     @property
     def key(self) -> str:
@@ -177,6 +181,7 @@ class Planner:
                     Task(
                         catalog_item_id=item.id,
                         asset_value=asset.value,
+                        asset_source=asset.source or "",
                         tool=item.tool,
                         options=list(item.default_options),
                         phase=item.phase,
@@ -287,11 +292,76 @@ def _memory_rank(task: Task, remembered: List[str]):
     return (phase_idx, rank) + _task_sort_key(task)[1:]
 
 
+# Paths worth spending a job on before anything else. Ordered: the earlier a
+# marker appears, the more interesting the asset.
+_INTERESTING_PATH = (
+    "admin", "login", "signin", "auth", "oauth", "token", "session",
+    "account", "user", "profile", "password", "reset", "register",
+    "api", "graphql", "rest", "v1", "v2", "rpc",
+    "upload", "import", "export", "file", "download", "attachment",
+    "search", "query", "filter", "report", "invoice", "order", "payment",
+    "config", "setting", "debug", "status", "health", "actuator", "console",
+    "backup", "db", "sql", "dump", "log",
+)
+
+# Paths that are almost never worth a job: archive noise and generated assets.
+_DULL_PATH = ("/img/", "/image", "/css/", "/js/", "/font", "/static/",
+              "/assets/", "/vendor/", "/node_modules/", "/dist/",
+              "/wp-content/uploads/", "/media/", "/thumb")
+
+
+def asset_interest(url: str, *, source: str = "") -> int:
+    """How promising this target is. Lower is better; used to ORDER the budget.
+
+    This is the half of the volume problem that capping does not solve. The
+    planner took assets in insertion order (`ORDER BY id`), so on a target
+    whose surface came from an archive, the exploitation phase spent its share
+    on the first sixty URLs gau happened to return - archived .jsp pages -
+    while /bank/login.jsp sat untested further down the list. Bounding the
+    number of assets limits the damage; ordering them is what makes the budget
+    buy something.
+
+    Pure, so the ranking is testable without a database.
+    """
+    value = (url or "").lower()
+    try:
+        parsed = urlparse(value)
+        path = parsed.path or "/"
+        query = parsed.query
+    except ValueError:
+        path, query = value, ""
+
+    # The engagement's own target first: it is the one host we are certain
+    # matters, and everything else was inferred from it.
+    if source == "engagement":
+        return 0
+    # Then anything carrying parameters - an injection point, and what the
+    # seven param-gated catalog items need to exist at all.
+    if query:
+        return 1
+    for marker in _DULL_PATH:
+        if marker in path:
+            return 90
+    for rank, marker in enumerate(_INTERESTING_PATH):
+        if marker in path:
+            # 10..69, preserving the order of the table above.
+            return 10 + min(rank, 59)
+    # A short path is more likely to be a real entry point than a deep one.
+    depth = path.count("/")
+    return 70 + min(depth, 19)
+
+
 def _task_sort_key(t: Task):
     phase_idx = PHASE_ORDER.index(t.phase) if t.phase in PHASE_ORDER else 99
     item = CATALOG_BY_ID.get(t.catalog_item_id)
     sev = _SEVERITY_RANK.get(item.severity_default if item else "info", 4)
-    return (phase_idx, sev, t.catalog_item_id, t.asset_value)
+    # Asset interest comes BEFORE the catalog item's severity, deliberately.
+    # A job slot is spent on one (item, asset) pair, and a mediocre asset
+    # wastes the slot whichever tool runs on it - so it is better to run every
+    # applicable test against the best targets than one test against all of
+    # them. This is what decides where a capped budget actually goes.
+    return (phase_idx, asset_interest(t.asset_value, source=t.asset_source),
+            sev, t.catalog_item_id, t.asset_value)
 
 
 def _ordered_keys_from(parsed) -> List[str]:
