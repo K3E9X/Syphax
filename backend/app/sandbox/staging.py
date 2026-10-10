@@ -361,6 +361,31 @@ class StagedPoCRepository:
                 "UPDATE staged_pocs SET inspection=$1 WHERE id=$2",
                 json.dumps(inspection), poc_id)
 
+    async def attach_auto_run(self, poc_id: str, outcome: Dict[str, Any]) -> None:
+        """Why the campaign did or did not run this PoC.
+
+        The decision was made in `campaign._auto_run_staged`, printed once into
+        the live console, and then thrown away with the attempt record. So a
+        PoC sitting at "not run" carried no trace of the reason, and the review
+        panel had to guess - it guessed "its inspection says it attacks you",
+        which was wrong for every PoC whose inspection was clean.
+
+        Stored on the PoC itself so the answer survives the run that made it.
+        """
+        async with db.acquire() as conn:
+            row = await conn.fetchrow(
+                "SELECT inspection FROM staged_pocs WHERE id=$1", poc_id)
+            if row is None:
+                return
+            try:
+                inspection = json.loads(row["inspection"] or "{}")
+            except (TypeError, ValueError):
+                inspection = {}
+            inspection["auto_run"] = {**outcome, "decided_at": time.time()}
+            await conn.execute(
+                "UPDATE staged_pocs SET inspection=$1 WHERE id=$2",
+                json.dumps(inspection), poc_id)
+
 
 def _row_to_poc(row) -> StagedPoC:
     try:

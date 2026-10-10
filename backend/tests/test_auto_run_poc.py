@@ -165,7 +165,7 @@ async def test_the_gate_still_honours_the_target_vet(gate):
                         allowed=False)
     out = await campaign._auto_run_staged(_eng(), poc.id)
     assert out.get("ran") is False
-    assert "vetting" in out.get("reason", "")
+    assert "target-safety vet" in out.get("reason", ""), out
     assert not gate.ran
 
 

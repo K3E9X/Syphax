@@ -101,6 +101,11 @@ class FakeStagedRepo:
             poc.status = status
             poc.decided_by = decided_by
 
+    async def attach_auto_run(self, poc_id: str, outcome: Dict[str, Any]) -> None:
+        poc = self.store.get(poc_id)
+        if poc is not None:
+            poc.inspection = {**(poc.inspection or {}), "auto_run": outcome}
+
     async def find_by_source(self, engagement_id: str, repo: str, path: str):
         for poc in self.store.values():
             if (poc.engagement_id == engagement_id

@@ -35,6 +35,9 @@ function Verdict({ item }) {
 // the two readings right above it reported. Say the reason that applies.
 export function notRunBecause(poc) {
   if (!poc) return '';
+  // The reason the campaign actually recorded, when there is one. Anything
+  // below this is a fallback for PoCs staged before the decision was kept.
+  if (poc.not_run_because) return `Not run: ${poc.not_run_because}`;
   if (poc.inspection_verdict === 'hostile') {
     return 'Not run: static inspection found a critical signal — credential '
       + 'theft, a reverse shell, persistence or something destructive. That is '
