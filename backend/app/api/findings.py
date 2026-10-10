@@ -18,15 +18,22 @@ from app import db
 from app.audit import audit
 from app.engagements import EngagementRepository, EngagementStatus
 from app.findings_util import (
-    CVSS as _CVSS,
     SEV_RANK as _SEV_RANK,
     TRIAGE_STATUSES as _TRIAGE_STATUSES,
     cvss_for,
+    score_for,
     dedup as _dedup,
     h1_markdown,
 )
 from app.reporting.mappings import category_for_class, for_class
 from app.validation import ValidatedFindingRepository, build_chains, validate_engagement
+
+def _scored(f) -> dict:
+    """{"cvss": value, "score_basis": ..., "score_explain": ...} for one row."""
+    out = score_for(f)
+    return {"cvss": out["value"], "score_basis": out["basis"],
+            "score_explain": out["explain"]}
+
 
 router = APIRouter(tags=["findings"])
 
@@ -69,7 +76,11 @@ async def list_findings(severity: str = "", status: str = "", q: str = "",
         if g is None:
             g = {
                 "id": f.id, "dedup": key, "severity": f.severity,
-                "cvss": _CVSS.get((f.severity or "info").lower(), 1.0),
+                # The number AND where it came from. A published CVSS is a
+                # fact; everything else is derived here from impact and how
+                # well the finding is established, and says so rather than
+                # borrowing the name CVSS for a severity lookup.
+                **_scored(f),
                 "title": f.title, "target": f.target, "cls": f.vuln_class,
                 # Coarse family (injection / access_control / …) so the UI can
                 # group findings into the knowledge map without re-deriving it.
@@ -111,9 +122,14 @@ async def list_findings(severity: str = "", status: str = "", q: str = "",
             g["dup"] += 1
             g["tools"].add(f.tool)
             g["last_seen"] = max(g["last_seen"], f.created_at)
+            # The group takes the strongest member's score, which is not
+            # always its most severe member: a proven medium outranks an
+            # unconfirmed critical, and that is the order to triage in.
+            scored = _scored(f)
+            if scored["cvss"] > g.get("cvss", 0):
+                g.update(scored)
             if _SEV_RANK.get(f.severity, 9) < _SEV_RANK.get(g["severity"], 9):
                 g["severity"] = f.severity
-                g["cvss"] = _CVSS.get((f.severity or "info").lower(), 1.0)
 
     items = []
     for g in groups.values():

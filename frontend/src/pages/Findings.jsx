@@ -211,14 +211,19 @@ export default function Findings() {
           </div>
           <div className="tbl-scroll">
             <table className="tbl fnd-tbl">
-              <thead><tr><th>Sev</th><th>CVSS</th><th>Title</th><th>Target</th><th>Status</th><th>Eng.</th><th>Seen</th></tr></thead>
+              <thead><tr><th>Sev</th><th title="A published CVSS where one exists; otherwise impact weighted by how well the finding is established.">Score</th><th>Title</th><th>Target</th><th>Status</th><th>Eng.</th><th>Seen</th></tr></thead>
               <tbody>
                 {visible.map((r) => (
                   <tr key={r.id}
                       className={'clickable fnd-row fnd-row--' + r.severity + (r.id === sel ? ' selected' : '')}
                       tabIndex={0} onClick={() => setSel(r.id)} onKeyDown={activateOnKey(() => setSel(r.id))}>
                     <td><span className={'sev sev--' + r.severity}>{r.severity}</span></td>
-                    <td><span className={'cvss cvss--' + CVSS_CLASS(r.cvss)}>{(r.cvss || 0).toFixed(1)}</span></td>
+                    <td>
+                      <span className={'cvss cvss--' + CVSS_CLASS(r.cvss)}
+                            title={r.score_explain || ''}>
+                        {(r.cvss || 0).toFixed(1)}
+                      </span>
+                    </td>
                     <td className="col-title">{r.title}{r.dup > 1 ? <span className="dedup"> · <b>{r.dup}×</b></span> : null}</td>
                     <td className="mono truncate" style={{ maxWidth: 180, color: 'var(--text-secondary)' }} title={r.target}>{r.target}</td>
                     <td><span className={'status-pill ' + r.status}>{(r.status || 'new').replace('_', ' ')}</span></td>
@@ -243,7 +248,15 @@ export default function Findings() {
               <div className="fdetail__head">
                 <div className="detail__row">
                   <span className={'sev sev--' + f.severity}>{f.severity}</span>
-                  <span className={'cvss cvss--' + CVSS_CLASS(f.cvss)}>CVSS {(f.cvss || 0).toFixed(1)}</span>
+                  {/* "CVSS" only when it IS one. Everything else is derived
+                      here from impact and how well the finding is established,
+                      and saying CVSS would be a false claim in a document a
+                      client reads. */}
+                  <span className={'cvss cvss--' + CVSS_CLASS(f.cvss)}
+                        title={f.score_explain || ''}>
+                    {f.score_basis === 'cvss' ? 'CVSS ' : 'Risk '}
+                    {(f.cvss || 0).toFixed(1)}
+                  </span>
                   <span className={'status-pill ' + f.status}>{(f.status || 'new').replace('_', ' ')}</span>
                 </div>
                 <h2 className="detail__title">{f.title}</h2>
