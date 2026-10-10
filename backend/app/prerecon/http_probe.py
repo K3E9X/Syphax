@@ -164,9 +164,16 @@ async def _fetch_public_file(client, url: str, result: Probe) -> Dict[str, Any]:
         return {"status": 0, "error": _readable(exc)}
     body = response.content[:8192].decode(response.encoding or "utf-8", "replace")
     present = response.status_code == 200 and bool(body.strip())
+    # The paths the file declares, parsed from the FULL body rather than the
+    # preview - a sitemap's first 2000 characters are its header. Nothing read
+    # robots.txt or sitemap.xml before, which wasted the richest passive
+    # source of endpoints there is: the owner wrote them.
+    from app.prerecon.endpoints import paths_from
+
     return {
         "status": response.status_code,
         "present": present,
+        "paths": paths_from(url, body) if present else [],
         # Truncated hard: this is a preview so the operator can see whether it
         # is worth reading, not a copy of the file.
         "preview": body[:2000] if present else "",
