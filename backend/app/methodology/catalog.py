@@ -111,6 +111,19 @@ CATALOG: List[CatalogItem] = [
         applies_when={"is_host": True},
     ),
     CatalogItem(
+        id="RECON-BUCKETS",
+        wstg_id="WSTG-CONF-11",
+        attack_techniques=["T1580", "T1530"],
+        vuln_class="exposed_bucket",
+        phase=PHASE_RECON,
+        tool="s3scanner",
+        description="Find open object storage across AWS, GCP, DigitalOcean, "
+                    "Linode, Scaleway and DreamHost, with the permissions each "
+                    "bucket actually grants.",
+        severity_default="high",
+        applies_when={"is_host": True},
+    ),
+    CatalogItem(
         id="RECON-NMAP-SERVICES",
         wstg_id="WSTG-INFO-02",
         attack_techniques=["T1046"],

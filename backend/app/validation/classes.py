@@ -29,6 +29,7 @@ TOOL_VULN_CLASS: Dict[str, str] = {
     "gitdumper": "source_code_disclosure",
     "nosqli": "nosql_injection",
     "cloud_enum": "exposed_bucket",
+    "s3scanner": "exposed_bucket",
     # --- tools that describe the surface ---
     "httpx": "fingerprint",
     "whatweb": "fingerprint",

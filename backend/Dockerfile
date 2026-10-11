@@ -17,6 +17,7 @@
 #   - mitmproxy  (pip)
 #   - trufflehog (Go binary)  secrets, VERIFIED against the provider
 #   - jsluice    (Go binary)  URLs/secrets from JS via a real parser
+#   - s3scanner  (Go binary)  open object storage across six cloud providers
 #   - retire.js  (npm)        known-vulnerable client-side libraries
 #   - schemathesis (pip)      property-tests an API against its own OpenAPI
 #   - arjun      (pip)        hidden HTTP parameter discovery
@@ -45,6 +46,16 @@ RUN mkdir -p /out \
 ARG NOSQLI_VERSION=latest
 RUN (CGO_ENABLED=0 go install "github.com/Charlie-belmer/nosqli@${NOSQLI_VERSION}" \
         && install -m 0755 /go/bin/nosqli /out/nosqli) || true
+
+# s3scanner (Go): open object storage across six providers, anonymously.
+# cloud_enum covers AWS/Azure/GCP by permuting the brand; this adds
+# DigitalOcean Spaces, Linode, Scaleway and DreamHost - where a team that
+# moved off S3 keeps the bucket nobody re-reviewed - and reports the ACL
+# grants per bucket rather than only that the name resolves. Best-effort:
+# RECON-BUCKETS is skipped if the build fails, and cloud_enum still runs.
+ARG S3SCANNER_VERSION=latest
+RUN (CGO_ENABLED=0 go install "github.com/sa7mon/s3scanner@${S3SCANNER_VERSION}" \
+        && install -m 0755 /go/bin/s3scanner /out/s3scanner) || true
 
 # kiterunner (Go, binary 'kr'): API route discovery. Best-effort for the same
 # reason; EXP/MAP-API-ROUTES is skipped if the build or wordlist is absent.

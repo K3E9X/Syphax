@@ -14,6 +14,7 @@ from app.scans.wrappers.gau import GauWrapper
 from app.scans.wrappers.gitdumper import GitDumperWrapper
 from app.scans.wrappers.httpx import HttpxWrapper
 from app.scans.wrappers.jsluice import JsluiceWrapper
+from app.scans.wrappers.s3scanner import S3ScannerWrapper
 from app.scans.wrappers.katana import KatanaWrapper
 from app.scans.wrappers.kiterunner import KiterunnerWrapper
 from app.scans.wrappers.naabu import NaabuWrapper
@@ -49,6 +50,9 @@ _WRAPPERS: Dict[str, BaseWrapper] = {
     "naabu": NaabuWrapper(),
     "dnsx": DnsxWrapper(),
     "gau": GauWrapper(),
+    # Object storage beyond the three providers cloud_enum knows, with the
+    # ACL grants rather than only the bucket's existence.
+    "s3scanner": S3ScannerWrapper(),
     # Parameter discovery: adds injection points, which is what unblocks every
     # injection test on an endpoint whose real parameters are undocumented.
     "arjun": ArjunWrapper(),
