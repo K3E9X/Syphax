@@ -50,6 +50,31 @@ MAX_STREAM_BYTES = 1 * 1024 * 1024  # 1 MiB
 # Task implementation
 # -----------------------------------------------------------------------------
 
+def parse_and_cap(wrapper, job, stdout: bytes, stderr: bytes,
+                  exit_code: int) -> List[Finding]:
+    """Parse one job's output and bound what it may contribute.
+
+    The ONLY place a wrapper is parsed. The cap is universal only because
+    this is: a discovery tool reports one item per thing it finds, and on a
+    real target that is thousands. gau turned an archive into 2175 findings
+    and 2162 assets, and since the planner builds a task per (catalog item x
+    asset) the run then spent its entire TIME budget on them. katana, ffuf,
+    httpx, subfinder, dnsx and kiterunner have the same shape. Nothing
+    critical or high is ever dropped - see cap_findings.
+
+    `exit_code` is -1 for a cancelled job, whose output is a truncated
+    stream; every wrapper parses a line at a time and tolerates that.
+    """
+    result = wrapper.parse(stdout, stderr, exit_code, job.target)
+    before = len(result.findings)
+    findings = cap_findings(result.findings, tool=job.tool,
+                            category=getattr(wrapper, "category", ""))
+    if len(findings) != before:
+        logger.info("[%s] %s produced %d findings; capped to %d",
+                    job.id, job.tool, before, len(findings))
+    return findings
+
+
 async def run_scan(ctx: Dict[str, Any], job_id: str) -> Dict[str, Any]:
     """arq task. Load the job from Postgres, run the wrapper, persist results.
 
@@ -171,6 +196,19 @@ async def run_scan(ctx: Dict[str, Any], job_id: str) -> Dict[str, Any]:
         job.finished_at = time.time()
         job.stdout = bytes(stdout_buf)
         job.stderr = bytes(stderr_buf)
+        # Keep what it had already found. A nuclei or sqlmap run killed in
+        # flight has usually written its hits to stdout before the abort, and
+        # discarding them meant an operator who stopped a run lost findings
+        # that were already on disk. Every wrapper parses a line at a time and
+        # tolerates a truncated last line, so a partial stream is safe to
+        # read; if it is not, the job is still recorded as cancelled with its
+        # raw output intact.
+        try:
+            job.findings = parse_and_cap(wrapper, job, bytes(stdout_buf),
+                                         bytes(stderr_buf), -1)
+        except Exception:  # noqa: BLE001 - never mask the cancellation
+            logger.debug("[%s] could not parse the cancelled job's output",
+                         job.id)
         await repo.update(job)
         raise
 
@@ -193,22 +231,8 @@ async def run_scan(ctx: Dict[str, Any], job_id: str) -> Dict[str, Any]:
 
     # Normal completion.
     try:
-        result = wrapper.parse(bytes(stdout_buf), bytes(stderr_buf), exit_code, job.target)
-        # Bound what one job may contribute, here rather than in each wrapper:
-        # a discovery tool reports one item per thing it finds, and on a real
-        # target that is thousands. gau turned an archive into 2175 findings
-        # and 2162 assets, and since the planner builds a task per (catalog
-        # item x asset) the run then spent its entire TIME budget on them.
-        # katana, ffuf, httpx, subfinder, dnsx and kiterunner have the same
-        # shape; this is the one place all of their output passes through.
-        # Nothing critical or high is ever dropped - see cap_findings.
-        before = len(result.findings)
-        findings: List[Finding] = cap_findings(
-            result.findings, tool=job.tool,
-            category=getattr(wrapper, "category", ""))
-        if len(findings) != before:
-            logger.info("[%s] %s produced %d findings; capped to %d",
-                        job.id, job.tool, before, len(findings))
+        findings: List[Finding] = parse_and_cap(
+            wrapper, job, bytes(stdout_buf), bytes(stderr_buf), exit_code)
     except Exception as exc:  # noqa: BLE001
         logger.exception("[%s] parse failed", job.id)
         findings = []

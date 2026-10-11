@@ -322,3 +322,132 @@ def test_the_operator_is_told_the_run_is_salvaging():
     src = inspect.getsource(loop._salvage_on_cancel)
     assert "events.emit" in src
     assert "Validating what" in src
+
+
+# ---- the same short-circuit, one layer down --------------------------
+
+@pytest.mark.parametrize("url", [
+    "https://t.example/_next/static/chunks/42-a1b2c3d4.js",
+    "https://t.example/_next/static/chunks/main-app.js",
+    "https://t.example/assets/index-Dn2E4f9a.js",
+    "https://t.example/static/js/2.8f1c2d3e.chunk.js",
+    "https://t.example/_nuxt/entry.a1b2c3d4.js",
+    "https://t.example/main.9f3c1a2b.js",
+])
+def test_a_compiled_bundle_is_not_a_scan_target(url):
+    """.js is NOT in the static-extension table, on purpose - /api/handler.js
+    is a real endpoint on plenty of stacks. A build artifact is narrower: no
+    query string, and either a build directory in the path or a content hash
+    in the name. 60 of the 73 jobs per catalog item in a simulation of the
+    run that prompted this went to Next.js chunks."""
+    assert _is_static_asset(url)
+
+
+@pytest.mark.parametrize("url", [
+    "https://t.example/api/handler.js?id=1",
+    "https://t.example/login.js",
+    "https://t.example/server.js",
+    "https://t.example/assets/data.js?v=2",
+])
+def test_a_javascript_endpoint_that_might_be_a_route_is_kept(url):
+    """Excluding the extension outright would stop testing these."""
+    assert not _is_static_asset(url)
+
+
+def test_nothing_is_lost_by_skipping_the_bundles():
+    """retire.js and jsluice read the JavaScript from the artifacts
+    directory, written from captured traffic - not from a planned job. Their
+    catalog items are is_base, so they run once per host either way."""
+    from app.methodology.catalog import CATALOG
+    for item_id in ("VULN-CLIENT-LIBS", "VULN-JS-SECRETS"):
+        item = next(i for i in CATALOG if i.id == item_id)
+        assert item.applies_when == {"is_base": True}
+    import inspect
+
+    from app.analysis import js_cache
+    assert "list_flows" in inspect.getsource(js_cache)
+
+
+# ---- "always" is a condition, not an override ------------------------
+
+def test_always_does_not_override_the_other_conditions():
+    """It returned True before any other condition was read, so
+    {"always": True, "requires_params": True} would have run everywhere. No
+    catalog item combines them today - which is the only reason it never bit,
+    and exactly why the next one would have been silently wrong."""
+    from app.methodology import applies
+    from app.methodology.catalog import CatalogItem
+    item = CatalogItem(id="X", wstg_id="W", attack_techniques=[],
+                       vuln_class="x", phase="vuln_analysis", tool="nuclei",
+                       description="d",
+                       applies_when={"always": True, "requires_params": True})
+    base = {"is_host": False, "url": "https://t.example/", "source": "katana",
+            "tech": []}
+    assert not applies(item, {**base, "requires_params": False})
+    assert applies(item, {**base, "requires_params": True})
+
+
+def test_an_item_declaring_only_always_still_runs_everywhere():
+    """The fix must not cost the common case."""
+    from app.methodology import applies
+    from app.methodology.catalog import CATALOG
+    item = next(i for i in CATALOG if i.applies_when == {"always": True})
+    assert applies(item, {"is_host": False, "requires_params": False,
+                          "url": "https://t.example/x", "source": "katana",
+                          "tech": []})
+
+
+# ---- a cancelled job keeps what it had already found -----------------
+
+def test_a_cancelled_job_keeps_the_findings_it_had_already_written():
+    """nuclei killed in flight has usually written its hits to stdout before
+    the abort. They were persisted as raw bytes and never parsed, so an
+    operator who stopped a run lost findings that were already on disk."""
+    from app.scans.wrappers import _WRAPPERS
+    from app.scans.wrappers.base import cap_findings
+
+    wrapper = _WRAPPERS["nuclei"]
+    hit = ('{"template-id":"x","info":{"name":"Exposed .env",'
+           '"severity":"high","tags":["exposure"]},'
+           '"matched-at":"https://t.example/.env","type":"http"}\n')
+    # three complete hits and the truncated line an abort leaves behind
+    stream = (hit * 3 + '{"template-id":"y","info":{"na').encode()
+    result = wrapper.parse(stream, b"", -1, "https://t.example/")
+    kept = cap_findings(result.findings, tool="nuclei",
+                        category=getattr(wrapper, "category", ""))
+    assert len(kept) == 3
+    assert all(f.severity == "high" for f in kept)
+
+
+def test_the_cancel_handler_parses_before_it_re_raises():
+    import inspect
+
+    from app import workers
+    src = inspect.getsource(workers.run_scan)
+    handler = src[src.index("except asyncio.CancelledError:"):]
+    assert "parse_and_cap(" in handler
+    assert handler.index("parse_and_cap(") < handler.rindex("raise")
+
+
+def test_the_cancel_handler_cannot_mask_the_cancellation():
+    import inspect
+
+    from app import workers
+    src = inspect.getsource(workers.run_scan)
+    handler = src[src.index("except asyncio.CancelledError:"):]
+    parse_at = handler.index("parse_and_cap(")
+    assert "except Exception" in handler[parse_at:]
+
+
+def test_the_cancelled_job_goes_through_the_same_cap_as_a_finished_one():
+    """The cap is universal only because parsing happens in one place. A
+    second raw wrapper.parse in the cancel path would have been a second way
+    to flood a run - and an existing invariant caught exactly that."""
+    import inspect
+
+    from app import workers
+    src = inspect.getsource(workers.parse_and_cap)
+    assert "wrapper.parse(" in src
+    assert "cap_findings(" in src
+    body = inspect.getsource(workers)
+    assert body.count("wrapper.parse(") == 1

@@ -9,7 +9,9 @@ tracks which items have run against which assets.
 `applies_when` is intentionally a small structured dict (not a lambda) so it
 is serializable, inspectable in the UI, and safe to ship to the LLM planner:
 
-    {"always": true}                  - run on the base target
+    {"always": true}                  - no condition; runs on every asset.
+                                        It does NOT override the others: all
+                                        conditions present are ANDed.
     {"requires_params": true}         - only on URLs that have query params
     {"tech_any": ["wordpress"]}       - only if a fingerprint matched one of these
     {"is_host": true}                 - run against a host, not a URL (nmap/naabu/dns)
@@ -593,8 +595,16 @@ def applies(item: CatalogItem, context: Dict[str, Any]) -> bool:
     """
     cond = item.applies_when or {"always": True}
 
-    if cond.get("always"):
-        return True
+    # "always" is a no-op, not a short-circuit. It used to return True before
+    # any other condition was read, so {"always": True, "requires_params":
+    # True} would have run on an endpoint with no parameters - the second
+    # condition silently ignored. No item in the catalog combines them today,
+    # which is the only reason this never bit; the next one to try would have
+    # had a test that ran everywhere and no way to see why.
+    #
+    # Deleting the early return changes nothing for an item that declares
+    # ONLY "always": every check below is skipped when its key is absent, and
+    # the function ends in `return True`.
     if cond.get("is_host") and not context.get("is_host"):
         return False
     if cond.get("is_https") and not context.get("is_https"):

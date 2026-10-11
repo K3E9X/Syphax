@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Set
 
@@ -551,6 +552,37 @@ _ASSET_PIPELINE = (
 # Parameters that name the file such a pipeline is serving.
 _FILE_PARAMS = ("url", "src", "file", "path", "image", "img", "source", "key")
 
+# Compiled JavaScript. ".js" is deliberately NOT in _STATIC_EXT: /api/handler.js
+# and /login.js are real server endpoints on plenty of stacks, and excluding
+# the extension outright would stop testing them. A build artifact is
+# narrower and recognisable: no query string, and either a build directory in
+# the path or a content hash in the filename.
+#
+# This matters as much as the image resizer did. A Next.js site emits dozens
+# of /_next/static/chunks/*.js, and each one was a scannable endpoint - 60 of
+# the 73 jobs per catalog item in a simulation of the run that prompted this.
+# Nothing is lost by skipping them: retire.js and jsluice read the JavaScript
+# from the artifacts directory (analysis/js_cache writes it from captured
+# traffic), not from a planned job, and their catalog items are is_base.
+_JS_EXT = (".js", ".mjs", ".cjs")
+_BUILD_DIR = ("/_next/static/", "/_nuxt/", "/_astro/", "/static/js/",
+              "/static/chunks/", "/assets/", "/dist/", "/build/",
+              "/bundles/", "/chunks/", "/_app/immutable/")
+# A content hash in the filename: main.a1b2c3d4.js, 42-9f3c1a2b.js, chunk.ABC123XY.js
+_HASHED = re.compile(r"[.\-_][0-9a-f]{8,}\.(?:js|mjs|cjs)$", re.I)
+
+
+def _is_build_artifact(parsed) -> bool:
+    """Compiled JavaScript with no server behaviour to attack."""
+    path = (parsed.path or "").lower()
+    if not path.endswith(_JS_EXT):
+        return False
+    if parsed.query:
+        return False        # a parameter means something reads it
+    if any(marker in path for marker in _BUILD_DIR):
+        return True
+    return bool(_HASHED.search(path))
+
 
 def _is_static_asset(url: str) -> bool:
     """Is this endpoint a static file, or the pipeline that serves one?
@@ -569,6 +601,8 @@ def _is_static_asset(url: str) -> bool:
     if path.endswith(_STATIC_EXT):
         return True
     if any(marker in path for marker in _ASSET_PIPELINE):
+        return True
+    if _is_build_artifact(parsed):
         return True
     # An unknown path whose file parameter points at a static file is one too.
     try:
