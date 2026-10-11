@@ -382,6 +382,23 @@ async def run_engagement_loop(run_id: str) -> dict:
     except asyncio.CancelledError:
         run.status = "stopped"
         run.stop_reason = run.stop_reason or "cancelled"
+        # Validate what the run already collected, before letting the
+        # cancellation through.
+        #
+        # The graceful stop paths above break out of the loop and fall into
+        # _finalize_engagement, whose own comment says "Always run it (even on
+        # stop) so partial results are still validated". This path did not: it
+        # persisted the row and re-raised. So an operator who pressed Stop -
+        # which is exactly what they do when they can see the run is wasting
+        # its budget - threw away every finding the run had made. One run
+        # reached iteration 28 with 206 jobs behind it and showed zero
+        # findings, because the Findings page reads validated_findings and
+        # nothing had validated them.
+        #
+        # Every active step inside _finalize_engagement already self-suppresses
+        # on stop_reason "cancelled", so this is the read-only half: the
+        # traffic analysers and the validator.
+        await _salvage_on_cancel(engagement, run, runs, state, phases_seen)
         await _finalize(runs, run)
         await audit("engagement.run_cancelled", engagement_id=engagement.id, run_id=run.id)
         raise
@@ -890,6 +907,54 @@ async def _run_correlation(engagement, run: Run, executor: Executor,
         await runs.update(run)
     logger.info("[%s] correlation launched %d/%d lead(s)", run.id, launched, len(leads))
     return launched
+
+
+# How long a cancelled run may spend validating what it already has. The
+# operator pressed Stop and is watching; a bounded wait with a line in the
+# console is the trade, and losing the whole run's work is not.
+CANCEL_SALVAGE_SECONDS = 120
+
+
+async def _salvage_on_cancel(engagement, run: Run, runs: RunRepository,
+                             state: EngagementState,
+                             phases_seen: Optional[set] = None) -> None:
+    """Validate a cancelled run's findings within a bounded window.
+
+    Never raises anything but CancelledError: a second cancel means the
+    operator wants it to stop now, and that is answered immediately.
+    """
+    try:
+        await events.emit(
+            engagement.id, events.THOUGHT,
+            f"Run cancelled after {run.jobs_launched} job(s). Validating what "
+            f"it already found before stopping - up to "
+            f"{CANCEL_SALVAGE_SECONDS}s. Active exploitation is skipped: you "
+            f"stopped the run.",
+            level=events.LEVEL_INFO, run_id=run.id)
+    except Exception:  # noqa: BLE001
+        logger.debug("[%s] could not announce the salvage", run.id)
+
+    try:
+        await asyncio.wait_for(
+            _finalize_engagement(engagement, run, runs, state,
+                                 phases_seen=phases_seen),
+            timeout=CANCEL_SALVAGE_SECONDS)
+    except asyncio.CancelledError:
+        raise                       # cancelled again: stop now
+    except asyncio.TimeoutError:
+        logger.warning("[%s] salvage validation timed out", run.id)
+        try:
+            await events.emit(
+                engagement.id, events.THOUGHT,
+                f"Validation of the cancelled run did not finish within "
+                f"{CANCEL_SALVAGE_SECONDS}s. The findings it did validate are "
+                f"on the Findings page; re-run validation from the engagement "
+                f"to finish the rest.",
+                level=events.LEVEL_INFO, run_id=run.id)
+        except Exception:  # noqa: BLE001
+            pass
+    except Exception:  # noqa: BLE001 - salvage must never mask the cancel
+        logger.exception("[%s] salvage validation failed", run.id)
 
 
 async def _finalize_engagement(engagement, run: Run, runs: RunRepository,

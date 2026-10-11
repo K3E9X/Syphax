@@ -91,6 +91,45 @@ def status_is_covered(status: Optional[str]) -> bool:
 
 
 
+# Technologies that are OURS, not the target's. Every tool now runs through
+# the capture proxy, so whatweb and httpx fingerprint it and record
+# "mitmproxy 12.2.3" as part of the client's stack - in the Surface page, in
+# the report, and in the `tech_any` conditions that gate catalog items.
+_OUR_INFRASTRUCTURE = ("mitmproxy", "mitmdump", "syphax")
+
+# whatweb emits one plugin name per match, and these fire on essentially every
+# site: they are observations about HTTP, not about the stack. Recording them
+# as technologies makes the Surface panel unreadable and tells the planner
+# nothing - no catalog item can usefully gate on "this response had a title".
+_CONTENTLESS_PLUGINS = (
+    "country", "ip", "title", "script", "html5", "httpserver",
+    "uncommonheaders", "x-frame-options", "x-xss-protection", "cookies",
+    "email", "redirectlocation", "meta-refresh-redirect", "openssearch",
+    "probably-", "allow", "via-proxy", "md5",
+)
+
+
+def fingerprint_noise(tech: str) -> str:
+    """Why this fingerprint is not a technology of the target, or "".
+
+    Pure, so the two classes of noise can be argued about in a test rather
+    than discovered in a report.
+    """
+    value = (tech or "").strip().lower()
+    if not value:
+        return "empty"
+    bare = value.split("/")[0].split(" ")[0].strip()
+    for marker in _OUR_INFRASTRUCTURE:
+        if marker in value:
+            return (f"'{marker}' is syphax's own capture proxy, in the path of "
+                    f"every tool we run, not something the target is running")
+    for plugin in _CONTENTLESS_PLUGINS:
+        if bare == plugin or value == plugin:
+            return (f"'{plugin}' is a whatweb plugin that matches almost every "
+                    f"site; it describes HTTP, not the stack")
+    return ""
+
+
 @dataclass
 class Asset:
     kind: str           # host | endpoint
@@ -213,6 +252,11 @@ class EngagementState:
         tech = technology.strip().lower()
         if not tech:
             return
+        reason = fingerprint_noise(tech)
+        if reason:
+            logger.debug("fingerprint %r dropped: %s", tech, reason)
+            await self._say_fingerprint_dropped(tech, reason)
+            return
         async with db.acquire() as conn:
             await conn.execute(
                 """
@@ -222,6 +266,27 @@ class EngagementState:
                 """,
                 self.engagement_id, tech, source, time.time(),
             )
+
+    async def _say_fingerprint_dropped(self, tech: str, reason: str) -> None:
+        """Say it once per run. An operator who sees mitmproxy missing from
+        the stack should be able to find out that we removed it, in case the
+        target really does run one."""
+        dropped = getattr(self, "_fp_dropped", None)
+        if dropped is None:
+            dropped = set()
+            self._fp_dropped = dropped
+        if reason in dropped:
+            return
+        dropped.add(reason)
+        try:
+            from app import events
+            await events.emit(
+                self.engagement_id, events.THOUGHT,
+                f"Not recording '{tech}' as a technology of the target: "
+                f"{reason}.",
+                level=events.LEVEL_VERBOSE)
+        except Exception:  # noqa: BLE001 - never fail an ingest on reporting
+            logger.debug("could not report the dropped fingerprint")
 
     async def technologies(self) -> List[str]:
         async with db.acquire() as conn:

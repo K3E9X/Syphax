@@ -20,7 +20,7 @@ from app.llm import ROLE_PLANNER, LLMError, get_router
 from app.methodology import (CATALOG, CATALOG_BY_ID, PHASE_MAPPING,
                              PHASE_ORDER, PHASE_RECON, applies)
 from app.orchestrator.state import Asset, EngagementState
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 
 logger = logging.getLogger("syphax.orchestrator.planner")
 
@@ -184,6 +184,10 @@ class Planner:
             assets,
             key=lambda a: (asset_interest(a.value, source=a.source or ""),
                            a.value))
+        # One representative per injection shape, best-ranked first. See
+        # injection_shape: the budget must not buy the same test once per
+        # parameter VALUE. Discovery keeps them all; only the spend collapses.
+        assets = _one_per_shape(assets)
         skip = {str(p) for p in (skip_phases or set())}
         tasks: List[Task] = []
         for item in CATALOG:
@@ -384,6 +388,39 @@ _DULL_PATH = ("/img/", "/image", "/css/", "/js/", "/font", "/static/",
               "/wp-content/uploads/", "/media/", "/thumb")
 
 
+def injection_shape(url: str) -> str:
+    """What a parameterised URL actually tests: (host, path, parameter NAMES).
+
+    `?w=384` and `?w=1920` are the same test. So are `?page=1` and `?page=2`,
+    and the forty URLs a faceted search produces. The planner spends a job
+    slot per (catalog item x asset), so each extra value of the same parameter
+    buys a repeat of a test already queued - and on the run that prompted this,
+    89 of 197 endpoints were one image resizer at five breakpoints.
+
+    Collapsing happens in the BUDGET, not in discovery: every URL stays in the
+    assets table and on the Surface page. What stops is paying for the same
+    test twice.
+
+    Returns "" for a param-less endpoint - those are distinct paths and each
+    one is its own test.
+    """
+    try:
+        parsed = urlparse(url or "")
+    except ValueError:
+        return ""
+    if not parsed.query:
+        return ""
+    try:
+        names = sorted(parse_qs(parsed.query, keep_blank_values=True))
+    except ValueError:
+        return ""
+    if not names:
+        return ""
+    host = (parsed.hostname or "").lower()
+    path = (parsed.path or "/").rstrip("/") or "/"
+    return f"{host}{path}?{'&'.join(names)}"
+
+
 def asset_interest(url: str, *, source: str = "") -> int:
     """How promising this target is. Lower is better; used to ORDER the budget.
 
@@ -409,13 +446,20 @@ def asset_interest(url: str, *, source: str = "") -> int:
     # matters, and everything else was inferred from it.
     if source == "engagement":
         return 0
+    # Dullness is decided BEFORE the parameterised bonus, and this order is
+    # the whole point. It used to be the other way round, so a query string
+    # short-circuited the check and /_next/image?url=...&w=1920 scored 1 -
+    # level with /api/v1/users?id=. A static asset with parameters is still a
+    # static asset; the parameters resize it.
+    if _is_static_asset(value):
+        return 95
+    for marker in _DULL_PATH:
+        if marker in path:
+            return 90 if not query else 85
     # Then anything carrying parameters - an injection point, and what the
     # seven param-gated catalog items need to exist at all.
     if query:
         return 1
-    for marker in _DULL_PATH:
-        if marker in path:
-            return 90
     for rank, marker in enumerate(_INTERESTING_PATH):
         if marker in path:
             # 10..69, preserving the order of the table above.
@@ -423,6 +467,22 @@ def asset_interest(url: str, *, source: str = "") -> int:
     # A short path is more likely to be a real entry point than a deep one.
     depth = path.count("/")
     return 70 + min(depth, 19)
+
+
+def _one_per_shape(assets: List[Asset]) -> List[Asset]:
+    """Keep the first asset of each injection shape. Order is preserved, so
+    the representative is the best-ranked one when the input is sorted."""
+    seen: Set[str] = set()
+    out: List[Asset] = []
+    for asset in assets:
+        shape = (injection_shape(asset.value)
+                 if getattr(asset, "kind", "") == "endpoint" else "")
+        if shape:
+            if shape in seen:
+                continue
+            seen.add(shape)
+        out.append(asset)
+    return out
 
 
 def _task_sort_key(t: Task):
@@ -476,11 +536,48 @@ _STATIC_EXT = (".css", ".png", ".jpg", ".jpeg", ".gif", ".svg", ".ico", ".webp",
                ".mp4", ".webm", ".mp3", ".wav", ".pdf", ".map")
 
 
+# Image and asset PIPELINES: an endpoint whose job is to resize, re-encode or
+# proxy a static file. The file is in the query string, so the path has no
+# extension and the extension test below never fired - while the query string
+# made asset_interest rank it as an injection point. On a Next.js site that is
+# one "parameterised endpoint" per image per breakpoint, and a run spent 206
+# jobs on /_next/image?url=...&w=384|828|1080|1200|1920 without reaching
+# exploitation.
+_ASSET_PIPELINE = (
+    "/_next/image", "/_vercel/image", "/_ipx/", "/_image", "/cdn-cgi/image",
+    "/cdn-cgi/imagedelivery", "/image/upload/", "/img.php", "/thumbnail.php",
+    "/timthumb.php", "/resize", "/_nuxt/image", "/_astro/", "/wp-json/wp/v2/media",
+)
+# Parameters that name the file such a pipeline is serving.
+_FILE_PARAMS = ("url", "src", "file", "path", "image", "img", "source", "key")
+
+
 def _is_static_asset(url: str) -> bool:
-    """Is this endpoint a static file with nothing to test?"""
-    from urllib.parse import urlparse
+    """Is this endpoint a static file, or the pipeline that serves one?
+
+    Two shapes. A path ending in .css/.png/.woff is the file itself. A path
+    like /_next/image with ?url=/static/logo.gif is the resizer in front of
+    it: same absence of server behaviour to attack, and far more numerous,
+    because every breakpoint is a separate URL.
+    """
+    from urllib.parse import parse_qs, urlparse
     try:
-        path = (urlparse(url or "").path or "").lower()
+        parsed = urlparse(url or "")
     except ValueError:
         return False
-    return path.endswith(_STATIC_EXT)
+    path = (parsed.path or "").lower()
+    if path.endswith(_STATIC_EXT):
+        return True
+    if any(marker in path for marker in _ASSET_PIPELINE):
+        return True
+    # An unknown path whose file parameter points at a static file is one too.
+    try:
+        params = parse_qs(parsed.query or "")
+    except ValueError:
+        return False
+    for name in _FILE_PARAMS:
+        for value in params.get(name, []):
+            candidate = urlparse(str(value)).path.lower()
+            if candidate.endswith(_STATIC_EXT):
+                return True
+    return False
