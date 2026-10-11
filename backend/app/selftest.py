@@ -134,6 +134,21 @@ async def check_invocations() -> List[str]:
         wrapper = _WRAPPERS[name]
         if not wrapper.is_available():
             continue
+        # A tool whose precondition refuses an empty invocation would never be
+        # launched bare in a real run - the worker checks precondition before
+        # spawning. nord_stream needs an operator-supplied platform and token,
+        # so `build_command(target, [])` is deliberately incomplete and the
+        # tool prints "Usage:". Probing it with no options tests a command
+        # line that can never actually run, so skip it and say why.
+        try:
+            gated = wrapper.precondition(_DEAD_TARGET, [])
+        except Exception:  # noqa: BLE001
+            gated = ""
+        if gated:
+            out.append(_line(OK, name,
+                             "needs operator-supplied options; not invoked bare "
+                             "(its precondition gates it in a real run)"))
+            continue
         try:
             argv = wrapper.build_command(_DEAD_TARGET, [])
             stdin_text = wrapper.stdin_for(_DEAD_TARGET, [])

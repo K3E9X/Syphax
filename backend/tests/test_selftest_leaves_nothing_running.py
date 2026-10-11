@@ -106,3 +106,53 @@ def test_the_timeout_branch_is_still_a_pass():
     """Reaping must not turn "it parsed our arguments and went to the network"
     into a failure: that is the outcome the branch exists to report."""
     assert selftest.OK != selftest.BROKEN
+
+
+# ---- a precondition-gated tool is not probed with empty options -------
+
+def test_a_tool_that_refuses_bare_options_is_not_invocation_probed(monkeypatch):
+    """nord_stream needs an operator-supplied platform and token, so
+    build_command(target, []) is deliberately incomplete and the tool prints
+    'Usage:'. The worker gates it on precondition before spawning, so probing
+    it bare tested a command line that can never run - and reported FAIL on a
+    tool working as designed."""
+    class _Gated:
+        name = "gated"
+        def is_available(self):
+            return True
+        def precondition(self, target, options):
+            return "needs an operator-supplied token"
+        def build_command(self, target, options):
+            return ["false"]        # would exit non-zero if ever run
+        def stdin_for(self, target, options):
+            return None
+
+    from app.scans import wrappers
+    monkeypatch.setattr(wrappers, "_WRAPPERS", {"gated": _Gated()})
+    lines = asyncio.run(selftest.check_invocations())
+    body = "\n".join(lines)
+    assert "gated" in body
+    assert "not invoked bare" in body
+    assert selftest.BROKEN not in body
+
+
+def test_an_ungated_tool_is_still_probed(monkeypatch):
+    """The skip must be narrow: a tool with no precondition still gets run."""
+    ran = {"did": False}
+
+    class _Normal:
+        name = "normal"
+        def is_available(self):
+            return True
+        def precondition(self, target, options):
+            return ""
+        def build_command(self, target, options):
+            ran["did"] = True
+            return ["true"]
+        def stdin_for(self, target, options):
+            return None
+
+    from app.scans import wrappers
+    monkeypatch.setattr(wrappers, "_WRAPPERS", {"normal": _Normal()})
+    asyncio.run(selftest.check_invocations())
+    assert ran["did"], "an ungated tool was not probed"
