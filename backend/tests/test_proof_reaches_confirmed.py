@@ -367,3 +367,40 @@ def test_an_absent_searchsploit_is_not_silence():
 
     src = _inspect.getsource(exploit_sources.local_exploitdb)
     assert "searchsploit is not installed" in src
+
+
+# ---- authoring extraction must not depend on the fence's language label ---
+
+def test_authoring_accepts_any_fence_label():
+    """The self-test went BROKEN on the VM - "the reply contained no script" -
+    because the extractor only accepted ```python|bash|sh|javascript|js. The
+    first time the model opened its fence with ```py or ```python3 the whole
+    reply was discarded. Extraction must key off the fence, not its label."""
+    from app.exploit.authoring import extract_code
+    for label in ("python", "py", "python3", "", "PYTHON", "ruby"):
+        reply = f"Here is the exploit:\n```{label}\nimport requests\nprint(1)\n```"
+        code, _lang = extract_code(reply)
+        assert "import requests" in code, f"label {label!r} produced no code"
+
+
+def test_authoring_recovers_a_script_truncated_mid_block():
+    """A reply that hit the token limit before its closing fence used to yield
+    nothing. Better to stage what arrived than discard a long exploit for a
+    missing ```."""
+    from app.exploit.authoring import extract_code
+    code, lang = extract_code("```python\nimport os\nfor i in range(100):\n    print(i)")
+    assert "import os" in code
+    assert lang == "python"
+
+
+def test_authoring_still_refuses_an_apology():
+    """The guard that matters: prose must not be staged as a script."""
+    from app.exploit.authoring import extract_code
+    assert extract_code("I'm sorry, I can't help with that.") == ("", "")
+    assert extract_code("") == ("", "")
+
+
+def test_py_and_python3_map_to_python():
+    from app.exploit.authoring import extract_code
+    assert extract_code("```py\nimport os\n```")[1] == "python"
+    assert extract_code("```python3\nimport os\n```")[1] == "python"

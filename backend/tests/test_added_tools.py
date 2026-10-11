@@ -7,6 +7,7 @@ only in a commit message.
 from __future__ import annotations
 
 import json
+import pathlib
 
 import pytest
 
@@ -352,3 +353,32 @@ def test_the_lead_is_not_over_confident():
     src = inspect.getsource(proof)
     block = src[src.index("kernel_privesc_lead") - 600:src.index("kernel_privesc_lead") + 200]
     assert '"likely"' in block
+
+
+# ---- the install regressions from the first build on the VM -----------
+
+def test_the_go_builder_is_new_enough_for_s3scanner():
+    """s3scanner's go.mod requires go 1.26.0; on the 1.23 builder the install
+    silently failed and the tool came out absent. The builder must be >= what
+    the module needs."""
+    import re
+    dockerfile = (pathlib.Path(__file__).resolve().parents[1] / "Dockerfile").read_text()
+    m = re.search(r"FROM golang:(\d+)\.(\d+)", dockerfile)
+    assert m, "no golang builder stage found"
+    major, minor = int(m.group(1)), int(m.group(2))
+    assert (major, minor) >= (1, 26), f"builder is golang {major}.{minor}, s3scanner needs 1.26"
+
+
+def test_nord_stream_is_installed_as_a_console_script():
+    """Its entry point is a package (nordstream.__main__:main), so the clone
+    alone is not enough - the wrapper looked for a .py that does not exist and
+    reported 'not installed'. The image pip-installs the clone to get the
+    console script, and the wrapper looks for that."""
+    import inspect
+
+    from app.scans.wrappers.nord_stream import NordStreamWrapper
+    dockerfile = (pathlib.Path(__file__).resolve().parents[1] / "Dockerfile").read_text()
+    assert "pip install --no-cache-dir /opt/nord-stream" in dockerfile
+    src = inspect.getsource(NordStreamWrapper)
+    assert 'which("nord-stream")' in src
+    assert "nordstream/__main__.py" in src        # the real package layout

@@ -50,18 +50,22 @@ class NordStreamWrapper(BaseWrapper):
     requires_capability = (CAP_DESTRUCTIVE, CAP_PERSISTENCE)
 
     def _resolve_binary(self) -> List[str]:
+        # Installed as a console script by `pip install /opt/nord-stream`; its
+        # entry point is the package nordstream.__main__, not a loose .py.
+        import shutil
+        if shutil.which("nord-stream"):
+            return ["nord-stream"]
+        # Fallback: run the package module from the clone directly.
         import os
-        for path in ("/opt/nord-stream/nord-stream.py",
-                     "/opt/nord-stream/nordstream.py"):
-            if os.path.isfile(path):
-                return ["python3", path]
+        if os.path.isfile("/opt/nord-stream/nordstream/__main__.py"):
+            return ["python3", "-m", "nordstream"]
         return ["nord-stream"]
 
     def is_available(self) -> bool:
         import os
-        return any(os.path.isfile(p) for p in
-                   ("/opt/nord-stream/nord-stream.py",
-                    "/opt/nord-stream/nordstream.py"))
+        import shutil
+        return (shutil.which("nord-stream") is not None
+                or os.path.isfile("/opt/nord-stream/nordstream/__main__.py"))
 
     def precondition(self, target: str, options: Sequence[str]) -> str:
         opts = [str(o).lower() for o in options]

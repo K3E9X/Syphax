@@ -30,7 +30,11 @@
 # (~600 MB) never lands in the shipped image. bookworm matches the runtime
 # base, because jsluice links tree-sitter through CGO and the binary is
 # therefore dynamically linked against libc.
-FROM golang:1.23-bookworm AS jsluice-build
+# Go 1.26: s3scanner's go.mod requires it (go 1.26.0), and on 1.23 the
+# `go install` toolchain auto-download did not resolve in the build, so
+# s3scanner silently came out absent. jsluice, nosqli and kiterunner all build
+# fine on the newer toolchain.
+FROM golang:1.26-bookworm AS jsluice-build
 # jsluice publishes no git tags, only pseudo-versions, so the pin is the
 # module proxy's content-addressed version - reproducible, and it is what
 # `go install` can actually resolve.
@@ -148,6 +152,11 @@ RUN set -eux; \
     pip install --no-cache-dir \
         docopt rich msal google-auth google-api-python-client \
         tqdm colorama PyJWT "kubernetes>=28.1.0" || true; \
+    # nord-stream's entry point is a package (nordstream.__main__:main), not a
+    # loose .py, so installing the clone creates the `nord-stream` console
+    # script on PATH - which is what the wrapper looks for. Without this the
+    # clone was present but the tool reported "not installed".
+    [ -d /opt/nord-stream ] && pip install --no-cache-dir /opt/nord-stream || true; \
     for t in grafana-scanner nord-stream cloudpeass; do \
         [ -d "/opt/$t" ] && echo "installed $t" || echo "WARNING: $t absent"; \
     done
