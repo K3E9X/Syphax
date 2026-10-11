@@ -314,6 +314,18 @@ CATALOG: List[CatalogItem] = [
         applies_when={"is_base": True, "is_https": True},
     ),
     CatalogItem(
+        id="VULN-GRAFANA",
+        wstg_id="WSTG-CONF-01",
+        attack_techniques=["T1190"],
+        vuln_class="cve",
+        phase=PHASE_VULN,
+        tool="grafana_scanner",
+        description="Version-aware Grafana CVE checks: a second opinion on "
+                    "Grafana alongside the nuclei templates.",
+        severity_default="medium",
+        applies_when={"tech_any": ["grafana"]},
+    ),
+    CatalogItem(
         id="VULN-WORDPRESS",
         wstg_id="WSTG-CONF-01",
         attack_techniques=["T1190"],

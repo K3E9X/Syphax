@@ -303,6 +303,19 @@ class BaseWrapper:
         """Return the argv to run. Must include the binary as argv[0]."""
         raise NotImplementedError
 
+    # Capabilities the ENGAGEMENT must declare before this tool may run, as
+    # ids from app/exploit/capabilities.py. Empty for almost every tool: a
+    # scan is not a dangerous act. It is not empty for a tool that changes
+    # systems rather than reading them - nord-stream deploys pipelines into
+    # the client's CI and can lift branch protections - and the point is that
+    # the decision belongs to the operator who holds the written
+    # authorisation, declared per engagement and printed in the report,
+    # instead of to whoever wrote the wrapper.
+    #
+    # Enforced in app/workers.py before the process is spawned, so it cannot
+    # be bypassed by launching the job directly.
+    requires_capability: Sequence[str] = ()
+
     def precondition(self, target: str, options: Sequence[str]) -> str:
         """"" when this job can run, else why it cannot. Checked BEFORE spawning.
 

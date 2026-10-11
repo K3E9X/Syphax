@@ -30,6 +30,8 @@ TOOL_VULN_CLASS: Dict[str, str] = {
     "nosqli": "nosql_injection",
     "cloud_enum": "exposed_bucket",
     "s3scanner": "exposed_bucket",
+    "grafana_scanner": "cve",
+    "nord_stream": "secret_exposure",
     # --- tools that describe the surface ---
     "httpx": "fingerprint",
     "whatweb": "fingerprint",

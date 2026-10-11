@@ -218,36 +218,56 @@ def test_every_vendor_entry_is_usable():
 
 # ---- the four that were not added, and why ---------------------------
 
-def test_no_tool_that_modifies_the_clients_infrastructure_was_added():
-    """nord-stream extracts CI/CD secrets by DEPLOYING pipelines: it pushes
-    commits and can disable branch protections. That is a change to systems
-    outside the engagement's target, needing its own credentials and its own
-    written authorisation. Scope is the authorisation, and it is not
-    grantable."""
+def test_nord_stream_is_present_but_double_gated():
+    """The operator chose to add it. nord-stream deploys pipelines into the
+    client's own CI and can lift branch protections, so being installed is
+    not the same as being runnable: the engagement must DECLARE the
+    destructive and persistence capabilities before the worker will spawn it,
+    and the wrapper refuses again without an operator-supplied platform and
+    token. Two independent gates, because the cost of a mistake is a change to
+    someone else's production CI."""
+    from app.exploit.capabilities import CAP_DESTRUCTIVE, CAP_PERSISTENCE
     from app.scans.wrappers import _WRAPPERS
-    assert "nord-stream" not in _WRAPPERS
-    assert "nordstream" not in _WRAPPERS
+    w = _WRAPPERS["nord_stream"]
+    assert set(w.requires_capability) == {CAP_DESTRUCTIVE, CAP_PERSISTENCE}
+    # gate two: no operator options -> refused with a reason.
+    assert w.precondition("https://t.example/", [])
+    assert w.precondition("https://t.example/", ["github", "--token", "x"]) == ""
 
 
-def test_no_local_privilege_escalation_exploit_was_bundled():
-    """ssh-keysign-pwn is CVE-2026-46333, a local kernel privesc. It needs an
-    unprivileged shell on the host. syphax tests remote targets over HTTP and
-    never has a foothold, so there is nothing for it to run on - and if the
-    CVE appears in a fingerprint, the public-PoC search already finds that
-    repository and stages it for review."""
-    from app.scans.wrappers import _WRAPPERS
-    assert "ssh-keysign-pwn" not in _WRAPPERS
-    assert "sshkeysign" not in _WRAPPERS
+def test_the_capability_gate_is_enforced_before_the_process_exists():
+    """requires_capability is meaningless unless something checks it. The
+    worker refuses the job before spawning, so launching it directly cannot
+    step around the declaration - and it fails closed."""
+    import inspect
+
+    from app import workers
+    src = inspect.getsource(workers)
+    assert "_missing_capability" in src
+    assert "requires_capability" in inspect.getsource(workers._missing_capability)
+    assert "unreadable authorisation is a refusal" in src
 
 
-def test_grafana_is_covered_by_the_scanner_that_is_maintained():
-    """A single-vendor scanner with 30 commits and no releases is a worse bet
-    than nuclei, whose Grafana templates are updated by other people. The
-    nuclei items that would carry them run on every target."""
+def test_grafana_scanner_is_a_second_opinion_not_a_replacement():
+    """The operator asked for it alongside nuclei, not instead. Both run: the
+    nuclei items stay, and the Grafana scanner is gated on the fingerprint so
+    it only fires where Grafana was actually seen."""
     from app.methodology.catalog import CATALOG
-    nuclei_items = [i for i in CATALOG if i.tool == "nuclei"]
-    assert len(nuclei_items) >= 5
-    assert any(i.applies_when.get("always") for i in nuclei_items)
+    assert [i for i in CATALOG if i.tool == "nuclei"]        # still there
+    item = next(i for i in CATALOG if i.id == "VULN-GRAFANA")
+    assert item.tool == "grafana_scanner"
+    assert item.applies_when == {"tech_any": ["grafana"]}
+
+
+def test_the_grafana_wrapper_fails_loud_not_silent():
+    """It is an unverified single-maintainer format. If it clearly ran but the
+    output did not map, it must surface the raw output for review rather than
+    return nothing that reads as a clean bill of health."""
+    from app.scans.wrappers.grafana_scanner import GrafanaScannerWrapper
+    out = GrafanaScannerWrapper().parse(
+        b"Grafana instance detected, unfamiliar output", b"", 0, "https://g")
+    assert len(out.findings) == 1
+    assert out.findings[0].metadata.get("needs_manual_review")
 
 
 def test_the_aws_blast_radius_is_already_covered_in_house():

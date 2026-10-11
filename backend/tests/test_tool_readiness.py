@@ -601,10 +601,16 @@ def test_a_wrapper_can_refuse_a_job_it_cannot_do():
         assert len(reason) > 20, f"{name}'s reason is not usable: {reason!r}"
 
 
+# Tools that refuse a bare web target on purpose: they act on something the
+# operator names (a CI org, a cloud account), not on the engagement URL, so
+# there is nothing to derive and "no options" is correctly a refusal.
+_OPERATOR_DRIVEN = ("nord_stream",)
+
+
 def test_a_wrapper_with_everything_it_needs_does_not_refuse():
     """The default must stay permissive, or a working tool stops running."""
     for wrapper in _WRAPPERS.values():
-        if wrapper.name in _NEEDS_AN_ARTEFACT:
+        if wrapper.name in _NEEDS_AN_ARTEFACT + _OPERATOR_DRIVEN:
             continue
         assert wrapper.precondition("https://t.example/", []) == "", wrapper.name
 

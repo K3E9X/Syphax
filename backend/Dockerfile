@@ -123,6 +123,37 @@ RUN set -eux; \
 # wafw00f (pip) - WAF fingerprinting.
 RUN pip install --no-cache-dir wafw00f==2.3.1
 
+# Operator-requested tools. Cloned rather than pip-installed because none
+# publishes a package, and each is best-effort: a clone that fails leaves the
+# wrapper reporting "not installed" and every other tool still runs.
+#
+#   Grafana-Final-Scanner  version-aware Grafana CVE checks. A second opinion
+#                          on a product the operator cares about; read-only
+#                          HTTP, so it runs like any other scanner.
+#   nord-stream            CI/CD secret extraction. It DEPLOYS pipelines into
+#                          the client's own CI and can lift branch
+#                          protections, so its wrapper refuses to run unless
+#                          the engagement declares the destructive and
+#                          persistence capabilities (wrappers/nord_stream.py).
+#   CloudPEASS             permissions of a compromised cloud principal; needs
+#                          a live credential the operator supplies, and runs
+#                          behind active exploitation.
+RUN set -eux; \
+    git clone --depth 1 https://github.com/Zierax/Grafana-Final-Scanner.git \
+        /opt/grafana-scanner || true; \
+    git clone --depth 1 https://github.com/synacktiv/nord-stream.git \
+        /opt/nord-stream || true; \
+    git clone --depth 1 https://github.com/peass-ng/CloudPEASS.git \
+        /opt/cloudpeass || true; \
+    pip install --no-cache-dir \
+        docopt rich msal google-auth google-api-python-client \
+        tqdm colorama PyJWT "kubernetes>=28.1.0" || true; \
+    for t in grafana-scanner nord-stream cloudpeass; do \
+        [ -d "/opt/$t" ] && echo "installed $t" || echo "WARNING: $t absent"; \
+    done
+# Registry binary ids backed by the clones above (the wrappers resolve these
+# to `python3 /opt/<clone>/<entry>.py`): grafana_scanner, nord_stream.
+
 # Python-based tools, installed into the base layer so both images have them.
 #   arjun        - hidden HTTP parameter discovery (adds injection points)
 #   git-dumper   - rebuild the source tree from an exposed .git

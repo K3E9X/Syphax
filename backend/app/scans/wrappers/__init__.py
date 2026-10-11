@@ -15,6 +15,8 @@ from app.scans.wrappers.gitdumper import GitDumperWrapper
 from app.scans.wrappers.httpx import HttpxWrapper
 from app.scans.wrappers.jsluice import JsluiceWrapper
 from app.scans.wrappers.s3scanner import S3ScannerWrapper
+from app.scans.wrappers.grafana_scanner import GrafanaScannerWrapper
+from app.scans.wrappers.nord_stream import NordStreamWrapper
 from app.scans.wrappers.katana import KatanaWrapper
 from app.scans.wrappers.kiterunner import KiterunnerWrapper
 from app.scans.wrappers.naabu import NaabuWrapper
@@ -53,6 +55,11 @@ _WRAPPERS: Dict[str, BaseWrapper] = {
     # Object storage beyond the three providers cloud_enum knows, with the
     # ACL grants rather than only the bucket's existence.
     "s3scanner": S3ScannerWrapper(),
+    # Operator-requested. grafana_scanner is a read-only second opinion on
+    # Grafana; nord-stream CHANGES the client's CI/CD and only runs when the
+    # engagement declares the destructive + persistence capabilities.
+    "grafana_scanner": GrafanaScannerWrapper(),
+    "nord_stream": NordStreamWrapper(),
     # Parameter discovery: adds injection points, which is what unblocks every
     # injection test on an endpoint whose real parameters are undocumented.
     "arjun": ArjunWrapper(),

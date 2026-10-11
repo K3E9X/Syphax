@@ -50,6 +50,42 @@ MAX_STREAM_BYTES = 1 * 1024 * 1024  # 1 MiB
 # Task implementation
 # -----------------------------------------------------------------------------
 
+async def _missing_capability(wrapper, job) -> str:
+    """"" when this engagement may run this tool, else what is missing.
+
+    Fails CLOSED: a tool that declares a requirement and whose engagement
+    cannot be read is refused, because the safe reading of "we do not know
+    what was authorised" is "not this".
+    """
+    required = [str(c) for c in getattr(wrapper, "requires_capability", ()) or ()]
+    if not required:
+        return ""
+    if not job.engagement_id:
+        return (f"{job.tool} needs the {', '.join(required)} capability, and "
+                f"this job is not attached to an engagement that could "
+                f"declare it")
+    try:
+        from app.engagements import EngagementRepository
+        from app.exploit.capabilities import BY_ID, granted
+        eng = await EngagementRepository().get(job.engagement_id)
+        if eng is None:
+            return f"{job.tool} needs {', '.join(required)}; the engagement is gone"
+        have = granted(eng)
+        missing = [c for c in required if c not in have]
+        if not missing:
+            return ""
+        labels = [BY_ID[c].label if c in BY_ID else c for c in missing]
+        return (f"{job.tool} changes systems rather than reading them, so it "
+                f"needs {', '.join(labels)} declared on this engagement. Turn "
+                f"it on in the engagement's capabilities if the written "
+                f"authorisation covers it - the report prints what was "
+                f"declared.")
+    except Exception:  # noqa: BLE001 - unreadable authorisation is a refusal
+        logger.exception("[%s] could not read the engagement's capabilities", job.id)
+        return (f"{job.tool} needs {', '.join(required)} and the engagement's "
+                f"capabilities could not be read, so it was not run")
+
+
 def parse_and_cap(wrapper, job, stdout: bytes, stderr: bytes,
                   exit_code: int) -> List[Finding]:
     """Parse one job's output and bound what it may contribute.
@@ -87,6 +123,28 @@ async def run_scan(ctx: Dict[str, Any], job_id: str) -> Dict[str, Any]:
         return {"job_id": job_id, "status": "missing"}
 
     wrapper = get_wrapper(job.tool)
+
+    # Is this engagement allowed to run this tool at all? A handful of tools
+    # do not read a target, they change it - and that is a decision for the
+    # operator holding the authorisation, declared per engagement, not for
+    # the wrapper's author. Checked here, before the process exists, so
+    # launching the job directly cannot step around it.
+    blocked_cap = await _missing_capability(wrapper, job)
+    if blocked_cap:
+        job.status = JobStatus.SUCCEEDED
+        job.started_at = job.started_at or time.time()
+        job.finished_at = time.time()
+        job.findings = []
+        job.error = f"not run: {blocked_cap}"
+        await repo.update(job)
+        logger.info("[%s] %s refused: %s", job.id, job.tool, blocked_cap)
+        if job.engagement_id:
+            from app import events
+            await events.emit(
+                job.engagement_id, events.THOUGHT,
+                f"{job.tool} was not run on {job.target}: {blocked_cap}",
+                level=events.LEVEL_INFO, tool=job.tool, job_id=job.id)
+        return {"job_id": job_id, "status": job.status.value, "skipped": True}
 
     # Does this job have anything to work on? Some wrappers pass FILES as
     # arguments, and when the artefact directory is empty the command line has
