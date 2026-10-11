@@ -281,3 +281,74 @@ def test_the_aws_blast_radius_is_already_covered_in_house():
     src = inspect.getsource(cloud_creds)
     assert "allow_active_exploit" in src
     assert "GetCallerIdentity" in src or "get_caller_identity" in src
+
+
+# ---- CVE-2026-46333: detect and stage, never auto-fire ----------------
+
+@pytest.mark.parametrize("uname,candidate", [
+    ("Linux h 6.11.0-19-generic #19 SMP x86_64 GNU/Linux", True),
+    ("Linux h 6.1.0-21-amd64 x86_64 GNU/Linux", True),
+    ("Linux h 6.16.2 x86_64", False),      # patched
+    ("Linux h 5.15.0-91-generic x86_64", False),   # out of family
+    ("Darwin host 23.1.0", False),         # not Linux
+    ("", False),
+])
+def test_the_vulnerable_kernel_range_is_detected(uname, candidate):
+    from app.exploit.kernel_privesc import cve_candidate, kernel_version
+    assert cve_candidate(kernel_version(uname)) is candidate
+
+
+def test_the_detection_module_delivers_no_exploit():
+    """Detect-and-stage, not auto-fire: there is no exploit delivery in this
+    module. The weaponised path was declined - a kernel exploit runs only
+    through the operator-approved staging flow. Checked by behaviour, not by
+    grepping prose: the module exposes only detection, and the functions that
+    would upload or run a binary do not exist on it."""
+    from app.exploit import kernel_privesc
+    assert hasattr(kernel_privesc, "kernel_version")
+    assert hasattr(kernel_privesc, "cve_candidate")
+    for delivery in ("delivery_command", "available_binary", "root_read_proven",
+                     "EXPLOIT_DIR", "BINARIES"):
+        assert not hasattr(kernel_privesc, delivery), (
+            f"delivery code leaked back in: {delivery}")
+    # and it imports nothing that executes
+    import inspect
+    src = inspect.getsource(kernel_privesc)
+    assert "import base64" not in src
+    assert "import subprocess" not in src
+
+
+def test_a_vulnerable_kernel_is_reported_as_a_lead_carrying_the_cve():
+    """The lead carries cve_id so the public-PoC search stages the exploit -
+    the same human-in-the-loop path every third-party PoC takes."""
+    import inspect
+
+    from app.exploit import proof
+    src = inspect.getsource(proof)
+    assert "kernel_privesc_lead" in src
+    assert "CVE_ID" in src
+    # it must be a FINDING, not an exploit invocation
+    assert "available_binary" not in src
+    assert "delivery_command" not in src
+
+
+def test_the_staging_search_consumes_the_cve_lead():
+    """The link that makes detect-and-stage work: analyze_public_exploits
+    reads cve_id off findings, so a CVE-2026-46333 lead reaches it."""
+    import inspect
+
+    from app.analysis import public_exploits
+    from app.exploit.kernel_privesc import CVE_ID
+    assert CVE_ID == "CVE-2026-46333"
+    assert 'cve_id' in inspect.getsource(public_exploits.analyze_public_exploits)
+
+
+def test_the_lead_is_not_over_confident():
+    """It is a version-range match, not a demonstration. "likely", not
+    "confirmed" - the sandbox run is what would confirm it."""
+    import inspect
+
+    from app.exploit import proof
+    src = inspect.getsource(proof)
+    block = src[src.index("kernel_privesc_lead") - 600:src.index("kernel_privesc_lead") + 200]
+    assert '"likely"' in block
