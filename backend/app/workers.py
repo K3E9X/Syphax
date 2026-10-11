@@ -367,6 +367,23 @@ async def shutdown(ctx: Dict[str, Any]) -> None:
     await db.close_pool()
 
 
+def _scan_concurrency() -> int:
+    """How many tool subprocesses may run at once. Env-driven, because it is
+    the main lever between a fast run and a VM that falls over.
+
+    The default was 8, which on a 2GB instance ran eight heavy scanners
+    (nuclei, nmap, sqlmap, ffuf...) in parallel, exhausted the RAM, and took
+    the whole host down to the point of needing a reboot. 4 is a saner
+    default; a small box sets SYPHAX_SCAN_CONCURRENCY=2, a big one raises it.
+    """
+    import os
+    try:
+        value = int(os.getenv("SYPHAX_SCAN_CONCURRENCY", "4"))
+    except (TypeError, ValueError):
+        value = 4
+    return max(1, min(value, 32))
+
+
 class WorkerSettings:
     """Scans worker. Used by: arq app.workers.WorkerSettings
 
@@ -377,7 +394,9 @@ class WorkerSettings:
     redis_settings = _redis_settings()
     on_startup = startup
     on_shutdown = shutdown
-    max_jobs = 8
+    # Parallel tool subprocesses. See _scan_concurrency: this is what stands
+    # between a run and an out-of-memory VM, so it is tunable per instance.
+    max_jobs = _scan_concurrency()
     # arq retries failed jobs by default; we never want that for pentest
     # commands (a flaky network would re-run sqlmap five times). Disable.
     max_tries = 1

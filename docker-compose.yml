@@ -12,10 +12,16 @@
 # All persistent state lives in volumes; nothing important is in container fs.
 
 services:
+  # Memory ceilings per service (mem_limit/memswap_limit) keep a run from
+  # taking the whole VM down: on a small box the kernel OOM-kills one
+  # container, which restarts, instead of swapping the host into a reboot.
+  # Override *_MEM in .env on a larger instance.
   postgres:
     networks: [syphax-net]
     image: postgres:16-alpine
     container_name: syphax-postgres
+    mem_limit: ${POSTGRES_MEM:-320m}
+    memswap_limit: ${POSTGRES_MEM:-320m}
     restart: unless-stopped
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-syphax}
@@ -37,6 +43,8 @@ services:
     networks: [syphax-net]
     image: redis:7-alpine
     container_name: syphax-redis
+    mem_limit: ${REDIS_MEM:-128m}
+    memswap_limit: ${REDIS_MEM:-128m}
     restart: unless-stopped
     command: ["redis-server", "--appendonly", "yes"]
     volumes:
@@ -60,6 +68,8 @@ services:
       dockerfile: Dockerfile
       target: app
     container_name: syphax-backend
+    mem_limit: ${BACKEND_MEM:-512m}
+    memswap_limit: ${BACKEND_MEM:-512m}
     restart: unless-stopped
     depends_on:
       postgres:
@@ -117,6 +127,8 @@ services:
       dockerfile: Dockerfile
       target: proxy
     container_name: syphax-proxy
+    mem_limit: ${PROXY_MEM:-320m}
+    memswap_limit: ${PROXY_MEM:-320m}
     restart: unless-stopped
     network_mode: "service:backend"
     depends_on:
@@ -139,6 +151,8 @@ services:
     # rebuilt or unpacked as a separate copy.
     image: syphax-app:latest
     container_name: syphax-worker
+    mem_limit: ${WORKER_MEM:-768m}
+    memswap_limit: ${WORKER_MEM:-768m}
     restart: unless-stopped
     # Share the backend's network namespace. The backend is the only container
     # with NET_ADMIN + /dev/net/tun, so it is the only one wg-quick can route.
@@ -173,6 +187,8 @@ services:
     # Same image as backend (built there). No build block.
     image: syphax-app:latest
     container_name: syphax-orchestrator
+    mem_limit: ${ORCH_MEM:-256m}
+    memswap_limit: ${ORCH_MEM:-256m}
     restart: unless-stopped
     # Share the backend's network namespace. The backend is the only container
     # with NET_ADMIN + /dev/net/tun, so it is the only one wg-quick can route.
@@ -203,6 +219,8 @@ services:
       context: ./frontend
       dockerfile: Dockerfile
     container_name: syphax-frontend
+    mem_limit: ${FRONTEND_MEM:-96m}
+    memswap_limit: ${FRONTEND_MEM:-96m}
     restart: unless-stopped
     depends_on:
       - backend
