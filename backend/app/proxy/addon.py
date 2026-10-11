@@ -15,7 +15,7 @@ import json
 import logging
 import time
 import uuid
-from typing import List, Tuple
+from typing import List, Optional, Tuple
 
 from mitmproxy import http
 
@@ -23,9 +23,34 @@ from app.proxy.storage import init_schema_sync, insert_flow_sync
 
 logger = logging.getLogger("syphax.proxy.addon")
 
-# Max body bytes we store. Above this we truncate (users can re-fetch from the
-# target if they need the full payload; we are a pentest bench, not an archive).
-MAX_BODY_BYTES = 2 * 1024 * 1024  # 2 MiB
+# Max body bytes we store for a body worth keeping. Above this we truncate
+# (we are a pentest bench, not an archive). Lowered from 2 MiB: the analysers
+# that read bodies - schema audit, JS mining, secret and PII scans - work on
+# the first part of a text payload, and storing multi-MB bodies for every
+# flow is what filled a small VM's disk mid-run.
+MAX_BODY_BYTES = 1024 * 1024  # 1 MiB
+
+# Content types with no analysis value: images, video, audio, fonts, archives
+# and other opaque binaries. Their bodies are the bulk of captured bytes on a
+# real site and nothing reads them, so we store NO body - only the metadata
+# and the true size, so the record stays honest. Decided by the content-type
+# prefix, which is what the server declared.
+_SKIP_BODY_TYPES = (
+    "image/", "video/", "audio/", "font/",
+    "application/octet-stream", "application/zip", "application/gzip",
+    "application/x-gzip", "application/x-tar", "application/pdf",
+    "application/wasm", "application/x-font", "application/vnd.ms-fontobject",
+    "application/ogg", "model/",
+)
+
+
+def _worth_storing(content_type: Optional[str]) -> bool:
+    """Whether a body of this content type is worth keeping. Binary media is
+    not: nothing analyses it and it is where the disk goes."""
+    ct = (content_type or "").split(";")[0].strip().lower()
+    if not ct:
+        return True   # unknown: keep it, it is usually text
+    return not any(ct.startswith(prefix) for prefix in _SKIP_BODY_TYPES)
 
 
 class FlowLogger:
@@ -63,14 +88,19 @@ class FlowLogger:
         resp = flow.response
 
         request_headers = _headers_to_list(req.headers)
-        request_body = _truncate(req.raw_content or b"")
+        request_ct = req.headers.get("content-type")
+        request_body = (_truncate(req.raw_content or b"")
+                        if _worth_storing(request_ct) else None)
 
         if resp is not None:
             response_headers = _headers_to_list(resp.headers)
-            response_body = _truncate(resp.raw_content or b"")
-            response_status = resp.status_code
             response_ct = resp.headers.get("content-type")
+            # The true size is recorded whether or not we keep the body, so a
+            # dropped binary still shows "2.1 MB image/png" in the UI.
             response_size = len(resp.raw_content or b"")
+            response_body = (_truncate(resp.raw_content or b"")
+                             if _worth_storing(response_ct) else None)
+            response_status = resp.status_code
             duration_ms = (
                 int((resp.timestamp_end - req.timestamp_start) * 1000)
                 if resp.timestamp_end and req.timestamp_start

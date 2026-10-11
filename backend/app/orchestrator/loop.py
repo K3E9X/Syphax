@@ -1173,6 +1173,32 @@ async def _finalize_engagement(engagement, run: Run, runs: RunRepository,
     except Exception:  # noqa: BLE001 - validation must not fail the run
         logger.exception("[%s] validation phase error", run.id)
 
+    # Purge the captured traffic now that every analyser has read it. The
+    # bodies are transient working data - a crawl of a real site is gigabytes
+    # of them, which is what filled a small VM's disk mid-run - and the
+    # findings already hold the evidence that mattered. Off by default so a
+    # roomy box keeps the Proxy page populated after a run; on a small one,
+    # set PURGE_FLOWS_AFTER_RUN=true.
+    await _purge_captured_traffic(engagement, run)
+
+
+async def _purge_captured_traffic(engagement, run: Run) -> None:
+    import os
+    if os.getenv("PURGE_FLOWS_AFTER_RUN", "false").strip().lower() not in (
+            "1", "true", "yes", "on"):
+        return
+    try:
+        from app.proxy import FlowRepository
+        freed = await FlowRepository().purge()
+        await events.emit(
+            engagement.id, events.THOUGHT,
+            f"Purged {freed} captured flow(s) after analysis to reclaim disk; "
+            f"the findings keep their evidence. Set PURGE_FLOWS_AFTER_RUN=false "
+            f"to keep the raw traffic.",
+            level=events.LEVEL_VERBOSE, run_id=run.id)
+    except Exception:  # noqa: BLE001 - a failed purge must never fail the run
+        logger.exception("[%s] could not purge captured traffic", run.id)
+
 
 async def _seed_resolved_ips(state: "EngagementState", engagement) -> None:
     """Resolve the target host to its IP(s); add them to scope and the surface.

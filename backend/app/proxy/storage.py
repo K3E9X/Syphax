@@ -321,6 +321,25 @@ class FlowRepository:
         except (IndexError, ValueError):
             return 0
 
+    async def purge(self) -> int:
+        """Clear captured traffic and return the space to the OS.
+
+        TRUNCATE, not DELETE: a DELETE leaves the rows as dead tuples that only
+        a VACUUM reclaims, and never returns the pages to the filesystem, so on
+        a disk-constrained box it would not actually free anything. TRUNCATE
+        drops the data files, which is the whole point of a purge. Used after a
+        run's analysers have consumed the flows - the captured bodies are
+        transient working data, and the findings keep the evidence that
+        mattered."""
+        count = 0
+        try:
+            count = await self.count_flows()
+        except Exception:  # noqa: BLE001
+            count = 0
+        async with db.acquire() as conn:
+            await conn.execute("TRUNCATE flows")
+        return count
+
 
 def _safe_json(raw: Optional[str]) -> List[List[str]]:
     if not raw:
