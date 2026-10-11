@@ -272,6 +272,18 @@ jobs:
           code=$(curl -s -o /dev/null -w '%{http_code}' -b /tmp/jar2 http://127.0.0.1:8000/api/auth/me)
           test "$code" = "401" || { echo "::error::the session survived logout, answering $code"; exit 1; }
 
+      # The analysers, against a target built to be found. Every other test
+      # in the suite exercises a pure function, which is how a run could
+      # finish with thousands of tests green and an empty Findings page.
+      # This one serves a deliberately weak API inside the container, runs
+      # the seven API analysers for real against this Postgres, and checks
+      # the findings survive validation all the way to the row the UI reads.
+      - name: The API analysers find what is planted (end to end)
+        run: |
+          set -eu
+          docker compose exec -T backend python -m pytest tests/live -q \
+            || { echo "::error::the API suite found nothing on a target built for it"; exit 1; }
+
       - name: Backend logs (always)
         if: always()
         run: docker compose logs --no-color backend | tail -100

@@ -85,14 +85,24 @@ async def run_suite(safe: SafePoC, url: str) -> Optional[Dict[str, Any]]:
     typename = await _get(safe, url, probes.QUERY_TYPENAME)
     if typename is None:
         return None
-    if not probes.responds_to_graphql(typename.text, typename.status_code):
-        # Not a GraphQL endpoint over GET. It may still be one over POST, and
-        # the console check settles that: a GraphiQL page proves the server.
+
+    answered = probes.responds_to_graphql(typename.text, typename.status_code)
+    console = ""
+    if not answered:
+        # The cheap disqualification did not fire. Before dropping the
+        # endpoint, ask whether a console is served here: a GraphiQL or
+        # Playground page proves the server exists even when the probe's
+        # answer was not one we recognise.
+        #
+        # And if it does, run the WHOLE suite rather than reporting the
+        # console alone. An end-to-end run against a deliberately odd server
+        # caught this: the probe got an answer the matcher did not know, and
+        # introspection, field suggestions, aliases and directives - all of
+        # which that server had - were never asked about. One unrecognised
+        # response must not cost seven checks.
         console = await _console(safe, url)
         if not console:
             return None
-        return {"endpoint": True, "get_queries": False, "console": console,
-                "engine": "", "evidence": {"console": f"GET {url} -> {console}"}}
 
     checks: Dict[str, Any] = {
         "endpoint": True,
@@ -101,6 +111,10 @@ async def run_suite(safe: SafePoC, url: str) -> Optional[Dict[str, Any]]:
         "evidence": {"typename": f"GET {url}?query={{__typename}} -> "
                                  f"{typename.status_code}"},
     }
+    if console:
+        checks["console"] = console
+        checks["evidence"]["console"] = (
+            f"GET {url} (Accept: text/html) -> {console}")
 
     full = await _get(safe, url, _INTROSPECTION)
     if full is not None and probes.schema_readable(full.text):
@@ -147,10 +161,12 @@ async def run_suite(safe: SafePoC, url: str) -> Optional[Dict[str, Any]]:
             f"GET {url}?query={{__typename @skip(if:false) @skip(if:false)}} "
             f"-> executed; the spec allows one @skip per location")
 
-    console = await _console(safe, url)
-    if console:
-        checks["console"] = console
-        checks["evidence"]["console"] = f"GET {url} (Accept: text/html) -> {console}"
+    if not checks.get("console"):      # not already settled above
+        found = await _console(safe, url)
+        if found:
+            checks["console"] = found
+            checks["evidence"]["console"] = (
+                f"GET {url} (Accept: text/html) -> {found}")
 
     return checks
 
