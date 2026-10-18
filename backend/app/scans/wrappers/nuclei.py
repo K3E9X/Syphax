@@ -72,6 +72,33 @@ class NucleiWrapper(BaseWrapper):
             cmd += ["-severity", "low,medium,high,critical"]
         if interactsh and "-interactsh-server" not in options:
             cmd += ["-interactsh-server", interactsh]
+
+        # Bound every nuclei run so one slow or erroring host cannot burn the
+        # whole job timeout and come back with nothing.
+        #
+        # WITHOUT THESE, THE VULN/EXPLOIT PHASES FIND NOTHING ON A REAL TARGET.
+        # nuclei defaults are conservative; a full-template (VULN-NUCLEI passes
+        # no -tags) or -dast run against a laggy host routinely took 20-30min
+        # and was KILLED at timeout_seconds (1800s) mid-scan - exit -1, zero
+        # findings. On a live run against a deliberately-vulnerable target the
+        # orchestrator planned and launched nuclei correctly (DAST on every
+        # injection point), but 15 of 16 completed jobs timed out at 1800s and
+        # the 1 that finished took 1156s, so not a single injection was ever
+        # confirmed and every finding stayed recon-grade "info". These flags
+        # cut a run to minutes. Each is applied only if the caller did not set
+        # it, so a catalog item can still override per scan.
+        perf_defaults = (
+            ("-rate-limit", "150"),     # requests/sec ceiling
+            ("-c", "25"),               # template concurrency
+            ("-bulk-size", "25"),       # hosts/templates in parallel
+            ("-timeout", "10"),         # per-request seconds (default can stall)
+            ("-retries", "1"),          # one retry, not the default back-off pile-up
+            ("-max-host-error", "30"),  # abandon a host that keeps erroring
+        )
+        for flag, value in perf_defaults:
+            if flag not in options and not (flag == "-c" and "-concurrency" in options):
+                cmd += [flag, value]
+
         cmd.extend(options)
         return cmd
 
