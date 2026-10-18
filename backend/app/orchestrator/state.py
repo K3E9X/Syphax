@@ -315,6 +315,35 @@ class EngagementState:
                 self.engagement_id, catalog_item_id, asset_value, status, job_id, time.time(),
             )
 
+    async def reset_stale_coverage(self) -> int:
+        """Clear coverage left 'running'/'pending' by a previous, dead run.
+
+        'running' and 'pending' are in COVERED_STATUSES on purpose - inside a
+        run, a task already in flight must read as covered so the planner does
+        not relaunch it in a loop. But that same rule makes a KILLED task
+        permanently covered: a nuclei job killed at the 1800s timeout leaves its
+        coverage row at 'running' (the loop only ingests terminal jobs, and the
+        worker's kill lands too late to reconcile it), so the NEXT run on the
+        same engagement sees that (item, asset) as done and skips the injection
+        point - exactly the "a later run can pick them up" promise in
+        _wait_for_jobs, broken.
+
+        Called once at run start, when this run has launched nothing yet, so any
+        'running'/'pending' row can only be an orphan of a run that already
+        ended. Terminal rows ('done'/'skipped'/'error') are left alone - those
+        are real coverage. Returns how many orphans it reclaimed.
+        """
+        async with db.acquire() as conn:
+            tag = await conn.execute(
+                "DELETE FROM coverage WHERE engagement_id=$1 "
+                "AND status IN ('running','pending')",
+                self.engagement_id,
+            )
+        try:
+            return int(str(tag).rsplit(" ", 1)[-1])   # asyncpg tag "DELETE N"
+        except (ValueError, IndexError):
+            return 0
+
     async def is_covered(self, catalog_item_id: str, asset_value: str) -> bool:
         async with db.acquire() as conn:
             row = await conn.fetchrow(

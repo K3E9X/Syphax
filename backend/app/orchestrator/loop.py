@@ -171,6 +171,21 @@ async def run_engagement_loop(run_id: str) -> dict:
     planner = Planner(state)
     executor = Executor(state)
 
+    # Reclaim (item, asset) pairs a previous run left pinned at 'running'/
+    # 'pending' - those are in COVERED_STATUSES, so without this a re-run skips
+    # every injection point whose job was killed at the timeout. Safe here:
+    # this run has launched nothing yet, so any such row is an orphan.
+    try:
+        reclaimed = await state.reset_stale_coverage()
+        if reclaimed:
+            await events.emit(
+                engagement.id, events.PHASE_CHANGED,
+                f"Reclaimed {reclaimed} unfinished task(s) from a previous run "
+                "so they are retried this time.",
+                run_id=run.id, level=events.LEVEL_INFO)
+    except Exception:  # noqa: BLE001 - coverage reclaim must never fail a run
+        logger.exception("[%s] stale-coverage reclaim failed", run.id)
+
     max_jobs = engagement.budget_requests or DEFAULT_MAX_JOBS
     # Clamp the loop budget below the worker's job_timeout (minus a finalise
     # reserve) so the run stops itself gracefully - and reaches exploitation +
