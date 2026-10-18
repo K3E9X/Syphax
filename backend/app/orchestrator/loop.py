@@ -449,6 +449,12 @@ async def run_engagement_loop(run_id: str) -> dict:
             logger.info("[%s] hit MAX_ITERATIONS", run.id)
             run.stop_reason = run.stop_reason or "max_iterations"
 
+        # Stop any scan jobs still in flight before finalising. The loop that
+        # would ingest them is ending, so they will not contribute to this run;
+        # leaving them running burns the VM for up to their own 1800s timeout
+        # each and pins their coverage. See _drain_scan_jobs.
+        await _drain_scan_jobs(engagement, run)
+
         # Validation phase: confirm findings with safe PoC, then build chains.
         # Always run it (even on stop) so partial results are still validated.
         await _finalize_engagement(engagement, run, runs, state,
@@ -475,6 +481,12 @@ async def run_engagement_loop(run_id: str) -> dict:
         # Every active step inside _finalize_engagement already self-suppresses
         # on stop_reason "cancelled", so this is the read-only half: the
         # traffic analysers and the validator.
+        # Abort the scan jobs this run enqueued but never finished FIRST: a
+        # hard-cancel at the worker's job_timeout leaves them running in arq,
+        # where the scans worker keeps feeding nuclei/sqlmap the whole VM for
+        # hours after the run is gone. Draining before the salvage also frees
+        # the CPU so the read-only salvage analysers can actually run.
+        await _drain_scan_jobs(engagement, run)
         await _salvage_on_cancel(engagement, run, runs, state, phases_seen)
         await _finalize(runs, run)
         await audit("engagement.run_cancelled", engagement_id=engagement.id, run_id=run.id)
@@ -990,6 +1002,53 @@ async def _run_correlation(engagement, run: Run, executor: Executor,
 # operator pressed Stop and is watching; a bounded wait with a line in the
 # console is the trade, and losing the whole run's work is not.
 CANCEL_SALVAGE_SECONDS = 120
+
+
+async def _drain_scan_jobs(engagement, run: Run) -> int:
+    """Abort this engagement's scan jobs still queued or running in arq.
+
+    When a run ends - cancelled at the worker's job_timeout, or stopped at a
+    budget - the scan jobs it enqueued do NOT stop with it: arq keeps handing
+    them to the scans worker, which runs nuclei/sqlmap for up to their own
+    1800s timeout each, long after the run is over. On the live run, 16 jobs
+    were still queued/running at the cancel, burning the 2-core VM for hours;
+    nothing ingests their findings (the loop that would is gone) and - before
+    the coverage reclaim - they pinned their injection points as 'covered' for
+    the next run.
+
+    arq's job id IS our job id (enqueue_job(..., _job_id=job.id)), so the
+    runner's cancel targets each directly: the scans worker catches the
+    CancelledError, SIGTERMs the subprocess and marks the job cancelled. Aborts
+    run concurrently so dozens of orphans do not cost dozens of 5s round-trips.
+    Never raises - draining is cleanup, it must not turn a stop into a crash.
+    """
+    from app.scans.runner import get_runner
+
+    try:
+        jobs = await JobRepository().list_by_engagement(engagement.id, limit=2000)
+    except Exception:  # noqa: BLE001
+        logger.exception("[%s] could not list jobs to drain", run.id)
+        return 0
+    pending = [j for j in jobs
+               if j.status in (JobStatus.QUEUED, JobStatus.RUNNING)]
+    if not pending:
+        return 0
+
+    runner = get_runner()
+    results = await asyncio.gather(
+        *[runner.cancel(j.id) for j in pending], return_exceptions=True)
+    aborted = sum(1 for r in results if r is True)
+    logger.info("[%s] drained %d/%d unfinished scan job(s)",
+                run.id, aborted, len(pending))
+    try:
+        await events.emit(
+            engagement.id, events.PHASE_CHANGED,
+            f"Stopped {aborted} unfinished scan job(s) left over from this run "
+            "so they do not keep running after it ends.",
+            run_id=run.id, level=events.LEVEL_INFO)
+    except Exception:  # noqa: BLE001 - reporting must not fail the drain
+        logger.debug("could not report the scan-job drain")
+    return aborted
 
 
 async def _salvage_on_cancel(engagement, run: Run, runs: RunRepository,
