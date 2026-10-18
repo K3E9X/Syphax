@@ -86,16 +86,26 @@ class LLMRouter:
         )
 
     def status(self) -> Dict[str, Dict[str, object]]:
-        """Per-role view: which provider answers, is it configured, last used."""
+        """Per-role view: which provider answers, is it configured, last used.
+
+        Read from the ACTUAL client each role would use, not from the .env
+        values in `_role_config`. A role's key is usually set in the UI, stored
+        in the database and pushed into the router via `reconfigure()` - env is
+        empty in that (normal) case. Reading env made this report "configured:
+        false / OpenRouter fallback / base_url=<env default>" while the run was
+        really calling the configured provider (and billing it), contradicting
+        settings_store.llm_readiness() and reading as "my model is not wired"
+        when it was. The client is the source of truth: a role falls back only
+        when `get()` hands back the shared OpenRouter fallback instance.
+        """
         out: Dict[str, Dict[str, object]] = {}
         for role in ROLES:
-            base_url, api_key, model = _role_config(role)
-            using_fallback = not api_key
             client = self.get(role)
+            using_fallback = client is self._fallback
             out[role] = {
-                "configured": bool(api_key),
+                "configured": client.configured and not using_fallback,
                 "using_openrouter_fallback": using_fallback,
-                "base_url": (base_url or settings.openrouter_base_url) if using_fallback else base_url,
+                "base_url": client.base_url,
                 "model": client.model,
                 "fallback_models": client.fallback_models,
                 "last_used_model": client.last_used_model,

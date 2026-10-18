@@ -23,8 +23,9 @@ from app.orchestrator.executor import Executor
 from app.orchestrator.planner import Planner
 from app.orchestrator.runs import Run, RunRepository
 from app.orchestrator.state import EngagementState
-from app.methodology import (PHASE_EXPLOIT, PHASE_MAPPING, PHASE_RECON,
-                             PHASE_VULN)
+from app.methodology import (PHASE_EXPLOIT, PHASE_MAPPING, PHASE_ORDER,
+                             PHASE_RECON, PHASE_VULN)
+from app.queue import ORCH_JOB_TIMEOUT_SECONDS
 from app.scans.models import JobStatus
 from app.scans.storage import JobRepository
 from app.validation import build_chains, validate_engagement
@@ -77,7 +78,49 @@ def phase_allowance(max_jobs: int, phase: str) -> int:
         return max_jobs
     floor = max(1, min(MIN_PHASE_JOBS, max_jobs // max(1, len(PHASE_BUDGET_SHARE))))
     return max(floor, int(max_jobs * share))
+
+
+def phase_time_skip(elapsed: float, time_budget: float) -> set:
+    """Phases whose share of the TIME budget has already elapsed.
+
+    The job-count sibling of this (`phase_allowance` + `skip_phases`) stops any
+    single phase from eating the whole *job* budget. But the budget that runs
+    out first on a real target is TIME, not jobs: a large surface or slow tools
+    spend hours in mapping/vuln_analysis launching only a few dozen jobs, so the
+    job-count shares are never reached - the run just hits the worker's
+    job_timeout mid-vuln and the exploitation phase never runs at all.
+
+    So time is capped the same way jobs are. Once the run is past a phase's
+    cumulative share of the wall-clock (recon .15, then +mapping .30, then
+    +vuln .25), that phase yields to the ones after it. The last phase
+    (exploitation) is never skipped - it has nowhere to yield to, and reserving
+    the final 1 - sum(earlier shares) of the clock for it is the whole point.
+    """
+    if time_budget <= 0:
+        return set()
+    frac = elapsed / time_budget
+    skip: set = set()
+    cumulative = 0.0
+    for phase in PHASE_ORDER:
+        share = PHASE_BUDGET_SHARE.get(phase)
+        if share is None:
+            continue
+        cumulative += share
+        if phase != PHASE_EXPLOIT and frac >= cumulative:
+            skip.add(phase)
+    return skip
+
+
 DEFAULT_MAX_SECONDS = 6 * 60 * 60          # 6 hours
+# The loop's own deadline must land BEFORE the worker's arq job_timeout, with
+# room left to finalise. If it does not, arq cancels the task at job_timeout and
+# the run falls into the CancelledError path - read-only salvage, exploitation
+# deliberately skipped - instead of the graceful `time_budget` stop that runs
+# the exploitation and validation phases on whatever was found. A 6h loop budget
+# sitting under a 3h job_timeout is exactly why every run on a real target ended
+# 'cancelled' mid-vuln_analysis with nothing exploited, no PoC and no payload.
+FINALIZE_RESERVE_SECONDS = 20 * 60
+MIN_TIME_BUDGET = 60
 # 150 x BATCH_SIZE is 1200 planning slots, comfortably above the job budget, so
 # the iteration count is never the thing that stops a run.
 MAX_ITERATIONS = 150
@@ -129,7 +172,13 @@ async def run_engagement_loop(run_id: str) -> dict:
     executor = Executor(state)
 
     max_jobs = engagement.budget_requests or DEFAULT_MAX_JOBS
-    deadline = time.time() + (engagement.budget_seconds or DEFAULT_MAX_SECONDS)
+    # Clamp the loop budget below the worker's job_timeout (minus a finalise
+    # reserve) so the run stops itself gracefully - and reaches exploitation +
+    # validation - before arq can hard-cancel it. See FINALIZE_RESERVE_SECONDS.
+    time_budget = min(engagement.budget_seconds or DEFAULT_MAX_SECONDS,
+                      max(MIN_TIME_BUDGET,
+                          ORCH_JOB_TIMEOUT_SECONDS - FINALIZE_RESERVE_SECONDS))
+    deadline = time.time() + time_budget
 
     # Before anything is planned: which tools can actually find something,
     # and whether the crawl's traffic is being captured for the analysers.
@@ -233,17 +282,30 @@ async def run_engagement_loop(run_id: str) -> dict:
             # planner quirk) must NOT abort the whole run: log it, and only
             # give up after several consecutive failures.
             try:
-                exhausted = {
+                job_exhausted = {
                     phase for phase in PHASE_BUDGET_SHARE
                     if jobs_by_phase.get(phase, 0) >= phase_allowance(max_jobs, phase)
                 }
+                # The time-budget sibling: a phase that has spent its share of
+                # the wall-clock yields too, so a slow or large target still
+                # reaches exploitation instead of dying in mapping/vuln on the
+                # job_timeout. elapsed = how far into the time budget we are.
+                elapsed = time_budget - (deadline - time.time())
+                time_exhausted = phase_time_skip(elapsed, time_budget)
+                exhausted = job_exhausted | time_exhausted
                 for phase in exhausted - capped_reported:
                     capped_reported.add(phase)
+                    if phase in job_exhausted:
+                        msg = (
+                            f"Phase '{phase}' reached its share of the job budget "
+                            f"({jobs_by_phase.get(phase, 0)} of {max_jobs} tasks); "
+                            "moving on so the later phases run.")
+                    else:
+                        msg = (
+                            f"Phase '{phase}' reached its share of the time budget; "
+                            "moving on so the later phases run.")
                     await events.emit(
-                        engagement.id, events.PHASE_CHANGED,
-                        f"Phase '{phase}' reached its share of the job budget "
-                        f"({jobs_by_phase.get(phase, 0)} of {max_jobs} tasks); "
-                        f"moving on so the later phases run.",
+                        engagement.id, events.PHASE_CHANGED, msg,
                         run_id=run.id, phase=phase, level=events.LEVEL_INFO)
 
                 batch = await planner.plan(max_tasks=BATCH_SIZE,

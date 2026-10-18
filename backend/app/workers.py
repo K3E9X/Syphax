@@ -19,7 +19,7 @@ from arq import cron  # noqa: F401  (kept for future scheduled tasks)
 
 from app import db
 from app.queue import close_arq_pool, get_arq_pool  # noqa: F401
-from app.queue import ORCHESTRATOR_QUEUE
+from app.queue import ORCH_JOB_TIMEOUT_SECONDS, ORCHESTRATOR_QUEUE
 from app.queue import redis_settings as _redis_settings
 import app.audit  # noqa: F401  - register schema
 import app.engagements.storage  # noqa: F401  - register schema
@@ -421,5 +421,8 @@ class OrchestratorWorkerSettings:
     # modest; scans execute on the other worker regardless.
     max_jobs = 6
     max_tries = 1
-    job_timeout = 3 * 60 * 60
+    # Shared with the loop so its deadline always lands under this. The loop
+    # stops itself (and runs exploitation) before arq reaches this ceiling; this
+    # is only the hard backstop for a genuinely wedged run.
+    job_timeout = ORCH_JOB_TIMEOUT_SECONDS
     allow_abort_jobs = True

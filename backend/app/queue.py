@@ -22,6 +22,16 @@ _arq_pool: Optional[ArqRedis] = None
 # queue; the scans worker reads the default queue.
 ORCHESTRATOR_QUEUE = "arq:queue:orchestrator"
 
+# Hard ceiling arq puts on one autonomous run (OrchestratorWorkerSettings.
+# job_timeout). Defined here, and imported by BOTH the worker that enforces it
+# and the loop that must finish under it, so the two can never drift apart. The
+# previous drift - a 6h loop budget beneath a 3h worker timeout - meant arq
+# cancelled every long run mid-vuln_analysis, in the CancelledError path that
+# skips exploitation, so no run on a real target ever exploited, proved or
+# authored anything. The loop clamps its own deadline to this minus a finalise
+# reserve (see app/orchestrator/loop.py).
+ORCH_JOB_TIMEOUT_SECONDS = 6 * 60 * 60
+
 
 def redis_settings() -> RedisSettings:
     return RedisSettings.from_dsn(settings.redis_url)
