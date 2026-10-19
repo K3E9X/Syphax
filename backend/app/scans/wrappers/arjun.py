@@ -84,7 +84,12 @@ class ArjunWrapper(BaseWrapper):
     binary = "arjun"
     description = "Discover hidden HTTP parameters by differential analysis."
     category = "recon"
-    timeout_seconds = 15 * 60
+    # 6 min, not 15: arjun does differential analysis of one endpoint's
+    # parameters - that does not take 15 min, so a job still running at 6 min is
+    # stuck on a slow host and is holding up the batch. A live run froze ~40 min
+    # in mapping on two arjun jobs; a shorter cap kills a stuck one fast and the
+    # coverage reclaim retries it.
+    timeout_seconds = 6 * 60
 
     def build_command(self, target: str, options: Sequence[str]) -> List[str]:
         cmd = [
