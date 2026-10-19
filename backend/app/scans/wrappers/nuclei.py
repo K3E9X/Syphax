@@ -38,7 +38,11 @@ class NucleiWrapper(BaseWrapper):
     binary = "nuclei"
     description = "Template-based vulnerability scanner (4000+ community templates)."
     category = "vuln"
-    timeout_seconds = 30 * 60
+    # 15 min, not 30: a nuclei job that has not finished in 15 minutes is
+    # stuck on a slow host, not making progress - 27 jobs in a live run hit the
+    # old 1800s cap and returned nothing. A shorter cap kills a stuck job fast
+    # so its coverage is reclaimed and retried instead of burning half an hour.
+    timeout_seconds = 15 * 60
 
     # WITHOUT THESE, NUCLEI FINDS NOTHING AND EXITS 0.
     #

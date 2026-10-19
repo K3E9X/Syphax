@@ -273,9 +273,21 @@ CATALOG: List[CatalogItem] = [
         vuln_class="multiple",
         phase=PHASE_VULN,
         tool="nuclei",
-        description="Template scan: CVEs, exposures, misconfig, default creds.",
+        description="Template scan: CVEs, misconfig, default creds, takeovers.",
         severity_default="medium",
-        applies_when={"always": True},
+        # Scoped, not the full ~4000-template set. With no -tags nuclei ran
+        # every template per asset, which took 20-30min and was killed at the
+        # job timeout with nothing to show - the vuln phase's whole budget went
+        # to jobs that never finished. These high-signal families cover the
+        # known-issue classes a template scan is for; the per-parameter
+        # injection fuzzing is EXP-DAST's job (-dast), not this one.
+        default_options=["-tags",
+                         "cve,misconfiguration,default-login,takeover,exposure"],
+        # Per host, not per endpoint. A template scan tests the host and its
+        # known paths; re-running the whole set against every discovered URL
+        # multiplied it into the dozens of timing-out jobs seen on a real
+        # target. is_base runs it once on the engagement's target.
+        applies_when={"is_base": True},
     ),
     CatalogItem(
         id="VULN-NMAP-NSE",

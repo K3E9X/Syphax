@@ -343,6 +343,7 @@ async def run_engagement_loop(run_id: str) -> dict:
 
                 run.iterations = iteration + 1
                 run.phase = batch[0].phase
+                run.heartbeat_at = time.time()
                 await runs.update(run)
                 if batch[0].phase != current_phase:
                     current_phase = batch[0].phase
@@ -1472,6 +1473,14 @@ async def _wait_for_jobs(
     while pending and time.time() < deadline:
         if await runs.stop_requested(run_id):
             break
+        # Touch the heartbeat on every poll, not once per run. A batch can sit
+        # here for minutes; without this a live run looks as stale as a dead
+        # one, so the reaper (which keys off heartbeat age) cannot tell them
+        # apart and would reap a healthy long run.
+        try:
+            await runs.heartbeat(run_id)
+        except Exception:  # noqa: BLE001 - a heartbeat miss must not stop a wait
+            pass
         await asyncio.sleep(POLL_INTERVAL)
         for jid in list(pending):
             job = await jobs_repo.get(jid)
