@@ -45,7 +45,12 @@ db.register_schema(SCHEMA_SQL)
 # A loop touches its heartbeat every iteration, and an iteration waits at most
 # ITERATION_WAIT_CAP (45 min) for its batch. Three times that is comfortably
 # past the slowest legitimate iteration and still reclaims the same day.
-STALE_AFTER_SECONDS = 3 * 45 * 60
+# A live loop now heartbeats every iteration AND on every 3s poll inside a
+# wait, so a healthy run is never silent for long. 10 minutes is a comfortable
+# margin above any transient DB/worker pause while still letting the reaper
+# close a crashed run within minutes - the old 135min predated a real
+# heartbeat and left a zombie run 'running' for over two hours.
+STALE_AFTER_SECONDS = 10 * 60
 
 
 def is_stale(status: Optional[str], heartbeat_at: Optional[float],
@@ -161,6 +166,45 @@ class RunRepository:
             return int(str(result).split()[-1])
         except (IndexError, ValueError):
             return 0
+
+    async def reclaim_all_stale(self) -> int:
+        """reclaim_stale across every engagement, for the periodic reaper.
+
+        reclaim_stale only ran from start_run, so a run whose loop died (the
+        orchestrator worker crashed/restarted - arq max_tries=1 means no
+        requeue) stayed 'running' until the NEXT run on that same engagement.
+        The reaper calls this on a schedule so a zombie run is closed within
+        minutes regardless of whether anyone starts another run. Now that the
+        loop heartbeats reliably, a stale heartbeat is a real signal.
+        """
+        cutoff = time.time() - STALE_AFTER_SECONDS
+        async with db.acquire() as conn:
+            result = await conn.execute(
+                """
+                UPDATE runs
+                   SET status='failed',
+                       stop_reason=COALESCE(stop_reason, 'interrupted'),
+                       error=COALESCE(error, 'run interrupted: the worker stopped '
+                                             'reporting; coverage was kept'),
+                       finished_at=COALESCE(finished_at, $1)
+                 WHERE status IN ('queued','running')
+                   AND COALESCE(heartbeat_at, created_at) < $2
+                """,
+                time.time(), cutoff,
+            )
+        try:
+            return int(str(result).split()[-1])
+        except (IndexError, ValueError):
+            return 0
+
+    async def active_engagement_ids(self) -> set:
+        """Engagement ids with a run still queued or running. The reaper uses
+        this to tell a live run's scan jobs from a dead run's orphans."""
+        async with db.acquire() as conn:
+            rows = await conn.fetch(
+                "SELECT DISTINCT engagement_id FROM runs "
+                "WHERE status IN ('queued','running')")
+        return {r["engagement_id"] for r in rows if r["engagement_id"]}
 
     async def active(self, *, limit: int = 20) -> List[Run]:
         """Every run still queued or running, across all engagements.

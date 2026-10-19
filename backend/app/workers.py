@@ -15,7 +15,7 @@ import logging
 import time
 from typing import Any, Dict, List, Optional
 
-from arq import cron  # noqa: F401  (kept for future scheduled tasks)
+from arq import cron
 
 from app import db
 from app.queue import close_arq_pool, get_arq_pool  # noqa: F401
@@ -406,6 +406,52 @@ class WorkerSettings:
     allow_abort_jobs = True
 
 
+async def reaper(ctx: Dict[str, Any]) -> Dict[str, int]:
+    """Periodic sweep: close zombie runs and abort the scan jobs they orphaned.
+
+    Two failure modes it catches, neither covered by the run's own cleanup:
+      * a run whose loop died (orchestrator worker crash/restart - arq
+        max_tries=1, so no requeue) stays 'running' forever until the next run
+        on that engagement. reclaim_all_stale closes it by stale heartbeat.
+      * the scan jobs that run left in flight keep being fed to the scans worker
+        (nuclei/sqlmap for up to 45min each) with no loop to ingest them.
+        They are aborted here: any job still queued/running whose engagement has
+        no active run is an orphan.
+
+    Runs on the orchestrator worker, every few minutes. Never raises - a cron
+    that throws just stops running.
+    """
+    from app.orchestrator.runs import RunRepository
+    from app.scans.runner import get_runner
+    from app.scans.storage import JobRepository
+
+    runs_reclaimed = 0
+    try:
+        runs_reclaimed = await RunRepository().reclaim_all_stale()
+        if runs_reclaimed:
+            logger.info("reaper: reclaimed %d stale run(s)", runs_reclaimed)
+    except Exception:  # noqa: BLE001
+        logger.exception("reaper: reclaim_all_stale failed")
+
+    jobs_aborted = 0
+    try:
+        active = await RunRepository().active_engagement_ids()
+        unfinished = await JobRepository().unfinished_scan_jobs()
+        orphans = [j for j in unfinished
+                   if j.engagement_id and j.engagement_id not in active]
+        if orphans:
+            runner = get_runner()
+            results = await asyncio.gather(
+                *[runner.cancel(j.id) for j in orphans], return_exceptions=True)
+            jobs_aborted = sum(1 for r in results if r is True)
+            logger.info("reaper: aborted %d orphan scan job(s) of %d unfinished",
+                        jobs_aborted, len(unfinished))
+    except Exception:  # noqa: BLE001
+        logger.exception("reaper: orphan-job sweep failed")
+
+    return {"runs_reclaimed": runs_reclaimed, "jobs_aborted": jobs_aborted}
+
+
 class OrchestratorWorkerSettings:
     """Orchestrator worker. Used by: arq app.workers.OrchestratorWorkerSettings
 
@@ -426,3 +472,7 @@ class OrchestratorWorkerSettings:
     # is only the hard backstop for a genuinely wedged run.
     job_timeout = ORCH_JOB_TIMEOUT_SECONDS
     allow_abort_jobs = True
+    # Every 3 minutes: close runs whose loop died and abort the scan jobs they
+    # orphaned. The one periodic task the stack never had, so a crashed run
+    # stayed 'running' and its nuclei/sqlmap kept burning the VM for hours.
+    cron_jobs = [cron(reaper, minute=set(range(0, 60, 3)), run_at_startup=True)]

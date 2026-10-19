@@ -36,9 +36,22 @@ def test_a_run_that_never_beat_is_stale():
     assert is_stale("running", heartbeat_at=None)
 
 
-def test_stale_window_allows_the_longest_legitimate_iteration():
-    from app.orchestrator.loop import ITERATION_WAIT_CAP
-    assert STALE_AFTER_SECONDS > ITERATION_WAIT_CAP
+def test_stale_window_exceeds_the_max_heartbeat_gap():
+    """The stale window must be larger than the longest a HEALTHY run goes
+    between heartbeats, or the reaper would reap a live run.
+
+    It used to have to exceed ITERATION_WAIT_CAP (45min), because a batch could
+    sit in _wait_for_jobs that long without a heartbeat. Now the wait loop
+    heartbeats on every poll (POLL_INTERVAL), so the max gap is a few seconds
+    and STALE only has to clear that - which is why it could drop from 135min
+    to 10min and let the reaper close a crashed run within minutes instead of
+    hours. The guarantee that makes this safe is the heartbeat in the wait
+    loop, asserted here directly."""
+    import inspect
+
+    from app.orchestrator import loop
+    assert STALE_AFTER_SECONDS > loop.POLL_INTERVAL * 20
+    assert "runs.heartbeat(run_id)" in inspect.getsource(loop._wait_for_jobs)
 
 
 def test_run_payload_exposes_staleness_to_the_ui():

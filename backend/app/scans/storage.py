@@ -120,6 +120,14 @@ class JobRepository:
             )
         return [_row_to_job(row) for row in rows]
 
+    async def unfinished_scan_jobs(self) -> List[Job]:
+        """Every job still queued or running, across all engagements. The
+        reaper aborts the ones whose engagement has no active run."""
+        async with db.acquire() as conn:
+            rows = await conn.fetch(
+                "SELECT * FROM jobs WHERE status IN ('queued','running')")
+        return [_row_to_job(row) for row in rows]
+
     async def count(self) -> int:
         async with db.acquire() as conn:
             return int(await conn.fetchval("SELECT COUNT(*) FROM jobs"))
