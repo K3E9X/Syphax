@@ -5,7 +5,7 @@ import logging
 
 import time
 
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
@@ -416,9 +416,33 @@ async def chains(engagement_id: str) -> dict:
 
 
 @router.get("/{engagement_id}/events")
-async def events_backfill(engagement_id: str, after_id: int = 0) -> dict:
-    items = await events_log.list_since(engagement_id, after_id)
-    return {"count": len(items), "items": items}
+async def events_backfill(
+    engagement_id: str,
+    after_id: int = 0,
+    before_id: Optional[int] = None,
+    order: str = "asc",
+    limit: int = 500,
+) -> dict:
+    """Paginated engagement events.
+
+    Two directions, because one was not enough to follow a long run:
+      * order=asc (default) - the forward live tail: the next `limit` events
+        after `after_id`, oldest first. Poll with the last id you saw.
+      * order=desc - the most recent `limit` events, newest first, paged back
+        with `before_id`. This is how the UI reaches the END of a long run;
+        the forward cursor from id 0 only ever showed the first few minutes.
+
+    `limit` is clamped to [1, 2000] so a client cannot ask for the whole
+    stream at once. `total` is returned so the UI knows how many events exist.
+    """
+    limit = max(1, min(int(limit or 500), 2000))
+    if str(order).lower() == "desc":
+        items = await events_log.list_recent(
+            engagement_id, limit=limit, before_id=before_id)
+    else:
+        items = await events_log.list_since(engagement_id, after_id, limit=limit)
+    total = await events_log.count_events(engagement_id)
+    return {"count": len(items), "total": total, "order": order, "items": items}
 
 
 @router.get("/{engagement_id}/approvals")

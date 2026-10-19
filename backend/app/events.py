@@ -80,26 +80,60 @@ async def emit(
         logger.exception("event emit failed: %s", type_)
 
 
+def _row_to_event(r) -> Dict[str, Any]:
+    data = {}
+    if r["data_json"]:
+        try:
+            data = json.loads(r["data_json"])
+        except json.JSONDecodeError:
+            data = {}
+    return {
+        "id": r["id"], "engagement_id": r["engagement_id"], "run_id": r["run_id"],
+        "ts": r["ts"], "type": r["type"],
+        "level": r["level"] if "level" in r else "info",
+        "message": r["message"], "data": data,
+    }
+
+
 async def list_since(
     engagement_id: str, after_id: int = 0, *, limit: int = 500
 ) -> List[Dict[str, Any]]:
+    """Forward cursor: the next `limit` events after `after_id`, oldest first.
+    This is the live-tail path - poll with the last id you saw."""
     async with db.acquire() as conn:
         rows = await conn.fetch(
             "SELECT * FROM events WHERE engagement_id=$1 AND id > $2 ORDER BY id LIMIT $3",
             engagement_id, after_id, limit,
         )
-    out = []
-    for r in rows:
-        data = {}
-        if r["data_json"]:
-            try:
-                data = json.loads(r["data_json"])
-            except json.JSONDecodeError:
-                data = {}
-        out.append({
-            "id": r["id"], "engagement_id": r["engagement_id"], "run_id": r["run_id"],
-            "ts": r["ts"], "type": r["type"],
-            "level": r["level"] if "level" in r else "info",
-            "message": r["message"], "data": data,
-        })
-    return out
+    return [_row_to_event(r) for r in rows]
+
+
+async def list_recent(
+    engagement_id: str, *, limit: int = 500, before_id: Optional[int] = None
+) -> List[Dict[str, Any]]:
+    """Backward cursor: the most recent `limit` events, newest first. With
+    `before_id`, the events just older than it - how the UI pages back through
+    a long run from its END, which the forward cursor from id 0 could never
+    reach without walking the whole stream."""
+    async with db.acquire() as conn:
+        if before_id is not None:
+            rows = await conn.fetch(
+                "SELECT * FROM events WHERE engagement_id=$1 AND id < $2 "
+                "ORDER BY id DESC LIMIT $3",
+                engagement_id, before_id, limit,
+            )
+        else:
+            rows = await conn.fetch(
+                "SELECT * FROM events WHERE engagement_id=$1 "
+                "ORDER BY id DESC LIMIT $2",
+                engagement_id, limit,
+            )
+    return [_row_to_event(r) for r in rows]
+
+
+async def count_events(engagement_id: str) -> int:
+    """How many events this engagement has, so the UI can show progress and
+    know whether more pages exist."""
+    async with db.acquire() as conn:
+        return int(await conn.fetchval(
+            "SELECT COUNT(*) FROM events WHERE engagement_id=$1", engagement_id))

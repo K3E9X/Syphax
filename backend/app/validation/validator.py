@@ -102,6 +102,14 @@ _EXPOSED_SIGNATURES = [
 ]
 
 _XSS_CLASSES = {"xss"}
+
+# Classes whose finding is "this responds / exists", not "this is exploitable".
+# An analyser may mark them confirmed because it probed and got an answer, but
+# confirming reachability is not confirming a vulnerability - so these never
+# reach CONFIRMED through the analysis path. A real weakness on the same target
+# (e.g. the version that lost its auth) is a different vuln_class and is not
+# capped here.
+_REACHABILITY_ONLY = {"shadow_api"}
 _MARKER_RE_TMPL = r"{marker}"
 
 
@@ -129,9 +137,28 @@ class FindingValidator:
                 status = ValidationStatus(status_str)
             except ValueError:
                 status = ValidationStatus.LIKELY
+            # A reachability observation is not a confirmed vulnerability.
+            # "This forgotten endpoint still answers" is real and worth
+            # reporting, but confirming it only proves the endpoint EXISTS, not
+            # that anything is wrong - and a run whose only 'confirmed' findings
+            # were "archived endpoint is still answering" read as if it had
+            # proven vulnerabilities when it had proven reachability. Those
+            # classes cap at 'likely'. The access-control REGRESSION variant
+            # (an old version that answers without the auth the new one
+            # enforces) carries broken_access_control, not a reachability
+            # class, so it stays confirmed - that one IS a proven weakness.
+            if (status == ValidationStatus.CONFIRMED
+                    and vuln_class in _REACHABILITY_ONLY):
+                status = ValidationStatus.LIKELY
+                conf = min(conf, 0.5)
+                detail = ("Reachability observation, not a proven "
+                          "vulnerability: the endpoint answers, which is worth "
+                          "noting but is not a confirmed weakness on its own.")
+            else:
+                detail = "From captured traffic analysis."
             return ValidationResult(
                 status=status, confidence=conf, method=f"analysis ({tool})",
-                poc=finding.evidence or "", detail="From captured traffic analysis.",
+                poc=finding.evidence or "", detail=detail,
             )
 
         # 0b. a secret trufflehog authenticated against its own provider. This
