@@ -190,45 +190,62 @@ class Planner:
         # parameter VALUE. Discovery keeps them all; only the spend collapses.
         assets = _one_per_shape(assets)
         skip = {str(p) for p in (skip_phases or set())}
-        tasks: List[Task] = []
-        for item in CATALOG:
-            # Phases that have spent their share are skipped HERE, not after
-            # the fact: with an early exit, building candidates for a phase
-            # that will be discarded can use up the whole allowance and leave
-            # the run with nothing to plan at all.
-            if item.phase in skip:
-                continue
-            if enough and len(tasks) >= enough:
-                break
-            for asset in assets:
-                # "port" assets are surface data for the UI (host:port + service),
-                # not scannable targets: their value is "80/tcp . host . svc", and
-                # feeding that to a tool parses the host as the port number and the
-                # whole task is blocked out of scope. The host they belong to is
-                # already an asset in its own right.
+        # Phases that have spent their share are skipped HERE, not after the
+        # fact: with an early exit, building candidates for a phase that will be
+        # discarded can use up the whole allowance and leave the run with
+        # nothing to plan at all.
+        applicable = [item for item in CATALOG if item.phase not in skip]
+
+        async def _next_valid(item, asset_iter):
+            """The item's next asset that passes every filter and is not yet
+            covered, or None when its iterator is exhausted. Advances the
+            iterator, so round after round it moves forward."""
+            wants_host = bool(item.applies_when.get("is_host"))
+            for asset in asset_iter:
+                # "port" assets are surface data (host:port + service), not
+                # scannable targets - the host they belong to is its own asset.
                 if asset.kind == "port":
                     continue
-                # A stylesheet, font or image has no parameters and no server
-                # behaviour to attack: pointing dalfox/sqlmap/nuclei-dast at
-                # /static/assets/index-Dn2E.css burned a job per file and
-                # reported CSS colour codes as "extracted results".
+                # A stylesheet/font/image has nothing to attack: pointing
+                # dalfox/sqlmap/nuclei-dast at a .css burned a job per file.
                 if asset.kind == "endpoint" and _is_static_asset(asset.value):
                     continue
-                ctx = asset.context(tech)
-                # Match the asset kind to the item's expectation.
-                wants_host = bool(item.applies_when.get("is_host"))
                 if wants_host and asset.kind != "host":
                     continue
                 if not wants_host and asset.kind == "host":
                     # Non-host items run on endpoint assets (the base URL covers
-                    # the host). Running them on a bare hostname would feed a
-                    # scheme-less target to URL tools and duplicate coverage with
-                    # the base-URL endpoint - skip.
+                    # the host); a bare hostname would feed a scheme-less target
+                    # to URL tools and duplicate the base-URL endpoint.
                     continue
-                if not applies(item, ctx):
+                if not applies(item, asset.context(tech)):
                     continue
                 if await self.state.is_covered(item.id, asset.value):
                     continue
+                return asset
+            return None
+
+        # Build candidates ROUND-ROBIN across items, not item-by-item. The old
+        # loop filled `enough` from the first catalog item that had many assets
+        # and broke before reaching the rest: EXP-DAST applies to every
+        # endpoint and sorts before EXP-SQLI/EXP-XSS, so on a real target the
+        # budget was spent building DAST candidates and the dedicated
+        # exploiters (sqlmap, dalfox, commix) never got a single candidate -
+        # coverage showed EXP-DAST and VULN-NUCLEI only, no injection ever ran.
+        # One asset per item per round means every class gets a fair share of
+        # `enough`; plan() then sorts the result as before. Lazy: each item's
+        # iterator only advances as far as needed, so the O(catalog x assets)
+        # scan is still bounded by `enough`.
+        tasks: List[Task] = []
+        iters = [iter(assets) for _ in applicable]
+        live = list(range(len(applicable)))
+        while live and (not enough or len(tasks) < enough):
+            still_live = []
+            for i in live:
+                asset = await _next_valid(applicable[i], iters[i])
+                if asset is None:
+                    continue    # this item is exhausted, drop it
+                still_live.append(i)
+                item = applicable[i]
                 tasks.append(
                     Task(
                         catalog_item_id=item.id,
@@ -239,6 +256,9 @@ class Planner:
                         phase=item.phase,
                     )
                 )
+                if enough and len(tasks) >= enough:
+                    break
+            live = still_live
         return tasks
 
     async def _llm_reorder(self, batch: List[Task], tech: List[str]) -> List[Task]:
