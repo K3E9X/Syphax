@@ -98,8 +98,14 @@ class Planner:
             logger.debug("could not emit the planner degradation notice", exc_info=True)
 
     async def plan(self, *, max_tasks: int = 12, use_llm: bool = True,
-                   skip_phases: Optional[Set[str]] = None) -> List[Task]:
+                   skip_phases: Optional[Set[str]] = None,
+                   advice: Optional[Any] = None) -> List[Task]:
         """Return the next batch of uncovered, applicable tasks.
+
+        `advice` is the strategist's reading of the blackboard (see
+        orchestrator/strategist). It reorders inside the phase - lifting the
+        assets the board says are live and the classes the leads unlock - and
+        nothing else: it cannot add a task, drop one, or cross a phase.
 
         `skip_phases` are phases that have spent their share of the run's job
         budget. Without it the earliest phase with ANY uncovered work wins
@@ -131,6 +137,12 @@ class Planner:
                 candidates.sort(key=lambda t: _memory_rank(t, remembered))
         except Exception:  # noqa: BLE001 - memory must never block planning
             logger.debug("memory unavailable for prioritisation", exc_info=True)
+
+        # What this run has actually found outranks what other runs remembered:
+        # a lead is evidence about THIS target, a lesson is a prior about the
+        # stack. So the strategist's order is applied last and wins.
+        if advice is not None and not advice.is_empty:
+            candidates.sort(key=lambda t: _strategy_rank(t, advice))
 
         # Only advance one phase at a time: take the earliest phase that still
         # has uncovered work, so we always recon/map before we exploit.
@@ -389,6 +401,29 @@ def _memory_rank(task: Task, remembered: List[str]):
         rank = len(remembered)
     phase_idx = PHASE_ORDER.index(task.phase) if task.phase in PHASE_ORDER else 99
     return (phase_idx, rank) + _task_sort_key(task)[1:]
+
+
+def _strategy_rank(task: Task, advice) -> tuple:
+    """Stable key that lifts what the blackboard points at, within the phase.
+
+    Two levers, strongest first. `hot` is whether a lead names this exact
+    asset: that is evidence something already reached it, which deliberately
+    outranks asset_interest - the URL heuristic is a guess, the board is a
+    fact. Then the class rank, so an injectable parameter pulls sqlmap ahead of
+    the open-redirect check that happens to share its phase.
+
+    Like _memory_rank, it may only reorder inside a phase: loop.py gates the
+    approval checkpoint on batch[0].phase.
+    """
+    phase_idx = PHASE_ORDER.index(task.phase) if task.phase in PHASE_ORDER else 99
+    hot = 0 if task.asset_value in advice.hot_assets else 1
+    item = CATALOG_BY_ID.get(task.catalog_item_id)
+    vuln_class = (item.vuln_class if item else "").lower()
+    try:
+        rank = advice.chase_classes.index(vuln_class)
+    except ValueError:
+        rank = len(advice.chase_classes)
+    return (phase_idx, hot, rank) + _task_sort_key(task)[1:]
 
 
 # Paths worth spending a job on before anything else. Ordered: the earlier a

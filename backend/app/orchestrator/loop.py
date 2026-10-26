@@ -21,6 +21,7 @@ from app.engagements import EngagementRepository, EngagementStatus
 from app.orchestrator.approvals import ApprovalRepository, requires_exploit_approval
 from app.orchestrator.executor import Executor
 from app.orchestrator.planner import Planner
+from app.orchestrator.strategist import Strategist
 from app.orchestrator.runs import Run, RunRepository
 from app.orchestrator.state import EngagementState
 from app.methodology import (PHASE_EXPLOIT, PHASE_MAPPING, PHASE_ORDER,
@@ -170,6 +171,11 @@ async def run_engagement_loop(run_id: str) -> dict:
     state = EngagementState(engagement.id)
     planner = Planner(state)
     executor = Executor(state)
+    # Reads the blackboard and tells the planner what this run has already
+    # established. Empty advice until something posts a lead, and empty advice
+    # changes nothing - so the run behaves exactly as before on a target where
+    # nothing is found.
+    strategist = Strategist(state)
 
     # Reclaim (item, asset) pairs a previous run left pinned at 'running'/
     # 'pending' - those are in COVERED_STATUSES, so without this a re-run skips
@@ -323,8 +329,11 @@ async def run_engagement_loop(run_id: str) -> dict:
                         engagement.id, events.PHASE_CHANGED, msg,
                         run_id=run.id, phase=phase, level=events.LEVEL_INFO)
 
+                # What the board knows, before deciding what to run next.
+                advice = await strategist.advise()
                 batch = await planner.plan(max_tasks=BATCH_SIZE,
-                                           skip_phases=exhausted)
+                                           skip_phases=exhausted,
+                                           advice=advice)
                 # Trim to what this phase has left, not just to BATCH_SIZE.
                 # Checking the cap once per iteration lets a full batch
                 # overshoot it, and on a small budget one overshoot is the
