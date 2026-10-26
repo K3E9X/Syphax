@@ -215,8 +215,15 @@ def _swap_everywhere(monkeypatch, attr_name, replacement, *,
 
 
 def install(monkeypatch, *, eng=None, jobs=None, sandbox=None, llm_reply=None,
-            events_sink=None):
-    """Patch the I/O edges. Returns the pieces the test wants to inspect."""
+            events_sink=None, oracle_holds=True):
+    """Patch the I/O edges. Returns the pieces the test wants to inspect.
+
+    `oracle_holds` stands in for the external oracle (exploit/oracle): True
+    means syphax re-requested the observable the PoC named and saw it. Nothing
+    the fake PoC does can make this true by itself - a PoC still has to PRINT
+    a usable claim to be corroborated at all, which is the property that stops
+    a model grading its own exit code.
+    """
     _import_chain()
     FakeVFRepo.reset()
     FakeStagedRepo.reset()
@@ -241,6 +248,20 @@ def install(monkeypatch, *, eng=None, jobs=None, sandbox=None, llm_reply=None,
             return [eng]
 
     _swap_everywhere(monkeypatch, "EngagementRepository", _EngRepo)
+
+    # The oracle's confirming request. Patched at validation/proof_replay, the
+    # one HTTP path exploit/oracle delegates to, so the claim PARSING is still
+    # the real code under test.
+    import app.validation.proof_replay as _pr
+
+    async def _replay(proof, in_scope):
+        if not oracle_holds:
+            return {"outcome": "did_not_hold",
+                    "detail": f"expected {proof.get('expect')!r} is absent"}
+        return {"outcome": "held", "status_code": 200,
+                "detail": f"expected {proof.get('expect')!r} is present"}
+
+    monkeypatch.setattr(_pr, "replay_proof", _replay)
 
     async def _emit(engagement_id, kind, message="", **kw):
         emitted.append(str(message))

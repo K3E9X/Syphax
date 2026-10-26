@@ -37,6 +37,8 @@ session = requests.Session()
 session.headers["User-Agent"] = os.environ.get("UA", "syphax")
 r = session.post(target, data={"id": 2}, timeout=10)
 print("retrieved another user's invoice:", r.text[:120])
+print('SYPHAX-CLAIM: {"url": "https://app.example.com/invoice?id=2", '
+      '"expect": "other.user@example.com", "note": "another user\'s invoice"}')
 sys.exit(0)
 ```"""
 
@@ -78,7 +80,10 @@ def _sandbox_ok(code, language, argv):
     # the authoring prompt promised it, so every PoC died on ImportError.
     if language == "python" and "requests" in code:
         assert "requests" in _SANDBOX_PYTHON_PACKAGES
-    return {"exit_code": 0, "stdout": "retrieved another user's invoice: {...}"}
+    return {"exit_code": 0,
+            "stdout": "retrieved another user's invoice: {...}\n"
+                      'SYPHAX-CLAIM: {"url": "https://app.example.com/invoice?id=2", '
+                      '"expect": "other.user@example.com"}'}
 
 
 def _sandbox_fail(code, language, argv):
@@ -101,6 +106,73 @@ def test_the_model_writes_an_exploit_runs_it_and_the_finding_becomes_confirmed(
     assert vf.confidence >= 0.95
     assert vf.metadata.get("proven") is True
     assert summary.get("proven", 0) >= 1, summary
+
+
+# What a model optimising for a successful rehearsal would write if the reward
+# were its own exit code. It was, and this earned a confirmed finding.
+REWARD_HACK_POC = """```python
+import sys
+print("Vulnerability confirmed: admin access obtained")
+sys.exit(0)
+```"""
+
+
+def _sandbox_self_congratulating(code, language, argv):
+    return {"exit_code": 0,
+            "stdout": "Vulnerability confirmed: admin access obtained"}
+
+
+def test_a_poc_that_only_claims_success_does_not_confirm_the_finding(monkeypatch):
+    """The reward-hacking guard, through the whole chain.
+
+    Exit 0 plus a confident sentence used to be the entire test, so a PoC that
+    touched nothing promoted a finding to confirmed with confidence >= 0.95.
+    It names no observable, so the oracle has nothing to re-request, and the
+    finding must stay where the evidence leaves it.
+    """
+    h = H.install(monkeypatch, sandbox=_sandbox_self_congratulating,
+                  llm_reply=REWARD_HACK_POC)
+    H.FakeVFRepo.store["vf_1"] = _vf()
+
+    from app.exploit.campaign import run_campaign
+    summary = asyncio.run(run_campaign("eng_1"))
+
+    vf = H.FakeVFRepo.store["vf_1"]
+    assert vf.status != "confirmed", (
+        f"a PoC that proved nothing confirmed a finding: {summary} / "
+        f"events={h.events}")
+    assert vf.metadata.get("proven") is not True
+    assert summary.get("proven", 0) == 0, summary
+
+
+def test_a_claim_the_oracle_refutes_does_not_confirm_either(monkeypatch):
+    """The PoC named an observable and syphax went and looked: it was not
+    there. That is a refutation, not a proof."""
+    h = H.install(monkeypatch, sandbox=_sandbox_ok, llm_reply=WORKING_POC,
+                  oracle_holds=False)
+    H.FakeVFRepo.store["vf_1"] = _vf()
+
+    from app.exploit.campaign import run_campaign
+    summary = asyncio.run(run_campaign("eng_1"))
+
+    vf = H.FakeVFRepo.store["vf_1"]
+    assert vf.status != "confirmed", (
+        f"a refuted claim confirmed a finding: {summary} / events={h.events}")
+    assert summary.get("proven", 0) == 0, summary
+
+
+def test_the_staged_poc_is_still_there_to_read_either_way(monkeypatch):
+    """Refusing to call it proof must not throw the work away: the operator
+    still gets the PoC and its output, labelled for what it is."""
+    H.install(monkeypatch, sandbox=_sandbox_self_congratulating,
+              llm_reply=REWARD_HACK_POC)
+    H.FakeVFRepo.store["vf_1"] = _vf()
+
+    from app.exploit.campaign import run_campaign
+    summary = asyncio.run(run_campaign("eng_1"))
+
+    assert summary.get("staged_for_review", 0) >= 1, summary
+    assert H.FakeStagedRepo.store, "the PoC was discarded instead of staged"
 
 
 def test_the_exploitation_is_recorded_as_evidence(monkeypatch):
