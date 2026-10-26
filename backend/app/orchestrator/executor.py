@@ -189,6 +189,17 @@ class Executor:
 
         for f in job.findings:
             await self._ingest_finding(job, f)
+            # The tool half of the blackboard: sqlmap confirming an injection
+            # point, nuclei naming a CVE, a verified secret. Together with
+            # save_analysis_job this covers every finding the run produces, so
+            # the strategist sees what the scanners found and not only what
+            # the analysers did.
+            try:
+                from app.orchestrator.blackboard import post_from_finding
+                await post_from_finding(self.state.engagement_id, f,
+                                        source=job.tool)
+            except Exception:  # noqa: BLE001 - the board never fails an ingest
+                logger.debug("could not post a lead for %s", job.tool)
             # Verbose: one line per finding as it is ingested.
             await events.emit(
                 self.state.engagement_id, events.FINDING,

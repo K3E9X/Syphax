@@ -82,12 +82,37 @@ def test_a_session_outranks_a_credential_as_the_identity():
     assert advice.identity["lead_id"] == 2
 
 
-def test_the_board_order_decides_which_class_leads():
-    """Leads arrive best-confidence first; the first lead's classes go first."""
-    cve_first = _strategist()._from_leads([_lead(bb.CVE), _lead(bb.INJECTABLE, "u2")])
-    inj_first = _strategist()._from_leads([_lead(bb.INJECTABLE, "u2"), _lead(bb.CVE)])
-    assert cve_first.chase_classes[0] == "cve"
-    assert inj_first.chase_classes[0] == "sql_injection"
+def test_the_strongest_kind_leads_whatever_the_insertion_order():
+    """A confirmed injection point outranks a freshly earned session.
+
+    The order used to come from the board's own sort, so between two equally
+    confident leads it was an accident of insertion - and a session (a wide new
+    surface, but not yet a finding) would push sqlmap on a CONFIRMED hole down
+    the list. Chasing the identity's classes later costs nothing: adopt_identity
+    authenticates the run regardless of this order.
+    """
+    session = _lead(bb.SESSION, "sid=1", lid=9, conf=0.95)
+    inject = _lead(bb.INJECTABLE, "https://t/p?id=1", lid=1, conf=0.95)
+    for order in ([session, inject], [inject, session]):
+        advice = _strategist()._from_leads(order)
+        assert advice.chase_classes[0] == "sql_injection", (
+            f"got {advice.chase_classes[:3]} for insertion order "
+            f"{[l.kind for l in order]}")
+
+
+def test_confidence_still_decides_within_one_kind():
+    weak = _lead(bb.CVE, "CVE-1", conf=0.3, lid=1)
+    strong = _lead(bb.CVE, "CVE-2", conf=0.9, lid=2)
+    advice = _strategist()._from_leads([weak, strong])
+    assert advice.chase_classes[0] == "cve"
+
+
+def test_every_kind_the_chain_knows_has_a_priority():
+    """A kind missing from KIND_PRIORITY sorts last by accident rather than by
+    decision - the exact bug this table exists to remove."""
+    from app.orchestrator.strategist import KIND_PRIORITY
+    for kind in LEAD_CHAIN:
+        assert kind in KIND_PRIORITY, f"{kind} chains to classes but has no priority"
 
 
 def test_an_unknown_lead_kind_is_simply_ignored():

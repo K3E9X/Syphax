@@ -238,3 +238,101 @@ def _row_to_lead(r) -> Lead:
         consumed_by=consumed if isinstance(consumed, list) else [],
         created_at=float(r["created_at"]),
     )
+
+
+# ---------------------------------------------------------------------------
+# Deriving leads from findings.
+#
+# Every analyser stores through save_analysis_job and every tool finding goes
+# through Executor._ingest_finding, so those two are the only places a lead
+# needs to be derived - which is why the mapping lives here, once, instead of
+# being hand-wired into twenty analysers that would each drift.
+#
+# What this mapping may post is deliberately limited to NON-IDENTITY leads.
+# A credential, session or privilege lead claims the run can now act AS
+# someone, the strategist says so on the console, and the grey-box scanners
+# believe it - so that claim is never derived from a vuln_class string. It is
+# posted only where the code genuinely holds the material (auth_brute, which
+# had a password accepted). A mechanical mapping that guessed at identity
+# would manufacture exactly the false `confirmed` this whole design exists to
+# avoid.
+
+# The target of this finding is a reachable injection point.
+_INJECTION_CLASSES = frozenset({
+    "sql_injection", "nosql_injection", "command_injection", "ssti", "lfi",
+    "xxe", "ssrf", "crlf_injection", "open_redirect", "xss",
+})
+# The target answered with something it should not have, and no credential was
+# used to get it.
+_UNAUTH_CLASSES = frozenset({"exposed_resource", "exposed_bucket", "auth"})
+# A component with a known, published weakness - the shortest route to proof.
+_CVE_CLASSES = frozenset({"cve", "cms_vulnerability", "vulnerable_component"})
+
+# Below this, a finding is a guess, and a guess must not steer the plan: the
+# strategist would spend the exploitation budget chasing noise. `confirmed`
+# always passes, whatever its stated confidence.
+_MIN_CONFIDENCE = 0.6
+
+
+def lead_for_finding(finding) -> Optional[tuple]:
+    """(kind, value, data) for a finding, or None if it chains to nothing.
+
+    Pure, so the mapping is testable without a database.
+    """
+    meta = getattr(finding, "metadata", None) or {}
+    vuln_class = str(meta.get("vuln_class") or "").lower()
+    status = str(meta.get("status") or "").lower()
+    try:
+        confidence = float(meta.get("confidence") or 0.0)
+    except (TypeError, ValueError):
+        confidence = 0.0
+    if status != "confirmed" and confidence < _MIN_CONFIDENCE:
+        return None
+
+    target = str(getattr(finding, "target", "") or "").strip()
+
+    if vuln_class in _INJECTION_CLASSES and target:
+        return (INJECTABLE, target,
+                {"vuln_class": vuln_class, "param": meta.get("parameter")})
+    if vuln_class in _UNAUTH_CLASSES and target:
+        return (UNAUTH_ENDPOINT, target, {"vuln_class": vuln_class})
+    if vuln_class in _CVE_CLASSES:
+        cve = (meta.get("cve") or meta.get("cve_id")
+               or meta.get("template_id") or "")
+        value = str(cve).strip() or str(getattr(finding, "title", "")).strip()
+        if value:
+            return (CVE, value, {"vuln_class": vuln_class, "target": target})
+    if vuln_class == "secret_exposure" and meta.get("verified"):
+        # A secret the provider itself authenticated. The run knows a live key
+        # of this type exists here; it does NOT hold the key - the wrapper
+        # redacts it and keeps no copy - so `usable` says so plainly rather
+        # than letting a consumer assume it can authenticate with this.
+        detector = str(meta.get("detector") or "secret")
+        where = str(meta.get("location") or target or "")
+        return (SECRET, f"{detector}@{where}",
+                {"detector": detector, "location": where, "usable": False,
+                 "verified": True})
+    return None
+
+
+async def post_from_finding(engagement_id: str, finding, *,
+                            source: str = "") -> Optional[str]:
+    """Derive a lead from a finding and post it. Returns the kind posted, or
+    None. Never raises - this runs inside every ingest path."""
+    try:
+        derived = lead_for_finding(finding)
+    except Exception:  # noqa: BLE001
+        logger.debug("could not derive a lead from a finding")
+        return None
+    if derived is None:
+        return None
+    kind, value, data = derived
+    meta = getattr(finding, "metadata", None) or {}
+    try:
+        confidence = float(meta.get("confidence") or 0.7)
+    except (TypeError, ValueError):
+        confidence = 0.7
+    posted = await Blackboard(engagement_id).post(
+        kind, value, data=data, source=source or str(meta.get("tool") or ""),
+        confidence=confidence)
+    return kind if posted else None

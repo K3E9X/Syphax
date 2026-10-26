@@ -8,11 +8,14 @@ previous synthetic job (idempotent) instead of duplicating findings.
 """
 from __future__ import annotations
 
+import logging
 import time
 from typing import List
 
 from app.scans.models import Finding, Job, JobStatus
 from app.scans.storage import JobRepository, new_job_id
+
+logger = logging.getLogger("syphax.analysis.store")
 
 
 async def save_analysis_job(
@@ -35,3 +38,15 @@ async def save_analysis_job(
         engagement_id=engagement_id,
     )
     await repo.create(job)
+
+    # Every analyser stores through here, so this is where they all become
+    # producers for the exploitation blackboard - one mapping instead of
+    # twenty hand-wired call sites that would drift apart. A finding that
+    # chains to nothing posts nothing, and a failed post never fails the
+    # analyser that called us.
+    try:
+        from app.orchestrator.blackboard import post_from_finding
+        for finding in findings:
+            await post_from_finding(engagement_id, finding, source=tool)
+    except Exception:  # noqa: BLE001 - the board is an enhancement
+        logger.debug("[%s] could not post %s leads", engagement_id, tool)

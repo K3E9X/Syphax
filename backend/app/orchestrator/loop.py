@@ -20,6 +20,7 @@ from app import events
 from app.engagements import EngagementRepository, EngagementStatus
 from app.orchestrator.approvals import ApprovalRepository, requires_exploit_approval
 from app.orchestrator.executor import Executor
+from app.orchestrator.identity import adopt_identity
 from app.orchestrator.planner import Planner
 from app.orchestrator.strategist import Strategist
 from app.orchestrator.runs import Run, RunRepository
@@ -328,6 +329,15 @@ async def run_engagement_loop(run_id: str) -> dict:
                     await events.emit(
                         engagement.id, events.PHASE_CHANGED, msg,
                         run_id=run.id, phase=phase, level=events.LEVEL_INFO)
+
+                # If the run has earned a session, start using it. Done
+                # before planning so the tasks this iteration launches are the
+                # authenticated ones - see orchestrator/identity for why this
+                # is the switch that makes a black-box run a grey-box one.
+                try:
+                    await adopt_identity(engagement.id)
+                except Exception:  # noqa: BLE001 - never fail a run over this
+                    logger.debug("[%s] identity adoption skipped", run.id)
 
                 # What the board knows, before deciding what to run next.
                 advice = await strategist.advise()

@@ -79,6 +79,32 @@ LEAD_CHAIN: Dict[str, List[str]] = {
 }
 
 
+# How much each kind of lead is worth chasing, lower first.
+#
+# Without this the order came from the board's own sort (confidence, then
+# insertion), so between two equally confident leads it was an accident. That
+# put a freshly earned session - a wide new surface, but not yet a finding -
+# ahead of an injection point a tool had already CONFIRMED, and the
+# exploitation budget went to speculative contract tests instead of running
+# sqlmap on a proven hole.
+#
+# Chasing an identity's classes later costs nothing, because acting on the
+# identity is a separate step: adopt_identity authenticates the run whatever
+# the chase order says.
+KIND_PRIORITY: Dict[str, int] = {
+    bb.INJECTABLE: 0,       # a tool already reached it: the shortest path to proof
+    bb.PRIVILEGE: 1,        # already executing somewhere - finish that
+    bb.CVE: 2,              # a published weakness with a known exploit
+    bb.SESSION: 3,          # a usable identity: new surface, not yet a finding
+    bb.CREDENTIAL: 4,
+    bb.OBJECT_ID: 5,
+    bb.UNAUTH_ENDPOINT: 6,
+    bb.SECRET: 7,
+    bb.API_SCHEMA: 8,
+    bb.HOST: 9,
+}
+
+
 @dataclass
 class Advice:
     """What the board suggests doing next. Consumed by the planner as a sort."""
@@ -132,11 +158,12 @@ class Strategist:
 
     def _from_leads(self, leads: List[bb.Lead]) -> Advice:
         """Fold the board into advice. Pure, so it is directly testable."""
-        # Leads arrive best-confidence first (the board's own order), so a
-        # class proposed by a confident lead keeps its place ahead of the same
-        # class proposed by a weak one.
+        # Strongest kind first, then confidence within a kind. Deliberately
+        # NOT the board's own order - see KIND_PRIORITY.
+        ranked = sorted(leads, key=lambda l: (KIND_PRIORITY.get(l.kind, 99),
+                                              -l.confidence, l.id))
         chase: List[str] = []
-        for lead in leads:
+        for lead in ranked:
             for cls in LEAD_CHAIN.get(lead.kind, ()):
                 if cls not in chase:
                     chase.append(cls)
