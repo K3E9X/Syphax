@@ -230,6 +230,25 @@ async def analyze_api_inventory(engagement_id: str) -> Dict[str, int]:
     seeded = await _seed(engagement_id, eng, live_urls)
     await save_analysis_job(engagement_id, "api_inventory", findings,
                             target=eng.target_url)
+
+    # Post the endpoints that answered WITHOUT authentication to the board -
+    # forgotten versions and archived routes with no credential are the surface
+    # the access-control and IDOR agents should go at next.
+    try:
+        from app.orchestrator.blackboard import UNAUTH_ENDPOINT, Blackboard
+        board = Blackboard(engagement_id)
+        for finding in findings:
+            md = finding.metadata or {}
+            if (md.get("vuln_class") in ("broken_access_control", "idor")
+                    or not md.get("lost_controls")):
+                await board.post(
+                    UNAUTH_ENDPOINT, finding.target,
+                    data={"owasp_api": md.get("owasp_api"),
+                          "from": "api_inventory"},
+                    source="api_inventory", confidence=0.8)
+    except Exception:  # noqa: BLE001
+        logger.debug("[%s] could not post inventory leads", engagement_id)
+
     logger.info("[%s] api_inventory: observed=%d probes=%d live=%d findings=%d seeded=%d",
                 engagement_id, len(observed), probes, len(live_urls),
                 len(findings), seeded)

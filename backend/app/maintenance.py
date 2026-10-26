@@ -43,6 +43,7 @@ TRANSIENT_TABLES: List[str] = [
     "fingerprints",
     "coverage",
     "llm_usage",
+    "leads",
 ]
 
 

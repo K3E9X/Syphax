@@ -29,6 +29,7 @@ import app.memory  # noqa: F401  - register schema
 import app.network.shared_state  # noqa: F401  - register schema
 import app.orchestrator.state  # noqa: F401  - register schema
 import app.orchestrator.runs  # noqa: F401  - register schema
+import app.orchestrator.blackboard  # noqa: F401  - register schema
 import app.orchestrator.approvals  # noqa: F401  - register schema
 import app.proxy.storage  # noqa: F401  - register schema
 import app.scans.storage  # noqa: F401  - register schema

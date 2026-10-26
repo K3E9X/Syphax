@@ -48,6 +48,7 @@ ENGAGEMENT_TABLES: List[str] = [
     "runs",
     "jobs",
     "llm_usage",
+    "leads",
 ]
 
 # Carries an engagement_id but is kept on purpose. The invariant test reads

@@ -27,6 +27,7 @@ import app.llm.usage  # noqa: F401
 import app.engagements.storage  # noqa: F401
 import app.orchestrator.state  # noqa: F401
 import app.orchestrator.runs  # noqa: F401
+import app.orchestrator.blackboard  # noqa: F401  - register schema
 import app.orchestrator.approvals  # noqa: F401
 import app.proxy.storage  # noqa: F401
 import app.sandbox.staging  # noqa: F401

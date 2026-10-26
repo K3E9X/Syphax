@@ -445,6 +445,17 @@ async def events_backfill(
     return {"count": len(items), "total": total, "order": order, "items": items}
 
 
+@router.get("/{engagement_id}/leads")
+async def list_leads(engagement_id: str, kind: Optional[str] = None) -> dict:
+    """The exploitation blackboard: the chainable facts this run has found -
+    credentials, secrets, sessions, unauthenticated endpoints, injection
+    points. Identity values are redacted. This is what the kill chain is built
+    from and what the operator reads to see what the run can act on."""
+    from app.orchestrator.blackboard import Blackboard
+    leads = await Blackboard(engagement_id).leads(kind=kind)
+    return {"count": len(leads), "items": [lead.to_public() for lead in leads]}
+
+
 @router.get("/{engagement_id}/approvals")
 async def list_approvals(engagement_id: str) -> dict:
     items = await _approvals.list_for_engagement(engagement_id)
