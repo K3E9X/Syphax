@@ -183,3 +183,65 @@ def test_the_diagnostic_reports_the_agentic_chain():
     src = inspect.getsource(diagnose_run._agentic_section)
     for subject in ("flows", "leads", "primary_auth", "Strategist"):
         assert subject in src, f"the diagnosis cannot see {subject}"
+
+
+# ---- the analysers' own classes, which chained to nothing -------------
+
+@pytest.mark.parametrize("vuln_class,kind", [
+    # The gap that made moving analysis into vuln_analysis pointless on its
+    # own: these are the most valuable things the analysers find, and none of
+    # them chained to anything - so their findings arrived sooner and still
+    # changed nothing about what ran next.
+    ("idor", "object_id"),
+    ("broken_access_control", "object_id"),
+    ("access_control_review", "object_id"),
+    ("mass_assignment", "object_id"),
+    ("auth_bypass", "unauth_endpoint"),
+    ("shadow_api", "unauth_endpoint"),
+])
+def test_a_confirmed_analyser_finding_chains(vuln_class, kind):
+    from app.scans.models import Finding
+    f = Finding(severity="high", title="t", description="", evidence="",
+                target="https://t/invoice?id=2",
+                metadata={"vuln_class": vuln_class, "status": "confirmed",
+                          "confidence": 0.9})
+    lead = lead_for_finding(f, "logic")
+    assert lead is not None, f"{vuln_class} still chains to nothing"
+    assert lead[0] == kind
+
+
+@pytest.mark.parametrize("vuln_class", [
+    "idor", "broken_access_control", "mass_assignment", "auth_bypass",
+])
+def test_a_heuristic_one_does_not(vuln_class):
+    """An unconfirmed IDOR is a guess, and a guess must not spend the
+    exploitation budget. It is confirmable now that the analysers have an
+    identity - see test_the_analysers_are_authenticated."""
+    from app.scans.models import Finding
+    f = Finding(severity="high", title="t", description="", evidence="",
+                target="https://t/invoice?id=2",
+                metadata={"vuln_class": vuln_class, "status": "likely",
+                          "confidence": 0.5})
+    assert lead_for_finding(f, "logic") is None
+
+
+@pytest.mark.parametrize("vuln_class", [
+    "api_contract_violation",   # what several chains lead TO; circular
+    "privilege_escalation",     # an identity claim, never derived mechanically
+    "param_discovery",          # already becomes an asset with params
+    "jwt", "cors", "csrf", "rate_limit", "error_disclosure",
+])
+def test_the_unmapped_classes_are_a_decision_not_an_oversight(vuln_class):
+    """Each of these is explained in blackboard.py. The test exists so that
+    adding one later is a deliberate edit in two places."""
+    from app.scans.models import Finding
+    import inspect
+
+    from app.orchestrator import blackboard
+    f = Finding(severity="high", title="t", description="", evidence="",
+                target="https://t/x",
+                metadata={"vuln_class": vuln_class, "status": "confirmed",
+                          "confidence": 0.9})
+    assert lead_for_finding(f, "logic") is None
+    assert vuln_class in inspect.getsource(blackboard), (
+        f"{vuln_class} chains to nothing and nothing says why")

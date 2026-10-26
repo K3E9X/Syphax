@@ -26,7 +26,7 @@ the diagnostic would not mention it.
 from __future__ import annotations
 
 import logging
-from typing import Dict
+from typing import Dict, Iterable, List, Optional
 
 from app.analysis.js_cache import materialise_js
 from app.analysis.logic import analyze_logic
@@ -43,7 +43,8 @@ logger = logging.getLogger("syphax.analysis")
 __all__ = ["analyze_logic", "analyze_js", "analyze_jwt", "materialise_js",
            "analyze_access_control", "analyze_cors", "analyze_params",
            "analyze_graphql", "analyze_public_exploits", "run_analysis",
-           "ANALYSER_TOOLS"]
+           "ANALYSER_TOOLS", "ACTIVE_STEPS",
+           "FINAL_ONLY_STEPS", "step_names"]
 
 # The `tool` name each analyser's synthetic job carries. Derived from the
 # save_analysis_job calls, not from run_analysis' step keys - the step key is
@@ -64,13 +65,51 @@ ANALYSER_TOOLS = (
 )
 
 
-async def run_analysis(engagement_id: str, *, allow_active: bool = True) -> Dict[str, Dict]:
-    """Run every traffic-driven analyzer. Each is isolated so a failure in one
+# Analysers that WRITE to the target or BURST it. Derived from the code below,
+# not invented here: these are exactly the ones that already take
+# `allow_active`, plus cve_checks which was already behind an `if`.
+#
+# The distinction matters now that analysis runs DURING the engagement rather
+# than only at the end. At vuln_analysis the exploitation checkpoint has not
+# been reached yet, so these must wait for it - running analysis earlier must
+# not become a way around the human approval.
+ACTIVE_STEPS = frozenset({
+    "mass_assignment",   # POSTs properties the caller invented
+    "api_sequences",     # POSTs to create an object, then reads it back
+    "rate_limit",        # bursts one endpoint
+    "auth_posture",      # the bypass probe sends crafted in-scope GETs
+    "cve_checks",        # crafted exploit payloads
+})
+
+# Worth exactly one pass, at the end. llm_recon reads the whole run's traffic
+# and costs a model call to do it; running it three times would triple that
+# for a view that is only complete on the last pass anyway.
+FINAL_ONLY_STEPS = frozenset({"llm_recon"})
+
+
+async def run_analysis(engagement_id: str, *, allow_active: bool = True,
+                       only: Optional[Iterable[str]] = None,
+                       skip: Optional[Iterable[str]] = None) -> Dict[str, Dict]:
+    """Run the traffic-driven analyzers. Each is isolated so a failure in one
     (e.g. malformed flow) doesn't abort the rest.
 
     `allow_active` lets the caller suppress the analyzers that send crafted
     exploit payloads (cve_checks) when exploitation was denied/stopped - they
-    also self-gate on allow_active_exploit, this is the per-run override."""
+    also self-gate on allow_active_exploit, this is the per-run override.
+
+    `only` / `skip` select which steps run, which is what lets this be called
+    more than once in a run. It used to be called exactly once, from
+    _finalize_engagement - so every finding these produce, and every lead they
+    put on the blackboard, arrived AFTER exploitation was over. The IDOR, the
+    broken access control, the JWT weakness and the secret in a bundle could
+    not steer a single exploitation task, and a run cut short by its budget
+    lost all of them. See orchestrator/loop: read-only at vuln_analysis,
+    the writing ones once exploitation is approved, everything at the end.
+
+    Re-running is safe by construction: save_analysis_job deletes an
+    analyser's previous synthetic job before storing the new one, so the last
+    pass supersedes rather than duplicates.
+    """
     from app.exploit import run_cve_checks  # targeted CVE checks (safe-PoC GETs)
     from app.analysis.llm_recon import analyze_llm_recon  # LLM response analyst
     from app.analysis.http_posture import analyze_http_posture
@@ -142,11 +181,30 @@ async def run_analysis(engagement_id: str, *, allow_active: bool = True) -> Dict
     # the pass discovers CVEs of its own that the aggregation was missing
     # entirely, and "which public PoCs exist for this" is exploitation
     # intelligence, not traffic analysis.
+    wanted = set(only) if only is not None else None
+    unwanted = set(skip or ())
     out: Dict[str, Dict] = {}
     for name, fn in steps:
+        if wanted is not None and name not in wanted:
+            continue
+        if name in unwanted:
+            continue
         try:
             out[name] = await fn(engagement_id)
         except Exception:  # noqa: BLE001
             logger.exception("[%s] analyzer %s failed", engagement_id, name)
             out[name] = {"error": 1}
     return out
+
+
+def step_names() -> List[str]:
+    """Every analyser step, in the order run_analysis runs them.
+
+    Parsed from the source rather than maintained by hand, so a new analyser
+    cannot be added without the "every step is classified" test seeing it.
+    """
+    import inspect
+    import re
+    src = inspect.getsource(run_analysis)
+    return re.findall(r'\(\s*"([a-z_0-9]+)",\s*(?:lambda|analy|materialise|run_)',
+                      src)

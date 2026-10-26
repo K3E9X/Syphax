@@ -264,7 +264,42 @@ _INJECTION_CLASSES = frozenset({
 })
 # The target answered with something it should not have, and no credential was
 # used to get it.
-_UNAUTH_CLASSES = frozenset({"exposed_resource", "exposed_bucket", "auth"})
+_UNAUTH_CLASSES = frozenset({
+    "exposed_resource", "exposed_bucket", "auth",
+    # A gate that was bypassed is, by definition, an endpoint reachable
+    # without a credential - which is the whole meaning of this lead.
+    "auth_bypass",
+    # A forgotten version that still answers. api_inventory posts this by
+    # hand too; the board deduplicates on (kind, value), so saying it twice
+    # costs nothing and the mapping no longer depends on that one call site.
+    "shadow_api",
+})
+
+# An object whose access or whose fields are not properly controlled. The next
+# step from all four is the same: exercise more of this object's surface, with
+# the schema if there is one.
+#
+# These were the gap that made moving analysis earlier pointless on its own.
+# IDOR, broken access control and mass assignment are the most valuable things
+# the analysers find, and none of them chained to anything - so their findings
+# arrived sooner and still changed nothing about what ran next.
+_OBJECT_CLASSES = frozenset({
+    "idor", "broken_access_control", "access_control_review",
+    "mass_assignment",
+})
+
+# Deliberately NOT mapped, so the omissions are decisions rather than
+# oversights:
+#   api_contract_violation  is what several chains lead TO; making it a lead as
+#                           well would be circular.
+#   privilege_escalation    confirmed means the run HAS more privilege, which
+#                           is an identity claim - and identity is never
+#                           derived mechanically (see above).
+#   param_discovery         a discovered parameter already becomes an asset
+#                           with params, which is what the planner acts on.
+#   jwt, cors, csrf,        findings worth reporting that do not by themselves
+#   rate_limit,             tell the run what to do next.
+#   error_disclosure
 # A component with a known, published weakness - the shortest route to proof.
 _CVE_CLASSES = frozenset({"cve", "cms_vulnerability", "vulnerable_component",
                           # A nuclei rce template always names its CVE or its
@@ -350,6 +385,9 @@ def lead_for_finding(finding, tool: str = "") -> Optional[tuple]:
                  "tool": tool})
     if vuln_class in _UNAUTH_CLASSES and target:
         return (UNAUTH_ENDPOINT, target, {"vuln_class": vuln_class})
+    if vuln_class in _OBJECT_CLASSES and target:
+        return (OBJECT_ID, target,
+                {"vuln_class": vuln_class, "param": meta.get("parameter")})
     if vuln_class in _CVE_CLASSES:
         value = str(meta.get("template_id") or "").strip() or str(
             getattr(finding, "title", "")).strip()

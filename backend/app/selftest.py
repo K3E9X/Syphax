@@ -416,6 +416,103 @@ async def check_sandbox() -> List[str]:
 
 # --------------------------------------------------------------------------- #
 
+async def check_agentic() -> List[str]:
+    """Is the agentic chain alive: the board, a lead round-trip, the advice?
+
+    Worth its own check because every failure in it is SILENT by design - a
+    post that cannot reach the database is swallowed so it never fails a scan,
+    which also means a missing table looks exactly like a target with nothing
+    to find. That is how several runs came back empty with nothing saying why.
+    """
+    import uuid
+
+    lines: List[str] = []
+    eng_id = f"selftest-{uuid.uuid4().hex[:8]}"
+
+    # 1. the schema: register_schema runs at import, init_db creates it.
+    try:
+        from app import db
+        async with db.acquire() as conn:
+            await conn.fetchrow("SELECT 1 FROM leads LIMIT 1")
+        lines.append(_line(OK, "blackboard table", "leads exists"))
+    except Exception as exc:  # noqa: BLE001
+        lines.append(_line(BROKEN, "blackboard table",
+                           f"leads is not queryable ({exc.__class__.__name__}) - "
+                           f"every lead the run finds is dropped in silence"))
+        return lines
+
+    # 2. a real round trip, through the same producer the run uses.
+    try:
+        from app.orchestrator.blackboard import Blackboard, post_from_finding
+        from app.scans.models import Finding
+        finding = Finding(
+            severity="high", title="selftest", description="", evidence="",
+            target="https://selftest.invalid/p?id=1",
+            metadata={"vuln_class": "sql_injection", "status": "confirmed",
+                      "confidence": 0.9})
+        kind = await post_from_finding(eng_id, finding, source="sqlmap")
+        leads = await Blackboard(eng_id).leads()
+        if kind == "injectable" and leads:
+            lines.append(_line(OK, "lead from a finding",
+                               "a confirmed sqlmap finding becomes an "
+                               "'injectable' lead"))
+        else:
+            lines.append(_line(BROKEN, "lead from a finding",
+                               f"a confirmed injection produced {kind!r} - the "
+                               f"strategist will have nothing to act on"))
+    except Exception as exc:  # noqa: BLE001
+        lines.append(_line(BROKEN, "lead from a finding",
+                           f"{exc.__class__.__name__}: {exc}"))
+        leads = []
+
+    # 3. the strategist turning that into an order.
+    try:
+        from app.orchestrator.state import EngagementState
+        from app.orchestrator.strategist import Strategist
+        advice = await Strategist(EngagementState(eng_id)).advise(use_llm=False)
+        if advice.chase_classes:
+            lines.append(_line(OK, "strategist",
+                               f"advises {', '.join(advice.chase_classes[:3])}"))
+        else:
+            lines.append(_line(BROKEN, "strategist",
+                               "read a board with a lead on it and advised "
+                               "nothing"))
+    except Exception as exc:  # noqa: BLE001
+        lines.append(_line(BROKEN, "strategist",
+                           f"{exc.__class__.__name__}: {exc}"))
+
+    # 4. every analyser classified, so none of them silently waits for the end.
+    try:
+        from app.analysis import ACTIVE_STEPS, FINAL_ONLY_STEPS, step_names
+        names = step_names()
+        readonly = [n for n in names if n not in ACTIVE_STEPS
+                    and n not in FINAL_ONLY_STEPS]
+        if names and readonly:
+            lines.append(_line(
+                OK, "analysis passes",
+                f"{len(readonly)} read-only at vuln_analysis, "
+                f"{len(ACTIVE_STEPS)} after the exploit approval, "
+                f"{len(names)} in total at the end"))
+        else:
+            lines.append(_line(BROKEN, "analysis passes",
+                               f"parsed {len(names)} analyser step(s)"))
+    except Exception as exc:  # noqa: BLE001
+        lines.append(_line(BROKEN, "analysis passes",
+                           f"{exc.__class__.__name__}: {exc}"))
+
+    # Leave nothing behind: a self-test must not show up as an engagement.
+    try:
+        from app import db
+        async with db.acquire() as conn:
+            await conn.execute("DELETE FROM leads WHERE engagement_id = $1",
+                               eng_id)
+            await conn.execute("DELETE FROM jobs WHERE engagement_id = $1",
+                               eng_id)
+    except Exception:  # noqa: BLE001
+        pass
+    return lines
+
+
 async def run() -> int:
     from app import db, settings_store
 
@@ -442,6 +539,7 @@ async def run() -> int:
     lines += await check_exploit_authoring()
     lines += await check_poc_search()
     lines += await check_sandbox()
+    lines += await check_agentic()
 
     broken = sum(1 for ln in lines if " FAIL " in ln)
     lines += ["", "=" * 68,
@@ -479,6 +577,7 @@ async def as_json() -> dict:
         "authoring": await check_exploit_authoring(),
         "poc_search": await check_poc_search(),
         "sandbox": await check_sandbox(),
+        "agentic": await check_agentic(),
     }
     out = {}
     for name, lines in sections.items():

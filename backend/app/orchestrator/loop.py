@@ -13,6 +13,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
+from collections import OrderedDict
 from typing import Any, Dict, List, Optional
 
 from app.audit import audit
@@ -400,6 +401,10 @@ async def run_engagement_loop(run_id: str) -> dict:
                         # to the surface: finding /api/v1 and not scanning it
                         # would be worse than not finding it.
                         await _hunt_shadow_apis(engagement, run)
+                        # P0-1: the traffic analysers, HERE rather than only
+                        # at the end. Read-only ones only - the writing ones
+                        # wait for the exploitation checkpoint below.
+                        await _analyse_traffic(engagement, run)
                         await _run_correlation(engagement, run, executor, runs)
 
                 # Human checkpoint before exploitation (spec §11 approval).
@@ -413,6 +418,10 @@ async def run_engagement_loop(run_id: str) -> dict:
                         run.stop_reason = "exploit_denied"
                         await runs.update(run)
                         break
+                    # Approved. The analysers that WRITE to the target or
+                    # burst it can run now, and their leads reach the board
+                    # before the exploitation batches that follow this one.
+                    await _analyse_traffic(engagement, run, active=True)
 
                 # Launch the batch (respecting the remaining job budget).
                 launched_ids: List[str] = []
@@ -863,6 +872,111 @@ async def _discover_params(engagement, run) -> None:
             )
     except Exception:  # noqa: BLE001 - never block the phase transition
         logger.exception("[%s] parameter discovery failed", run.id)
+
+
+# Passes of _analyse_traffic already done, per run id. The phase can go BACK:
+# plan() picks the earliest phase with uncovered work, so a mapping asset
+# discovered during vuln_analysis returns the run to mapping and then forward
+# again - which would re-enter the transition block and re-run fourteen
+# analysers over the same traffic. Idempotent, but not free, and the time it
+# costs comes out of the phase budgets.
+# Bounded: the worker is long-lived, so an unbounded dict keyed by run id is
+# a slow leak. Only the recent runs can still be mid-flight.
+_ANALYSED: "OrderedDict[str, set]" = OrderedDict()
+_ANALYSED_MAX = 64
+
+
+async def _analyse_traffic(engagement, run, *, active: bool = False) -> None:
+    """Run the traffic analysers DURING the engagement (P0-1).
+
+    They used to run once, from _finalize_engagement. So every finding they
+    produce - the IDOR, the broken access control, the JWT weakness, the
+    secret in a bundle, the forgotten API - and every lead they put on the
+    blackboard arrived AFTER exploitation was over. None of it could steer a
+    single exploitation task, which is the whole point of having a board, and
+    a run that ended on its budget lost all of it entirely.
+
+    Two passes, because the gate is real. `active=False` is the read-only set,
+    run when vuln_analysis starts: it sends nothing the methodology has not
+    already sent, so it needs no approval. `active=True` is the set that
+    WRITES to the target or bursts it, and it is called only after the
+    exploitation checkpoint has been approved - moving analysis earlier must
+    not become a way around a human saying yes.
+
+    Still best-effort, and still idempotent: save_analysis_job replaces an
+    analyser's previous job, so the finalisation pass supersedes both of these
+    once it has seen the traffic exploitation generated.
+    """
+    key = str(run.id)
+    if key not in _ANALYSED:
+        _ANALYSED[key] = set()
+        while len(_ANALYSED) > _ANALYSED_MAX:
+            _ANALYSED.popitem(last=False)
+    done = _ANALYSED[key]
+    label = "active" if active else "read-only"
+    if label in done:
+        return
+    done.add(label)
+
+    try:
+        from app.analysis import (ACTIVE_STEPS, FINAL_ONLY_STEPS,
+                                  run_analysis)
+        if active:
+            result = await run_analysis(engagement.id, allow_active=True,
+                                        only=ACTIVE_STEPS)
+        else:
+            result = await run_analysis(engagement.id, allow_active=False,
+                                        skip=ACTIVE_STEPS | FINAL_ONLY_STEPS)
+    except Exception:  # noqa: BLE001 - analysis must never fail the run
+        logger.exception("[%s] mid-run traffic analysis failed", run.id)
+        return
+
+    ran = len(result or {})
+    # Counted from the jobs the pass just wrote, not from the result dicts:
+    # only 14 of the analysers report a "findings" key, so summing those
+    # under-reports and the console would understate what was found.
+    # save_analysis_job replaces an analyser's job, so this is exactly what
+    # this pass produced.
+    found = await _count_analyser_findings(engagement.id, result or {})
+    try:
+        await events.emit(
+            engagement.id, events.THOUGHT,
+            f"Traffic analysis ({label}): {ran} analyser(s) over the captured "
+            f"traffic"
+            + (f", {found} finding(s)" if found >= 0 else "")
+            + ". Running it now rather than at the end is what lets these "
+              "steer the tests that follow.",
+            run_id=run.id, level=events.LEVEL_INFO)
+    except Exception:  # noqa: BLE001
+        logger.debug("could not announce the traffic analysis")
+
+
+async def _count_analyser_findings(engagement_id: str,
+                                   result: Dict[str, Any]) -> int:
+    """How many findings the analysers that just ran actually stored.
+
+    Returns -1 when it cannot be counted, so the caller can say "unknown"
+    rather than print a confident zero.
+    """
+    try:
+        from app import db
+        from app.analysis import ANALYSER_TOOLS
+        # The step keys use underscores ("js_recon"); the job tool names are
+        # the hyphenated ones the UI knows ("js-recon"). Match either.
+        ran = {name for name in result}
+        tools = [t for t in ANALYSER_TOOLS
+                 if t in ran or t.replace("-", "_") in ran]
+        if not tools:
+            return 0
+        async with db.acquire() as conn:
+            row = await conn.fetchrow(
+                "SELECT COALESCE(SUM(jsonb_array_length(findings_json::jsonb)), 0) "
+                "AS n FROM jobs WHERE engagement_id = $1 AND tool = ANY($2)",
+                engagement_id, tools)
+        return int((row or {}).get("n") or 0)
+    except Exception:  # noqa: BLE001 - a count is not worth a failure
+        logger.debug("[%s] could not count analyser findings", engagement_id)
+        return -1
 
 
 async def _hunt_shadow_apis(engagement, run) -> None:
