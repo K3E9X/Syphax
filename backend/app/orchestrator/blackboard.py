@@ -266,7 +266,23 @@ _INJECTION_CLASSES = frozenset({
 # used to get it.
 _UNAUTH_CLASSES = frozenset({"exposed_resource", "exposed_bucket", "auth"})
 # A component with a known, published weakness - the shortest route to proof.
-_CVE_CLASSES = frozenset({"cve", "cms_vulnerability", "vulnerable_component"})
+_CVE_CLASSES = frozenset({"cve", "cms_vulnerability", "vulnerable_component",
+                          # A nuclei rce template always names its CVE or its
+                          # template id, so an RCE hit is a published weakness
+                          # rather than a parameter to inject into.
+                          "rce"})
+
+# Tools whose output IS a confirmation. sqlmap prints an injection point only
+# once it has one; dalfox reports type "V" for verified; commix and nosqli are
+# the same. None of them emits a maybe, so a finding from one of them does not
+# need a confidence field to be worth chasing - and it does not HAVE one at
+# this stage, which is the bug this fixes.
+_CONFIRMING_TOOLS = frozenset({"sqlmap", "dalfox", "commix", "nosqli"})
+
+# A matched template is deterministic, so a nuclei hit carries its severity as
+# its weight. info/low stays below the floor: that is inventory.
+_SEVERITY_CONFIDENCE = {"critical": 0.85, "high": 0.8, "medium": 0.65,
+                        "low": 0.4, "info": 0.2}
 
 # Below this, a finding is a guess, and a guess must not steer the plan: the
 # strategist would spend the exploitation budget chasing noise. `confirmed`
@@ -274,32 +290,69 @@ _CVE_CLASSES = frozenset({"cve", "cms_vulnerability", "vulnerable_component"})
 _MIN_CONFIDENCE = 0.6
 
 
-def lead_for_finding(finding) -> Optional[tuple]:
+def lead_confidence(finding, tool: str = "") -> float:
+    """How much this finding is worth chasing, 0..1. Pure.
+
+    A RAW tool finding carries no confidence: `status` and `confidence` are
+    assigned later, by validation. Reading only the metadata therefore scored
+    every sqlmap, dalfox and nuclei finding at 0.0 - below the floor - so the
+    board got nothing at all from the tool half of the run, which is most of
+    it. The strategist then had no advice to give on a run where the scanners
+    had confirmed real injections.
+    """
+    meta = getattr(finding, "metadata", None) or {}
+    explicit = meta.get("confidence")
+    if explicit is not None:
+        try:
+            return max(0.0, min(1.0, float(explicit)))
+        except (TypeError, ValueError):
+            pass
+    if tool in _CONFIRMING_TOOLS:
+        return 0.9
+    severity = str(getattr(finding, "severity", "") or "info").lower()
+    return _SEVERITY_CONFIDENCE.get(severity, 0.2)
+
+
+def lead_for_finding(finding, tool: str = "") -> Optional[tuple]:
     """(kind, value, data) for a finding, or None if it chains to nothing.
+
+    `tool` is what produced it. It matters because a raw tool finding has no
+    vuln_class either - the class comes from the tool name, exactly as
+    validation derives it (classes.vuln_class_of). Without it sqlmap's output
+    had class None and chained to nothing.
 
     Pure, so the mapping is testable without a database.
     """
     meta = getattr(finding, "metadata", None) or {}
-    vuln_class = str(meta.get("vuln_class") or "").lower()
-    status = str(meta.get("status") or "").lower()
     try:
-        confidence = float(meta.get("confidence") or 0.0)
-    except (TypeError, ValueError):
-        confidence = 0.0
+        from app.validation.classes import vuln_class_of
+        vuln_class = str(vuln_class_of(finding, tool) or "").lower()
+    except Exception:  # noqa: BLE001
+        vuln_class = str(meta.get("vuln_class") or "").lower()
+    if vuln_class in ("", "unknown"):
+        return None
+    status = str(meta.get("status") or "").lower()
+    confidence = lead_confidence(finding, tool)
     if status != "confirmed" and confidence < _MIN_CONFIDENCE:
         return None
 
     target = str(getattr(finding, "target", "") or "").strip()
 
+    # A named CVE first, whatever the class: it is one fact about a component,
+    # not one per endpoint it was seen on.
+    cve = str(meta.get("cve") or meta.get("cve_id") or "").strip()
+    if cve and vuln_class in _CVE_CLASSES | _INJECTION_CLASSES:
+        return (CVE, cve, {"vuln_class": vuln_class, "target": target})
+
     if vuln_class in _INJECTION_CLASSES and target:
         return (INJECTABLE, target,
-                {"vuln_class": vuln_class, "param": meta.get("parameter")})
+                {"vuln_class": vuln_class, "param": meta.get("parameter"),
+                 "tool": tool})
     if vuln_class in _UNAUTH_CLASSES and target:
         return (UNAUTH_ENDPOINT, target, {"vuln_class": vuln_class})
     if vuln_class in _CVE_CLASSES:
-        cve = (meta.get("cve") or meta.get("cve_id")
-               or meta.get("template_id") or "")
-        value = str(cve).strip() or str(getattr(finding, "title", "")).strip()
+        value = str(meta.get("template_id") or "").strip() or str(
+            getattr(finding, "title", "")).strip()
         if value:
             return (CVE, value, {"vuln_class": vuln_class, "target": target})
     if vuln_class == "secret_exposure" and meta.get("verified"):
@@ -320,7 +373,7 @@ async def post_from_finding(engagement_id: str, finding, *,
     """Derive a lead from a finding and post it. Returns the kind posted, or
     None. Never raises - this runs inside every ingest path."""
     try:
-        derived = lead_for_finding(finding)
+        derived = lead_for_finding(finding, source)
     except Exception:  # noqa: BLE001
         logger.debug("could not derive a lead from a finding")
         return None
@@ -328,10 +381,7 @@ async def post_from_finding(engagement_id: str, finding, *,
         return None
     kind, value, data = derived
     meta = getattr(finding, "metadata", None) or {}
-    try:
-        confidence = float(meta.get("confidence") or 0.7)
-    except (TypeError, ValueError):
-        confidence = 0.7
+    confidence = lead_confidence(finding, source)
     posted = await Blackboard(engagement_id).post(
         kind, value, data=data, source=source or str(meta.get("tool") or ""),
         confidence=confidence)

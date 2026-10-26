@@ -211,6 +211,8 @@ async def run() -> int:
             pass
         return 0
 
+    out.extend(await _agentic_section(conn, eng))
+
     reached = [p for p in PHASE_ORDER if by_phase.get(p)]
     missing = [p for p in PHASE_ORDER if not by_phase.get(p)]
     if "exploitation" not in reached:
@@ -247,6 +249,99 @@ async def run() -> int:
     except Exception:  # noqa: BLE001
         pass
     return 0
+
+
+async def _agentic_section(conn, engagement_id: str) -> List[str]:
+    """What the agentic layer actually had to work with.
+
+    The grid above answers "did the tools run". This answers "did anything the
+    run learned reach the next step", which is a different question and was
+    invisible: a run could confirm an injection, post nothing to the board,
+    give the strategist no advice, and look identical to a run that found
+    nothing at all.
+    """
+    out: List[str] = ["", "AGENTIC CHAIN"]
+
+    # 1. Captured traffic. Everything the analysers do reads this, so zero
+    # here means the IDOR, access-control, JWT, mass-assignment and
+    # secrets-in-bundles checks all ran against an empty table.
+    try:
+        row = await conn.fetchrow("SELECT COUNT(*) AS n FROM flows")
+        flows = int((row or {}).get("n") or 0)
+    except Exception:  # noqa: BLE001
+        flows = -1
+    if flows == 0:
+        out.append("  captured traffic  NONE  <- the traffic-driven analysers")
+        out.append("                          (IDOR, access control, JWT, mass")
+        out.append("                          assignment, JS secrets) had no")
+        out.append("                          input. Check the proxy container")
+        out.append("                          and that katana/httpx ran.")
+    elif flows > 0:
+        out.append(f"  captured traffic  {flows} request(s)")
+
+    # 2. The blackboard: the chainable facts this run established.
+    try:
+        rows = await _rows(conn, "SELECT kind, COUNT(*) AS n, MAX(confidence) "
+                                 "AS best FROM leads WHERE engagement_id=$1 "
+                                 "GROUP BY kind ORDER BY n DESC", engagement_id)
+    except Exception:  # noqa: BLE001
+        rows = []
+        out.append("  blackboard        table missing - the schema did not run")
+    if rows:
+        out.append("  blackboard        kind / count / best confidence")
+        for r in rows:
+            out.append(f"    {str(r['kind']):18s} {int(r['n']):3d}   "
+                       f"{float(r['best'] or 0):.2f}")
+    elif flows != -1:
+        out.append("  blackboard        EMPTY  <- nothing the run found was")
+        out.append("                           chainable, so the strategist had")
+        out.append("                           no advice and the plan was the")
+        out.append("                           plain methodology order.")
+
+    # 3. The identity. This is what turns a black-box run into a grey-box one,
+    # and whether it is in force decides what half the surface was tested as.
+    try:
+        from app.engagements import EngagementRepository
+        eng = await EngagementRepository().get(engagement_id)
+    except Exception:  # noqa: BLE001
+        eng = None
+    if eng is not None:
+        primary = bool(getattr(eng, "primary_auth", None))
+        secondary = bool(getattr(eng, "secondary_auth", None))
+        if primary and secondary:
+            out.append("  identity          two identities in force - access")
+            out.append("                    control is tested rigorously")
+        elif primary:
+            out.append("  identity          one identity in force - scans run")
+            out.append("                    authenticated; a SECOND one would")
+            out.append("                    let IDOR be proven rather than")
+            out.append("                    guessed")
+        else:
+            out.append("  identity          NONE  <- every scan and analyser ran")
+            out.append("                          anonymously. Only the public")
+            out.append("                          surface was tested. Supply")
+            out.append("                          credentials, or let auth-brute")
+            out.append("                          earn one (it needs a captured")
+            out.append("                          login POST to spray).")
+
+    # 4. What the strategist would say right now, from that board.
+    try:
+        from app.orchestrator.state import EngagementState
+        from app.orchestrator.strategist import Strategist
+        advice = await Strategist(EngagementState(engagement_id)).advise(
+            use_llm=False)
+        if advice.is_empty:
+            out.append("  strategist        nothing to advise from this board")
+        else:
+            out.append(f"  strategist        chasing "
+                       f"{', '.join(advice.chase_classes[:4])}")
+            if advice.hot_assets:
+                out.append(f"                    {len(advice.hot_assets)} asset(s) "
+                           f"the board points at")
+    except Exception:  # noqa: BLE001
+        out.append("  strategist        could not be consulted")
+
+    return out
 
 
 def main() -> int:
