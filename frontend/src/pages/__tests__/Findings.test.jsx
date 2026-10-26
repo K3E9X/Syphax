@@ -120,3 +120,104 @@ it('clicking a category in the knowledge map filters the table', async () => {
   await waitFor(() => expect(screen.queryByText('Missing security header')).toBeNull());
   expect(screen.getByText('SQL injection on /login')).toBeTruthy();
 });
+
+/* The detail panel has to say what to DO about a finding, not only what is
+ * wrong with it. remediation, CWE, WSTG, OWASP API and ATT&CK were all in the
+ * backend's class mapping already and only the report ever used them. */
+
+const RICH = [{
+  id: 'f3', severity: 'high', cvss: 8.1, title: 'IDOR on /invoice',
+  target: 'https://app.acme.com/invoice?id=1', status: 'confirmed',
+  engagement: 'app.acme.com', cls: 'idor', category: 'access_control',
+  tool: 'logic', dup: 3, first_seen: Date.now() / 1000 - 86400,
+  last_seen: Date.now() / 1000,
+  targets: ['https://app.acme.com/invoice?id=1',
+            'https://app.acme.com/invoice?id=2',
+            'https://app.acme.com/order?id=7'],
+  remediation: 'Enforce object-level authorization server-side.',
+  cwe: 'CWE-639', wstg: 'WSTG-ATHZ-04', owasp_api: 'API1:2023',
+  attack: ['T1190'],
+}];
+
+async function mountRich(items = RICH) {
+  vi.spyOn(api.findings, 'list').mockResolvedValue({ items });
+  const r = await mount();
+  await waitFor(() => screen.getByText('IDOR on /invoice'));
+  await userEvent.click(screen.getByText('IDOR on /invoice'));
+  return r;
+}
+
+it('shows how to fix the finding', async () => {
+  await mountRich();
+  expect(screen.getByText('How to fix it')).toBeTruthy();
+  expect(screen.getByText(/Enforce object-level authorization/)).toBeTruthy();
+});
+
+it('shows the standards references, with links out', async () => {
+  await mountRich();
+  const cwe = screen.getByText('CWE-639');
+  expect(cwe.getAttribute('href')).toBe('https://cwe.mitre.org/data/definitions/639.html');
+  expect(screen.getByText('WSTG-ATHZ-04')).toBeTruthy();
+  expect(screen.getByText('OWASP API1:2023')).toBeTruthy();
+  const attack = screen.getByText(/ATT&CK T1190/);
+  expect(attack.getAttribute('href')).toBe('https://attack.mitre.org/techniques/T1190/');
+});
+
+it('a sub-technique id becomes the right ATT&CK path', async () => {
+  await mountRich([{ ...RICH[0], attack: ['T1059.007'] }]);
+  expect(screen.getByText(/ATT&CK T1059\.007/).getAttribute('href'))
+    .toBe('https://attack.mitre.org/techniques/T1059/007/');
+});
+
+it('the occurrence count is no longer a dead number', async () => {
+  await mountRich();
+  // The affected URLs are reachable from the panel, not just counted.
+  await userEvent.click(screen.getByRole('button', { name: /Affected \(3\)/ }));
+  expect(screen.getByText(/app\.acme\.com\/order\?id=7/)).toBeTruthy();
+});
+
+it('shows first seen as well as last seen', async () => {
+  await mountRich();
+  expect(screen.getByText('First seen')).toBeTruthy();
+  expect(screen.getByText('Last seen')).toBeTruthy();
+});
+
+it('a single-target finding does not get an Affected block', async () => {
+  await mountRich([{ ...RICH[0], dup: 1, targets: ['https://app.acme.com/invoice?id=1'] }]);
+  expect(screen.queryByRole('button', { name: /Affected/ })).toBeNull();
+});
+
+it('a class with no OWASP API mapping shows no OWASP tag', async () => {
+  // "" is a real answer: the API Top 10 does not cover every web weakness,
+  // and naming the nearest item would send a reader to the wrong control.
+  await mountRich([{ ...RICH[0], owasp_api: '' }]);
+  expect(screen.queryByText(/^OWASP /)).toBeNull();
+  expect(screen.getByText('CWE-639')).toBeTruthy();
+});
+
+/* A PoC chooses its own exit code, so a clean sandbox run is not by itself
+ * proof. The panel used to call every one of them "the strongest proof there
+ * is", which was a false claim in the place the operator reads verdicts. */
+
+const EXPLOITED = (oracle) => [{
+  ...RICH[0], id: 'f4',
+  exploitation: { repo: 'authored', path: 'idor.py', exit_code: 0, auto: true,
+                  stdout: "invoice #2 belongs to another user", oracle },
+}];
+
+it('says a corroborated PoC is the strongest proof', async () => {
+  await mountRich(EXPLOITED({ outcome: 'held', expect: 'other.user@example.com' }));
+  expect(screen.getByText(/independently\s+re-requested/)).toBeTruthy();
+  expect(screen.getByText(/strongest proof there is/)).toBeTruthy();
+});
+
+it('does not claim proof for an uncorroborated PoC', async () => {
+  await mountRich(EXPLOITED(null));
+  expect(screen.queryByText(/strongest proof there is/)).toBeNull();
+  expect(screen.getByText(/not an\s+independent confirmation/)).toBeTruthy();
+});
+
+it('does not claim proof when the oracle refuted the claim', async () => {
+  await mountRich(EXPLOITED({ outcome: 'did_not_hold' }));
+  expect(screen.queryByText(/strongest proof there is/)).toBeNull();
+});

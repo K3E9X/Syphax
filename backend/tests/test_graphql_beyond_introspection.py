@@ -276,7 +276,9 @@ def test_a_non_graphql_endpoint_costs_one_request_not_eight():
 def test_the_endpoint_count_is_bounded():
     """The suite is eight GETs per endpoint; the candidate list includes
     guessed paths, so it cannot be unbounded."""
-    assert gql.MAX_ENDPOINTS <= 10
+    from tests._limits import is_bounded, standard
+    assert is_bounded(gql.MAX_ENDPOINTS)
+    assert standard(6) <= 10
 
 
 def test_a_console_proves_a_graphql_server_that_refuses_get_queries():

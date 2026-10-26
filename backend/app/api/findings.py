@@ -28,6 +28,24 @@ from app.findings_util import (
 from app.reporting.mappings import category_for_class, for_class
 from app.validation import ValidatedFindingRepository, build_chains, validate_engagement
 
+def _reference(vuln_class: str) -> dict:
+    """The fix and the standards references for a class.
+
+    `attack` is MITRE ATT&CK technique ids; `wstg` the OWASP testing-guide
+    item; `owasp_api` is "" for web weaknesses the API Top 10 does not cover,
+    which is a real answer rather than a missing one - mapping them to the
+    nearest item would point a reader at the wrong control.
+    """
+    m = for_class(vuln_class)
+    return {
+        "remediation": str(m.get("remediation") or ""),
+        "cwe": str(m.get("cwe") or ""),
+        "wstg": str(m.get("wstg") or ""),
+        "owasp_api": str(m.get("owasp_api") or ""),
+        "attack": list(m.get("attack") or []),
+    }
+
+
 def _scored(f) -> dict:
     """{"cvss": value, "score_basis": ..., "score_explain": ...} for one row."""
     out = score_for(f)
@@ -120,12 +138,38 @@ async def list_findings(severity: str = "", status: str = "", q: str = "",
                 # the validator method, so "confirmed" is never a bare claim.
                 "oracle": meta.get("oracle") or None,
                 "method": f.method or "",
+                # How to FIX it, and what standard it maps to. All of this was
+                # already in reporting/mappings for every class - the report
+                # used it and the Findings page, where the operator actually
+                # reads a finding, showed none of it. A page that says what is
+                # wrong and not what to do about it is half a finding.
+                **_reference(f.vuln_class),
+                # First seen as well as last: "has this been here since the
+                # first scan or did it appear today" is a different question
+                # from "when did we last see it", and only one was answerable.
+                "first_seen": f.created_at,
+                # Every distinct URL this group covers. The occurrence count
+                # was shown with no way to find out WHERE, and the dedup key
+                # normalises the target, so the count really did hide a list.
+                "targets": [f.target],
             }
             groups[key] = g
         else:
             g["dup"] += 1
             g["tools"].add(f.tool)
             g["last_seen"] = max(g["last_seen"], f.created_at)
+            g["first_seen"] = min(g["first_seen"], f.created_at)
+            if f.target and f.target not in g["targets"] and len(g["targets"]) < 50:
+                g["targets"].append(f.target)
+            # A later member may carry the proof the first one lacked: a group
+            # is as established as its best-evidenced finding, and reading only
+            # the first meant an exploited duplicate showed as unproven.
+            for field in ("exploitation", "repro", "proof_replay",
+                          "corroboration", "shadow_judge"):
+                if g.get(field) is None and meta.get(field):
+                    g[field] = meta[field]
+            if meta.get("proven"):
+                g["proven"] = True
             # The group takes the strongest member's score, which is not
             # always its most severe member: a proven medium outranks an
             # unconfirmed critical, and that is the order to triage in.

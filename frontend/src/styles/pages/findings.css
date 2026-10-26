@@ -64,6 +64,14 @@
 .shadow { margin: 10px 0; padding: 10px 12px; border: 1px solid var(--border); border-left-width: 2px; border-radius: var(--radius-sm); background: var(--surface); font-size: 12px; }
 .shadow--agree { border-left-color: var(--term-ok, #22c55e); }
 .shadow--diff { border-left-color: var(--sev-high, #f59e0b); }
+/* The remediation block. Accented differently from the evidence blocks on
+   purpose: everything else on the panel says what is wrong, this one is the
+   only thing that says what to do, and it is what a developer reads first. */
+.shadow--fix { border-left-color: var(--accent, #3b82f6); }
+/* Standards references: CWE / WSTG / OWASP API / MITRE ATT&CK. */
+.frefs { margin: 8px 0 2px; }
+.ftag { display: inline-block; padding: 2px 7px; border: 1px solid var(--border); border-radius: 999px; background: var(--surface); font-family: var(--font-mono); font-size: 10px; color: var(--text-secondary); text-decoration: none; }
+a.ftag:hover { color: var(--text-primary); border-color: var(--text-faint); }
 .shadow__h { display: flex; align-items: center; gap: 8px; font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--text-secondary); margin-bottom: 6px; }
 .shadow__tag { font-family: var(--font-mono); text-transform: none; letter-spacing: 0; color: var(--text-primary); }
 .shadow__row { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px; color: var(--text-secondary); }

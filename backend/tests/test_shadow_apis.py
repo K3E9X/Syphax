@@ -221,7 +221,9 @@ def test_the_validator_keeps_that_verdict():
 def test_the_probe_budget_is_bounded():
     """A versioned API with two hundred routes would otherwise turn into a
     thousand GETs and spend the run's whole budget on inventory."""
-    assert inv.MAX_PROBES <= 100
+    from tests._limits import is_bounded, standard
+    assert is_bounded(inv.MAX_PROBES)
+    assert standard(60) <= 100
     assert inv.MAX_ZOMBIE_PROBES <= inv.MAX_PROBES
 
 

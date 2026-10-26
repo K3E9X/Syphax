@@ -270,8 +270,41 @@ export default function Findings() {
                   <dt>Tool</dt><dd>{f.tool}</dd>
                   <dt>Engagement</dt><dd>{f.engagement}</dd>
                   <dt>Occurrences</dt><dd>{f.dup}</dd>
+                  <dt>First seen</dt><dd>{ago(f.first_seen)}</dd>
                   <dt>Last seen</dt><dd>{ago(f.last_seen)}</dd>
                 </dl>
+
+                {/* The standards a reader needs to look this up, and the fix.
+                    All of it was already in the backend's class mapping and
+                    only the report ever used it. */}
+                {(f.cwe || f.wstg || f.owasp_api || (f.attack || []).length > 0) && (
+                  <div className="shadow__row frefs">
+                    {f.cwe && <a className="ftag" target="_blank" rel="noreferrer"
+                      href={`https://cwe.mitre.org/data/definitions/${String(f.cwe).replace(/[^0-9]/g, '')}.html`}>{f.cwe}</a>}
+                    {f.wstg && <span className="ftag">{f.wstg}</span>}
+                    {f.owasp_api && <span className="ftag">OWASP {f.owasp_api}</span>}
+                    {(f.attack || []).map((t) => (
+                      <a key={t} className="ftag" target="_blank" rel="noreferrer"
+                         href={`https://attack.mitre.org/techniques/${String(t).replace('.', '/')}/`}>ATT&CK {t}</a>
+                    ))}
+                  </div>
+                )}
+
+                {f.remediation && (
+                  <div className="shadow shadow--fix">
+                    <div className="shadow__h">How to fix it</div>
+                    <div className="shadow__reason">{f.remediation}</div>
+                  </div>
+                )}
+
+                {/* The occurrence count used to be a dead number: the dedup
+                    key normalises the target, so N occurrences really did
+                    hide a list of distinct URLs with nowhere to see it. */}
+                {(f.targets || []).length > 1 && (
+                  <Block title={`Affected (${f.targets.length})`} defaultOpen={false}>
+                    {f.targets.join('\n')}
+                  </Block>
+                )}
 
                 {/* How this verdict was reached, in one line, before the
                     individual proofs below it. "confirmed" should never be a
@@ -335,10 +368,26 @@ export default function Findings() {
                       ? <><div className="shadow__reason">What the PoC returned</div>
                           <pre className="detail__pre poc">{f.exploitation.stdout}</pre></>
                       : <div className="shadow__note">Ran clean (exit 0) with no stdout.</div>}
-                    <div className="shadow__note">
-                      A public PoC ran in the isolated sandbox and returned cleanly — the
-                      strongest proof there is. Read the output above to confirm the impact.
-                    </div>
+                    {/* Which grade of proof this is. Saying "the strongest proof
+                        there is" for every clean run was itself a false claim:
+                        a PoC chooses its own exit code, so a clean run only
+                        counts once something independent re-observed what it
+                        claimed. */}
+                    {f.exploitation.oracle?.outcome === 'held' ? (
+                      <div className="shadow__note">
+                        The PoC ran in the isolated sandbox AND syphax independently
+                        re-requested what it claimed and saw it
+                        {f.exploitation.oracle.expect
+                          ? <> (<span className="mono">{f.exploitation.oracle.expect}</span>)</> : null}.
+                        That is the strongest proof there is.
+                      </div>
+                    ) : (
+                      <div className="shadow__note">
+                        The PoC ran cleanly in the isolated sandbox. Read the output
+                        above: this is what the PoC reports about itself, not an
+                        independent confirmation.
+                      </div>
+                    )}
                   </div>
                 )}
                 {f.proof_replay && (

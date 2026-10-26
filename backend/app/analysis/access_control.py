@@ -21,6 +21,7 @@ import logging
 from typing import Dict, List, Optional
 from urllib.parse import urlparse
 
+from app.limits import cap
 from app.analysis._store import save_analysis_job
 from app.engagements import EngagementRepository
 from app.proxy import FlowRepository
@@ -32,7 +33,7 @@ logger = logging.getLogger("syphax.analysis.access_control")
 _STATE_CHANGING = {"POST", "PUT", "PATCH", "DELETE"}
 _STATIC_EXT = (".js", ".css", ".png", ".jpg", ".jpeg", ".gif", ".svg",
                ".woff", ".woff2", ".ttf", ".ico", ".map", ".webp")
-MAX_ANON_REPLAY = 40
+MAX_ANON_REPLAY = cap(40)
 MAX_FLAG = 60
 
 

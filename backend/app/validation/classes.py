@@ -59,9 +59,22 @@ SURFACE_CLASSES = {"recon", "fingerprint", "content_discovery", "api_route", "un
 
 # Classes whose findings are claims about a path existing / being readable.
 # These are the ones a catch-all (soft-404) server manufactures by the hundred,
-# so they are the ones the baseline check is allowed to discard.
-DISCOVERY_CLASSES = {"content_discovery", "information_disclosure",
-                     "source_code_disclosure", "exposed_file", "backup_file"}
+# so they are the ones the re-request check is allowed to discard - and the
+# only ones: on an injection or a TLS finding the response shape means nothing.
+#
+# `exposed_resource` was the hole the operator kept seeing. It is what nuclei's
+# exposure templates report (VULN-EXPOSURES), it ships at MEDIUM, and it was
+# not in this set - so "an exposed .env" on a path that answers 404 was never
+# re-requested and went straight to the findings page as a real weakness. The
+# severity is exactly why it has to be here: is_noise only ever drops `info`,
+# so nothing else was looking at it.
+DISCOVERY_CLASSES = {
+    "content_discovery", "information_disclosure", "source_code_disclosure",
+    "exposed_file", "backup_file",
+    "exposed_resource",     # nuclei exposure templates - .env, .git, backups
+    "exposed_bucket",       # an open bucket; out-of-scope hosts simply skip
+    "shadow_api",           # "this forgotten version answers" is a path claim
+}
 
 
 def vuln_class_of(finding: Any, tool: str) -> str:

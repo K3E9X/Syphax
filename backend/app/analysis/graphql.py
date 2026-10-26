@@ -25,6 +25,7 @@ import logging
 from typing import Any, Dict, List, Optional, Set
 from urllib.parse import urlencode, urlparse, urlunparse
 
+from app.limits import cap
 from app.analysis import graphql_probes as probes
 from app.analysis._store import save_analysis_job
 from app.engagements import EngagementRepository
@@ -41,7 +42,7 @@ _COMMON_PROBE = ("/graphql", "/api/graphql", "/v1/graphql", "/gql")
 # A minimal introspection query - enough to prove the schema is readable.
 _INTROSPECTION = "{__schema{queryType{name} types{name kind}}}"
 
-MAX_ENDPOINTS = 6          # the suite is 8 GETs per endpoint
+MAX_ENDPOINTS = cap(6)          # the suite is 8 GETs per endpoint
 
 
 async def analyze_graphql(engagement_id: str) -> Dict[str, int]:

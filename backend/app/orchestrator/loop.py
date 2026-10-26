@@ -205,6 +205,12 @@ async def run_engagement_loop(run_id: str) -> dict:
     # Before anything is planned: which tools can actually find something,
     # and whether the crawl's traffic is being captured for the analysers.
     try:
+        # How thorough this run was told to be. Said out loud because the
+        # answer changes how much of the surface is tested, and a run that
+        # tested a sliver used to look exactly like one that tested it all.
+        from app.limits import describe as describe_depth
+        await events.emit(engagement.id, events.THOUGHT, describe_depth(),
+                          run_id=run.id, level=events.LEVEL_INFO)
         await _report_capture(engagement, run)
         await _report_tool_readiness(engagement, run)
     except Exception:  # noqa: BLE001 - a preflight must never fail a run

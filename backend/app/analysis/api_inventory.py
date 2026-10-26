@@ -40,6 +40,7 @@ import re
 from typing import Dict, List, Optional, Set, Tuple
 from urllib.parse import urlparse, urlunparse
 
+from app.limits import cap
 from app.analysis._store import save_analysis_job
 from app.engagements import EngagementRepository
 from app.proxy import FlowRepository
@@ -49,9 +50,9 @@ from app.validation.safe_poc import SafePoC
 logger = logging.getLogger("syphax.analysis.api_inventory")
 
 MAX_FLOWS = 1000
-MAX_PROBES = 60             # total GETs this analyser may send
+MAX_PROBES = cap(60)             # total GETs this analyser may send
 MAX_CANDIDATES_PER_PATH = 8
-MAX_ZOMBIE_PROBES = 20
+MAX_ZOMBIE_PROBES = cap(20)
 
 # A version segment: v1, v2, v10, v1.1, v2beta, 2024-01-01 (date-versioned APIs).
 _VERSION = re.compile(r"^(?:v\d+(?:[._]\d+)?[a-z]*|\d{4}-\d{2}-\d{2})$", re.I)

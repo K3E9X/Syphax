@@ -22,6 +22,7 @@ import secrets
 from typing import Dict, List, Set
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
+from app.limits import cap
 from app.analysis._store import save_analysis_job
 from app.engagements import EngagementRepository
 from app.proxy import FlowRepository
@@ -30,7 +31,7 @@ from app.validation.safe_poc import SafePoC, ScopeError
 
 logger = logging.getLogger("syphax.analysis.params")
 
-MAX_ENDPOINTS = 15
+MAX_ENDPOINTS = cap(15)
 BATCH = 25
 MAX_CANDIDATES = 80
 _STATIC_EXT = (".js", ".css", ".png", ".jpg", ".jpeg", ".gif", ".svg",

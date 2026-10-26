@@ -27,6 +27,7 @@ import re
 from typing import Any, Dict, List, Optional, Tuple
 from urllib.parse import urlparse
 
+from app.limits import cap
 from app import db
 from app.analysis._store import save_analysis_job
 from app.engagements import EngagementRepository
@@ -36,7 +37,7 @@ from app.validation.safe_poc import SafePoC, ScopeError
 logger = logging.getLogger("syphax.analysis.auth_posture")
 
 MAX_FLOWS = 800
-MAX_BYPASS_PROBES = 12
+MAX_BYPASS_PROBES = cap(12)
 
 # A URL that plausibly handles identity.
 # Anchored on path SEGMENTS: an unanchored search made /authors/42,

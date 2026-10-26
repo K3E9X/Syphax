@@ -27,6 +27,7 @@ import logging
 from typing import Any, Dict, List, Optional, Tuple
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
+from app.limits import cap
 from app import events
 from app.analysis._store import save_analysis_job
 from app.engagements import EngagementRepository
@@ -55,7 +56,7 @@ _PRIV_PATTERNS = (
 )
 
 MAX_FLOWS = 1000
-MAX_IDOR_CONFIRM = 25
+MAX_IDOR_CONFIRM = cap(25)
 
 
 async def analyze_logic(

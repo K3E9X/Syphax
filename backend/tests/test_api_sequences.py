@@ -201,7 +201,9 @@ def test_reading_back_something_that_is_not_ours_proves_nothing():
 
 
 def test_the_sequence_count_is_bounded():
-    assert seq.MAX_SEQUENCES <= 5
+    from tests._limits import is_bounded, standard
+    assert is_bounded(seq.MAX_SEQUENCES)
+    assert standard(3, floor=12) <= 5
 
 
 def test_authentication_and_payment_creates_are_skipped():

@@ -44,13 +44,14 @@ import uuid as _uuid
 from typing import Any, Dict, List, Optional, Tuple
 from urllib.parse import urlparse
 
+from app.limits import cap
 from app.analysis._store import save_analysis_job
 from app.analysis.mass_assignment import should_skip
 from app.scans.models import Finding
 
 logger = logging.getLogger("syphax.analysis.api_sequences")
 
-MAX_SEQUENCES = 3           # distinct create-then-read sequences attempted
+MAX_SEQUENCES = cap(3, floor=12)           # distinct create-then-read sequences attempted
 MARKER_PREFIX = "syphax-seq-"
 
 # Response keys that identify the object that was just created.

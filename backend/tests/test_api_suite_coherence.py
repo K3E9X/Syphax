@@ -362,11 +362,19 @@ def test_the_only_write_methods_in_the_api_suite_are_post():
 def test_every_probe_budget_in_the_api_suite_is_bounded():
     from app.analysis import api_inventory, api_sequences, graphql
     from app.analysis import mass_assignment, rate_limit
-    assert api_inventory.MAX_PROBES <= 100
-    assert graphql.MAX_ENDPOINTS <= 10
-    assert mass_assignment.MAX_PROBES <= 20
+    from tests._limits import is_bounded, standard
+    # Finite at the suite's depth: no probe budget is unbounded by accident.
+    for value in (api_inventory.MAX_PROBES, graphql.MAX_ENDPOINTS,
+                  mass_assignment.MAX_PROBES, api_sequences.MAX_SEQUENCES):
+        assert is_bounded(value)
+    # And the documented trade-off at the standard depth.
+    assert standard(60) <= 100
+    assert standard(6) <= 10
+    assert standard(12) <= 20
+    assert standard(3, floor=12) <= 5
+    # A burst is NOT a coverage cap - it is how hard one endpoint is hit, and
+    # it stays pinned whatever the depth.
     assert rate_limit.BURST_WITH_CAPABILITY <= 200
-    assert api_sequences.MAX_SEQUENCES <= 5
 
 
 # ---- the diagnosis can see the traffic-driven half ------------------

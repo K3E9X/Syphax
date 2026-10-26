@@ -39,6 +39,7 @@ import time
 from typing import Dict, List, Tuple
 from urllib.parse import urlparse
 
+from app.limits import cap
 from app.analysis._store import save_analysis_job
 from app.scans.models import Finding
 
@@ -50,7 +51,7 @@ BURST_DEFAULT = 20
 # a defensible measurement, not an outage.
 BURST_WITH_CAPABILITY = 120
 CONCURRENCY = 5
-MAX_ENDPOINTS = 2
+MAX_ENDPOINTS = cap(2, floor=8)
 
 _RATE_HEADERS = ("x-ratelimit-limit", "x-rate-limit-limit", "ratelimit-limit",
                  "x-ratelimit-remaining", "x-rate-limit-remaining",

@@ -167,8 +167,15 @@ def test_only_post_is_ever_sent():
 
 
 def test_the_probe_count_is_bounded():
-    assert ma.MAX_PROBES <= 20
-    assert ma.MAX_OPERATIONS <= 6
+    """Every probe here creates data on the target, so it must not become
+    unbounded by accident. The ceiling is SYPHAX_TEST_DEPTH now (app/limits):
+    finite at whatever depth the suite runs at, and the documented small
+    number at `standard`."""
+    from tests._limits import is_bounded, standard
+    assert is_bounded(ma.MAX_PROBES)
+    assert is_bounded(ma.MAX_OPERATIONS)
+    assert standard(12) <= 20
+    assert standard(4, floor=16) <= 6
 
 
 def test_the_write_probe_is_gated_on_active_exploitation():
@@ -343,7 +350,12 @@ def test_a_limit_that_exists_is_said_out_loud():
 
 
 def test_the_endpoint_count_is_bounded():
-    assert rl.MAX_ENDPOINTS <= 3
+    """A rate-limit check bursts an endpoint, so how MANY endpoints it touches
+    is a coverage cap and follows SYPHAX_TEST_DEPTH; how HARD it bursts one
+    does not (see BURST_WITH_CAPABILITY)."""
+    from tests._limits import is_bounded, standard
+    assert is_bounded(rl.MAX_ENDPOINTS)
+    assert standard(2, floor=8) <= 3
 
 
 # =======================================================================

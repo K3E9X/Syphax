@@ -17,6 +17,7 @@ import secrets
 from typing import Dict, List, Optional
 from urllib.parse import urlparse
 
+from app.limits import cap
 from app.analysis._store import save_analysis_job
 from app.engagements import EngagementRepository
 from app.proxy import FlowRepository
@@ -25,7 +26,7 @@ from app.validation.safe_poc import SafePoC, ScopeError
 
 logger = logging.getLogger("syphax.analysis.cors")
 
-MAX_ENDPOINTS = 30
+MAX_ENDPOINTS = cap(30)
 _STATIC_EXT = (".js", ".css", ".png", ".jpg", ".jpeg", ".gif", ".svg",
                ".woff", ".woff2", ".ttf", ".ico", ".map", ".webp")
 

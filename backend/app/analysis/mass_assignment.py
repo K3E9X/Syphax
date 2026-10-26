@@ -40,13 +40,14 @@ import logging
 from typing import Any, Dict, List, Optional, Tuple
 from urllib.parse import urlparse
 
+from app.limits import cap
 from app.analysis._store import save_analysis_job
 from app.scans.models import Finding
 
 logger = logging.getLogger("syphax.analysis.mass_assignment")
 
-MAX_OPERATIONS = 4          # distinct POST operations probed
-MAX_PROBES = 12             # total writes this analyser may perform
+MAX_OPERATIONS = cap(4, floor=16)          # distinct POST operations probed
+MAX_PROBES = cap(12)             # total writes this analyser may perform
 
 # Properties that change what the created object IS, rather than what it says.
 # Each is sent on its own request so the echo identifies which one bound.
