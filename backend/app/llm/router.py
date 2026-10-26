@@ -60,10 +60,14 @@ class LLMRouter:
                 base_url=base_url or None,
                 api_key=api_key,
                 model=model or settings.openrouter_model,
-                # Cross-role fallback to OpenRouter free models when the
-                # primary provider 429/5xx's. Keeps the Phase 0-3 fallback
-                # behaviour even when planner/executor use paid providers.
+                # Cross-PROVIDER fallback to OpenRouter free models when the
+                # primary provider 429/5xx's or times out. These are OpenRouter
+                # model ids, so they need OpenRouter's endpoint and key - this
+                # client's own would send them to the wrong provider, which is
+                # exactly what used to happen (see client._attempts).
                 fallback_models=settings.openrouter_fallback_list,
+                fallback_base_url=settings.openrouter_base_url,
+                fallback_api_key=settings.openrouter_api_key,
                 role=role,
             )
         self._clients[role] = client
@@ -82,6 +86,8 @@ class LLMRouter:
             api_key=api_key,
             model=model or settings.openrouter_model,
             fallback_models=settings.openrouter_fallback_list,
+            fallback_base_url=settings.openrouter_base_url,
+            fallback_api_key=settings.openrouter_api_key,
             role=role,
         )
 
