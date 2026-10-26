@@ -138,3 +138,112 @@ async def _announce(engagement_id: str, slot: str, lead: bb.Lead) -> None:
                     source=lead.source, lead_id=lead.id)
     except Exception:  # noqa: BLE001
         logger.debug("could not audit the adopted identity")
+
+
+# A path that ends the session we just earned. The scanners DO get the
+# identity, so katana crawling /logout or ffuf guessing it kills the session
+# for the rest of the run - and nothing would say so, the run would simply go
+# quiet on everything behind the login.
+_SESSION_ENDING = ("logout", "signout", "sign-out", "log-out", "deconnexion",
+                   "disconnect", "revoke", "session/end")
+
+
+def ends_the_session(url: str) -> bool:
+    """Would sending our session here destroy it? Pure.
+
+    Used to withhold the identity from that ONE request rather than to skip
+    the URL: the endpoint is still scanned, just anonymously, so no coverage
+    is lost and the session survives.
+    """
+    from urllib.parse import urlparse
+    try:
+        path = (urlparse(str(url or "")).path or "").lower()
+    except Exception:  # noqa: BLE001
+        return False
+    return any(marker in path for marker in _SESSION_ENDING)
+
+
+async def identity_is_live(engagement_id: str) -> Optional[bool]:
+    """Does the engagement's identity still authenticate? True / False / None.
+
+    None means "cannot tell", which is a real answer and the common one: it
+    takes a URL this run has already seen answer 401/403 WITHOUT a credential
+    to have something to compare against. Guessing instead would be worse than
+    not checking.
+
+    This exists because a session is not permanent. It expires, and a scanner
+    carrying it can hit a logout. Either way every later request silently goes
+    back to being anonymous, the authenticated half of the application stops
+    being tested, and the console says nothing at all - the same class of
+    invisible degradation as a planner that never called its model.
+    """
+    try:
+        from app import db
+        from app.engagements import EngagementRepository
+        from app.validation.safe_poc import SafePoC, identity_for
+
+        eng = await EngagementRepository().get(engagement_id)
+        if eng is None:
+            return None
+        ident = identity_for(eng)
+        if not ident.present:
+            return None
+
+        async with db.acquire() as conn:
+            row = await conn.fetchrow(
+                "SELECT url FROM flows WHERE status_code IN (401, 403) "
+                "AND host = $1 ORDER BY id DESC LIMIT 1",
+                (eng.target_host or "").lower())
+        if not row or not row["url"]:
+            return None
+        url = str(row["url"])
+
+        safe = SafePoC(in_scope=eng.host_in_scope, identity=ident)
+        resp = await safe.fetch(url, method="GET")
+        if resp is None:
+            return None            # the target did not answer; not a verdict
+        return resp.status_code not in (401, 403)
+    except Exception:  # noqa: BLE001 - a check that fails is not a verdict
+        logger.debug("[%s] could not verify the identity", engagement_id)
+        return None
+
+
+async def drop_dead_identity(engagement_id: str) -> bool:
+    """If the identity no longer authenticates, say so and clear it.
+
+    Clearing it matters: a stale Cookie header is worse than none, because
+    some applications treat an invalid session as a reason to redirect every
+    request to the login page, and the whole run then measures the login page.
+    With it gone, auth-brute can earn a fresh one and adopt_identity will take
+    it.
+    """
+    live = await identity_is_live(engagement_id)
+    if live is not False:
+        return False
+    try:
+        from app.engagements import EngagementRepository
+        repo = EngagementRepository()
+        eng = await repo.get(engagement_id)
+        if eng is None or not eng.primary_auth:
+            return False
+        eng.primary_auth = []
+        await repo.update(eng)
+    except Exception:  # noqa: BLE001
+        logger.exception("[%s] could not clear the dead identity", engagement_id)
+        return False
+    try:
+        await events.emit(
+            engagement_id, events.THOUGHT,
+            "The session this run was using no longer authenticates - it "
+            "expired, or something hit a logout. It has been dropped, so the "
+            "run stops reporting anonymous results as if they were "
+            "authenticated ones, and a fresh login can replace it.",
+            level=events.LEVEL_INFO)
+    except Exception:  # noqa: BLE001
+        logger.debug("could not announce the dropped identity")
+    try:
+        await audit("identity_dropped", engagement_id=engagement_id,
+                    reason="no longer authenticates")
+    except Exception:  # noqa: BLE001
+        logger.debug("could not audit the dropped identity")
+    return True

@@ -9,7 +9,20 @@ from __future__ import annotations
 from typing import Dict, List
 
 # Tools that accept repeated `-H "Name: value"`.
-_DASH_H = {"nuclei", "ffuf", "dalfox", "katana", "httpx"}
+#
+# schemathesis and kiterunner were missing, and schemathesis is the one that
+# mattered: it is the API-contract tool, so every operation behind the login
+# was being property-tested as an anonymous caller. kiterunner discovers API
+# routes, which it cannot do for the authenticated half of an API.
+_DASH_H = {"nuclei", "ffuf", "dalfox", "katana", "httpx",
+           "schemathesis", "kiterunner"}
+
+# NOT here on purpose: nosqli. Its CLI takes a target, a request file and a
+# proxy, and nothing in it is a documented repeatable header flag. Guessing one
+# does not leave the tool unauthenticated, it makes the tool exit on a usage
+# error and find nothing - which is how this project lost runs to `httpx -u`
+# and a dnsx missing its wordlist. It stays anonymous until someone checks
+# --help on the pinned version; that is a smaller loss than a broken scan.
 
 
 def auth_args(tool: str, headers: List[Dict[str, str]]) -> List[str]:
@@ -48,6 +61,11 @@ def auth_args(tool: str, headers: List[Dict[str, str]]) -> List[str]:
         if others:
             args += ["--headers", "\\n".join(others)]
         return args
+
+    if tool == "arjun":
+        # arjun takes every header in ONE string, newline-separated.
+        blob = "\n".join(f"{n}: {v}" for n, v in pairs)
+        return ["--headers", blob]
 
     if tool == "wpscan":
         cookie = next((v for n, v in pairs if n.lower() == "cookie"), None)

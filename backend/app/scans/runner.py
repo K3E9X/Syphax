@@ -93,8 +93,15 @@ class Runner:
             # Authenticated scanning: inject the engagement's primary-identity
             # headers as tool-specific flags so the scanner tests behind the login.
             try:
+                from app.orchestrator.identity import ends_the_session
                 from app.scans.auth import auth_args
-                if eng.primary_auth:
+                if eng.primary_auth and ends_the_session(target):
+                    # Scan it, but as nobody. Handing our session to a logout
+                    # endpoint destroys it, and every later request in the run
+                    # silently goes back to anonymous.
+                    logger.info("withholding the identity from %s: it would "
+                                "end the session", target)
+                elif eng.primary_auth:
                     options = auth_args(tool, eng.primary_auth) + options
             except Exception:  # noqa: BLE001 - never block a scan on auth wiring
                 logger.exception("auth injection failed for %s", tool)

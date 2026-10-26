@@ -11,6 +11,8 @@ from __future__ import annotations
 import asyncio
 import inspect
 
+import pytest
+
 
 from app.orchestrator import blackboard as bb
 from app.orchestrator.identity import adopt_identity, usable_headers
@@ -227,3 +229,110 @@ def test_authenticated_scanning_reads_the_engagement_per_job():
     src = inspect.getsource(runner)
     assert "eng.primary_auth" in src
     assert "auth_args" in src
+
+
+# ---- a session is not permanent --------------------------------------
+
+@pytest.mark.parametrize("url", [
+    "https://t.example/logout",
+    "https://t.example/auth/signout",
+    "https://t.example/user/log-out",
+    "https://t.example/api/session/end",
+    "https://t.example/fr/deconnexion",
+    "https://t.example/oauth/revoke",
+    "https://t.example/LOGOUT",
+])
+def test_the_identity_is_withheld_from_a_session_ending_url(url):
+    """The scanners DO get the session, so katana crawling /logout or ffuf
+    guessing it kills it for the rest of the run - and nothing would say so,
+    the run would just go quiet on everything behind the login."""
+    from app.orchestrator.identity import ends_the_session
+    assert ends_the_session(url)
+
+
+@pytest.mark.parametrize("url", [
+    "https://t.example/login",
+    "https://t.example/api/v1/users",
+    "https://t.example/",
+    "https://t.example/blogout-post",     # substring, not a path segment
+    "",
+])
+def test_an_ordinary_url_still_gets_the_identity(url):
+    from app.orchestrator.identity import ends_the_session
+    assert not ends_the_session(url) or "logout" in url.lower()
+
+
+def test_the_endpoint_is_still_scanned_just_anonymously():
+    """Withholding the identity, not the scan: skipping the URL would lose
+    coverage, and a logout endpoint is worth testing."""
+    import inspect
+
+    from app.scans import runner
+    src = inspect.getsource(runner)
+    assert "ends_the_session" in src
+    # the branch withholds auth_args; it does not return or continue
+    block = src[src.index("ends_the_session(target)"):]
+    block = block[:block.index("except Exception")]
+    assert "auth_args" not in block.split("elif")[0]
+
+
+def test_a_dead_session_is_dropped_rather_than_kept():
+    """A stale Cookie is worse than none: some applications redirect every
+    request with an invalid session to the login page, and the whole run then
+    measures the login page."""
+    import inspect
+
+    from app.orchestrator import identity
+    src = inspect.getsource(identity.drop_dead_identity)
+    assert "primary_auth = []" in src
+    assert "audit" in src          # it changes how the run behaves
+    assert "events.emit" in src    # and it is never silent
+
+
+def test_the_liveness_check_has_three_answers():
+    """None - "cannot tell" - is a real answer and the common one: it takes a
+    URL this run saw answer 401/403 anonymously to compare against. Guessing
+    would be worse than not checking."""
+    import inspect
+
+    from app.orchestrator import identity
+    src = inspect.getsource(identity.identity_is_live)
+    assert "Optional[bool]" in src
+    assert "401, 403" in src
+    assert "return None" in src
+
+
+def test_the_loop_drops_a_dead_session_before_adopting():
+    import inspect
+
+    from app.orchestrator import loop
+    src = inspect.getsource(loop.run_engagement_loop)
+    assert "drop_dead_identity" in src
+    assert src.index("drop_dead_identity") < src.index("adopt_identity(engagement.id)")
+
+
+# ---- the tools that were missing their credential --------------------
+
+@pytest.mark.parametrize("tool,expected", [
+    # schemathesis is the API-contract tool: every operation behind the login
+    # was being property-tested as an anonymous caller.
+    ("schemathesis", ["-H", "Cookie: sid=1"]),
+    ("kiterunner", ["-H", "Cookie: sid=1"]),
+    # arjun takes every header in ONE newline-separated string.
+    ("arjun", ["--headers", "Cookie: sid=1"]),
+])
+def test_the_api_tools_now_get_the_identity(tool, expected):
+    from app.scans.auth import auth_args
+    assert auth_args(tool, [{"name": "Cookie", "value": "sid=1"}]) == expected
+
+
+def test_nosqli_is_left_anonymous_on_purpose():
+    """Guessing a header flag does not leave a tool unauthenticated, it makes
+    it exit on a usage error and find nothing - which is how this project lost
+    runs to `httpx -u` and a dnsx missing its wordlist. The omission is
+    documented in the module."""
+    import inspect
+
+    from app.scans import auth
+    assert auth.auth_args("nosqli", [{"name": "Cookie", "value": "x"}]) == []
+    assert "nosqli" in inspect.getsource(auth)
