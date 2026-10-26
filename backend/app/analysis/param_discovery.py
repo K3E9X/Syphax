@@ -27,7 +27,7 @@ from app.analysis._store import save_analysis_job
 from app.engagements import EngagementRepository
 from app.proxy import FlowRepository
 from app.scans.models import Finding
-from app.validation.safe_poc import SafePoC, ScopeError
+from app.validation.safe_poc import (SafePoC, ScopeError, identity_for)
 
 logger = logging.getLogger("syphax.analysis.params")
 
@@ -70,7 +70,8 @@ async def analyze_params(engagement_id: str) -> Dict[str, int]:
 
     candidates = _candidate_list(harvested)
 
-    safe = SafePoC(in_scope=eng.host_in_scope)
+    safe = SafePoC(in_scope=eng.host_in_scope,
+        identity=identity_for(eng))
     findings: List[Finding] = []
 
     if harvested:

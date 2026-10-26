@@ -18,7 +18,7 @@ from app.validation import corroboration
 from app.validation.baseline import calibrate
 from app.validation.classes import TOOL_VULN_CLASS, vuln_class_of
 from app.validation.models import ValidatedFinding, ValidationStatus
-from app.validation.safe_poc import SafePoC
+from app.validation.safe_poc import (SafePoC, identity_for)
 from app.findings_util import normalise_target
 from app.validation.storage import ValidatedFindingRepository, stable_vf_id
 from app.validation.validator import FindingValidator
@@ -41,7 +41,8 @@ async def validate_engagement(engagement_id: str) -> Dict[str, int]:
     if engagement is None:
         return {"error": 1}
 
-    safe = SafePoC(in_scope=engagement.host_in_scope)
+    safe = SafePoC(in_scope=engagement.host_in_scope,
+        identity=identity_for(engagement))
 
     # One calibration per engagement, before any verdict: ask the target for a
     # couple of paths that cannot exist. If it answers them all with the same

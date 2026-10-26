@@ -26,7 +26,7 @@ from app.analysis._store import save_analysis_job
 from app.engagements import EngagementRepository
 from app.proxy import FlowRepository
 from app.scans.models import Finding
-from app.validation.safe_poc import SafePoC, ScopeError
+from app.validation.safe_poc import (SafePoC, ScopeError, identity_for)
 
 logger = logging.getLogger("syphax.analysis.access_control")
 
@@ -47,7 +47,8 @@ async def analyze_access_control(engagement_id: str) -> Dict[str, int]:
     in_scope = [f for f in summaries
                 if eng.host_in_scope((urlparse(f.url).hostname or "").lower())]
 
-    safe = SafePoC(in_scope=eng.host_in_scope)
+    safe = SafePoC(in_scope=eng.host_in_scope,
+        identity=identity_for(eng))
     findings: List[Finding] = []
 
     # ---- missing-auth / broken access control (anonymous replay) ----
@@ -136,7 +137,7 @@ async def _replay_anonymous(safe: SafePoC, flow, full) -> Optional[tuple]:
     """Fetch the URL with no credentials. 200 + comparable size => the resource
     is served to anyone, despite being requested authenticated."""
     try:
-        anon = await safe.fetch(flow.url, method="GET", headers={})
+        anon = await safe.fetch(flow.url, method="GET", anonymous=True)
     except ScopeError:
         return None
     if anon is None or anon.status_code != 200 or len(anon.text) == 0:

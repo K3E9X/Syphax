@@ -156,7 +156,7 @@ async def analyze_rate_limit(engagement_id: str, *,
                              allow_active: bool = True) -> Dict[str, int]:
     from app.engagements import EngagementRepository
     from app.exploit.capabilities import granted
-    from app.validation.safe_poc import SafePoC
+    from app.validation.safe_poc import (SafePoC, identity_for)
 
     eng = await EngagementRepository().get(engagement_id)
     if eng is None:
@@ -181,7 +181,8 @@ async def analyze_rate_limit(engagement_id: str, *,
 
     sent_total = 0
     size = burst_size(granted(eng))
-    safe = SafePoC(in_scope=eng.host_in_scope)
+    safe = SafePoC(in_scope=eng.host_in_scope,
+        identity=identity_for(eng))
     findings: List[Finding] = []
     outcomes: Dict[str, str] = {}
 

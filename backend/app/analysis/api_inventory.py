@@ -45,7 +45,7 @@ from app.analysis._store import save_analysis_job
 from app.engagements import EngagementRepository
 from app.proxy import FlowRepository
 from app.scans.models import Finding
-from app.validation.safe_poc import SafePoC
+from app.validation.safe_poc import (SafePoC)
 
 logger = logging.getLogger("syphax.analysis.api_inventory")
 
@@ -181,6 +181,10 @@ async def analyze_api_inventory(engagement_id: str) -> Dict[str, int]:
                    "not seen would be sending requests with no hypothesis.")
         return {"observed": 0, "candidates": 0, "live": 0, "findings": 0}
 
+    # Deliberately anonymous. This analyser's whole claim is that a forgotten
+    # version or an archived route answers with NO credential - it is what the
+    # unauth_endpoint leads on the blackboard mean. Probing it authenticated
+    # would make every one of those claims false.
     safe = SafePoC(in_scope=eng.host_in_scope)
     findings: List[Finding] = []
     live_urls: List[str] = []

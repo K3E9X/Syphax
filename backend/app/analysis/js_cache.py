@@ -98,7 +98,7 @@ async def _fetch_crawled_js(eng, *, seen_urls: set) -> int:
     requests.
     """
     from app.orchestrator.state import EngagementState
-    from app.validation.safe_poc import SafePoC, ScopeError
+    from app.validation.safe_poc import (SafePoC, ScopeError, identity_for)
 
     try:
         assets = await EngagementState(eng.id).assets("endpoint")
@@ -118,7 +118,8 @@ async def _fetch_crawled_js(eng, *, seen_urls: set) -> int:
     if not urls:
         return 0
 
-    safe = SafePoC(in_scope=eng.host_in_scope)
+    safe = SafePoC(in_scope=eng.host_in_scope,
+        identity=identity_for(eng))
     written = 0
     for url in urls:
         try:

@@ -263,7 +263,7 @@ async def analyze_api_sequences(engagement_id: str, *,
                                 allow_active: bool = True) -> Dict[str, int]:
     from app.engagements import EngagementRepository
     from app.exploit.probe_client import ProbeClient
-    from app.validation.safe_poc import SafePoC
+    from app.validation.safe_poc import (SafePoC, identity_for)
 
     eng = await EngagementRepository().get(engagement_id)
     if eng is None:
@@ -286,7 +286,12 @@ async def analyze_api_sequences(engagement_id: str, *,
         return {"sequences": 0, "findings": 0}
 
     enforces_auth = await _enforces_auth_somewhere(eng)
-    writer = ProbeClient(in_scope=eng.host_in_scope)
+    writer = ProbeClient(in_scope=eng.host_in_scope,
+            identity=identity_for(eng))
+    # The reader carries NO credential, and that is the entire test: an
+    # object created as a logged-in user, read back by nobody. Giving it the
+    # identity would read our own object with our own session, which succeeds
+    # on every healthy application and would report a BOLA on all of them.
     reader = SafePoC(in_scope=eng.host_in_scope)
     findings: List[Finding] = []
     attempted = 0

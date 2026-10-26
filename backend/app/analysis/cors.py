@@ -22,7 +22,7 @@ from app.analysis._store import save_analysis_job
 from app.engagements import EngagementRepository
 from app.proxy import FlowRepository
 from app.scans.models import Finding
-from app.validation.safe_poc import SafePoC, ScopeError
+from app.validation.safe_poc import (SafePoC, ScopeError, identity_for)
 
 logger = logging.getLogger("syphax.analysis.cors")
 
@@ -37,7 +37,8 @@ async def analyze_cors(engagement_id: str) -> Dict[str, int]:
         return {"error": 1}
 
     evil = f"https://evil-{secrets.token_hex(4)}.example"
-    safe = SafePoC(in_scope=eng.host_in_scope)
+    safe = SafePoC(in_scope=eng.host_in_scope,
+        identity=identity_for(eng))
 
     # Candidate URLs: the base target + in-scope captured GETs, de-duped by path.
     urls: List[str] = [eng.target_url]

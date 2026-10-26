@@ -34,7 +34,7 @@ from app.engagements import EngagementRepository
 from app.llm import ROLE_VALIDATOR, LLMError, get_router
 from app.proxy import FlowRepository
 from app.scans.models import Finding
-from app.validation.safe_poc import SafePoC, ScopeError
+from app.validation.safe_poc import (SafePoC, ScopeError, identity_for)
 
 logger = logging.getLogger("syphax.analysis.logic")
 
@@ -70,7 +70,8 @@ async def analyze_logic(
     summaries = await flows_repo.list_flows(limit=MAX_FLOWS)
     in_scope = [f for f in summaries if eng.host_in_scope(_host(f.url))]
 
-    safe = SafePoC(in_scope=eng.host_in_scope)
+    safe = SafePoC(in_scope=eng.host_in_scope,
+        identity=identity_for(eng))
     # Grey-box: a second identity's headers, used to prove cross-user access.
     second_headers = {h["name"]: h["value"] for h in (eng.secondary_auth or [])
                       if h.get("name") and h.get("value")}
@@ -270,7 +271,7 @@ async def _confirm_bola_greybox(
     url = flow.url
     # 1. Rule out a public resource: fetch with no credentials at all.
     try:
-        anon = await safe.fetch(url, method="GET", headers={})
+        anon = await safe.fetch(url, method="GET", anonymous=True)
     except ScopeError:
         return ("likely", 0.5, f"Re-test skipped (out of scope): {url}")
     if anon is not None and anon.status_code == 200 and len(anon.text) > 0:
@@ -312,7 +313,7 @@ async def _confirm_bfla(
     => privilege escalation. 401/403/404 => properly restricted (None)."""
     url = flow.url
     try:
-        anon = await safe.fetch(url, method="GET", headers={})
+        anon = await safe.fetch(url, method="GET", anonymous=True)
     except ScopeError:
         return None
     if anon is not None and anon.status_code == 200 and len(anon.text) > 0:

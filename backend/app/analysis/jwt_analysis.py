@@ -59,8 +59,9 @@ async def analyze_jwt(engagement_id: str) -> Dict[str, int]:
     in_scope = [f for f in summaries
                 if eng.host_in_scope((urlparse(f.url).hostname or "").lower())]
 
-    from app.validation.safe_poc import SafePoC
-    safe = SafePoC(in_scope=eng.host_in_scope)
+    from app.validation.safe_poc import (SafePoC, identity_for)
+    safe = SafePoC(in_scope=eng.host_in_scope,
+        identity=identity_for(eng))
     findings: List[Finding] = []
     seen: set[str] = set()
     replayed = 0

@@ -32,7 +32,7 @@ from app import db
 from app.analysis._store import save_analysis_job
 from app.engagements import EngagementRepository
 from app.scans.models import Finding
-from app.validation.safe_poc import SafePoC, ScopeError
+from app.validation.safe_poc import (SafePoC, ScopeError)
 
 logger = logging.getLogger("syphax.analysis.auth_posture")
 
@@ -260,6 +260,9 @@ async def _probe_bypass(eng, urls: List[str]) -> List[Finding]:
     the PROTECTED path, and the body must differ from the public root,
     otherwise we simply got a different, public resource.
     """
+    # No identity here. The probe only proceeds when the URL answers 401/403
+    # (looks_protected below), so an authenticated request would get a 200,
+    # fail that check, and silently find nothing at all.
     safe = SafePoC(in_scope=eng.host_in_scope)
     out: List[Finding] = []
     roots: Dict[str, str] = {}

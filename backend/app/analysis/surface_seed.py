@@ -25,7 +25,7 @@ from typing import Dict, List
 from urllib.parse import urljoin
 
 from app.prerecon.endpoints import paths_from, sitemaps_from
-from app.validation.safe_poc import SafePoC, ScopeError
+from app.validation.safe_poc import (SafePoC, ScopeError, identity_for)
 
 logger = logging.getLogger("syphax.analysis.surface_seed")
 
@@ -53,7 +53,8 @@ async def seed_published_surface(engagement_id: str) -> Dict[str, int]:
     if eng is None:
         return {"error": 1}
 
-    safe = SafePoC(in_scope=eng.host_in_scope)
+    safe = SafePoC(in_scope=eng.host_in_scope,
+        identity=identity_for(eng))
     state = EngagementState(engagement_id)
     base = eng.target_url or ""
     seeded = 0

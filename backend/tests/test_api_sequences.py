@@ -216,14 +216,33 @@ def test_authentication_and_payment_creates_are_skipped():
 
 
 def test_the_write_uses_the_probe_client_and_the_read_uses_the_safe_one():
-    """The read must carry no credential - that is the test - and the safe
-    layer sends none. Using the probe client for both would be a wider method
-    policy than the read needs."""
+    """Using the probe client for both would be a wider method policy than the
+    read needs."""
     src = _inspect.getsource(seq.analyze_api_sequences)
-    assert "ProbeClient(in_scope=eng.host_in_scope)" in src
-    assert "SafePoC(in_scope=eng.host_in_scope)" in src
+    assert "ProbeClient(" in src
+    assert "SafePoC(" in src
     assert 'method="POST"' in _inspect.getsource(seq._post)
     assert 'method="GET"' in _inspect.getsource(seq._get)
+
+
+def test_the_write_is_authenticated_and_the_read_is_not():
+    """The asymmetry IS the test: an object created as a logged-in user, read
+    back by nobody.
+
+    The write gained the engagement's identity when the analysers were wired
+    for grey box - creating behind the login is the point. The read must not,
+    and asserting it is worth a test of its own: with a credential it reads our
+    own object with our own session, which succeeds on every healthy
+    application, and every target would get a BOLA finding.
+    """
+    src = _inspect.getsource(seq.analyze_api_sequences)
+    writer = src[src.index("writer = "):src.index("reader = ")]
+    reader = src[src.index("reader = "):]
+    reader = reader[:reader.index("findings:")]
+    assert "identity_for(eng)" in writer, "the create is not authenticated"
+    assert "identity_for" not in reader, (
+        "the read back carries a credential - it would confirm a BOLA on "
+        "every target by reading our own object as ourselves")
 
 
 def test_it_is_gated_on_active_exploitation():

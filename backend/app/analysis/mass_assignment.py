@@ -189,6 +189,7 @@ async def analyze_mass_assignment(engagement_id: str, *,
                                   allow_active: bool = True) -> Dict[str, int]:
     from app.engagements import EngagementRepository
     from app.exploit.probe_client import ProbeClient
+    from app.validation.safe_poc import identity_for
 
     eng = await EngagementRepository().get(engagement_id)
     if eng is None:
@@ -212,7 +213,8 @@ async def analyze_mass_assignment(engagement_id: str, *,
                    "guess at the API, not the API.")
         return {"operations": 0, "probes": 0, "findings": 0}
 
-    client = ProbeClient(in_scope=eng.host_in_scope)
+    client = ProbeClient(in_scope=eng.host_in_scope,
+            identity=identity_for(eng))
     findings: List[Finding] = []
     probes = 0
 
