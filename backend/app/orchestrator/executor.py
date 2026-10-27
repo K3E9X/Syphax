@@ -171,6 +171,19 @@ class Executor:
             await self.state.mark_coverage(
                 job.catalog_item_id, job.target, status, job_id=job.id
             )
+            # A tool has now run against what this lead names, so the lead has
+            # been ACTED ON. Recording that is what stops the strategist
+            # proposing it forever.
+            #
+            # OWASP GenAI "LLM Exploit Generation Phase 2" found this to be the
+            # most repeated agentic failure across every framework it tested:
+            # an agent cracked one user's password and then looped on other
+            # users' hashes, "ignoring a password reset route it had already
+            # found", and kept pursuing dead ends "because it never ranked the
+            # value of its findings" until a human told it to stop. syphax
+            # ranks them, but nothing recorded that one had been tried - so the
+            # same top lead won every round while the rest of the board waited.
+            await self._consume_leads_for(job)
 
         # Verbose: one line per finished job (exit code + finding count).
         await events.emit(
@@ -207,6 +220,27 @@ class Executor:
                 level=events.LEVEL_VERBOSE,
                 severity=f.severity, tool=job.tool, target=f.target,
             )
+
+    async def _consume_leads_for(self, job: Job) -> None:
+        """Mark every lead naming this job's target as acted on. Never raises.
+
+        Deliberately keyed on the target rather than on the lead's class: a
+        lead says "there is something here", and a tool having run here is
+        what answers it. Consuming it does not delete it - the fact stays on
+        the board and in the report; it stops being the thing the strategist
+        reaches for first.
+        """
+        target = str(getattr(job, "target", "") or "").strip()
+        if not target:
+            return
+        try:
+            from app.orchestrator.blackboard import Blackboard
+            board = Blackboard(self.state.engagement_id)
+            for lead in await board.leads():
+                if lead.value == target and not lead.grants_identity:
+                    await board.mark_consumed(lead.id, job.tool)
+        except Exception:  # noqa: BLE001 - the board never fails an ingest
+            logger.debug("could not consume leads for %s", target)
 
     async def _triage_underperforming(self, job: Job) -> None:
         """Diagnose a failed/empty job and retry once if that would help.

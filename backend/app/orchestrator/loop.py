@@ -179,6 +179,9 @@ async def run_engagement_loop(run_id: str) -> dict:
     # changes nothing - so the run behaves exactly as before on a target where
     # nothing is found.
     strategist = Strategist(state)
+    # Carried across iterations by _report_stall: the last fact counts and how
+    # many iterations have added nothing.
+    progress: Dict[str, Any] = {}
 
     # Reclaim (item, asset) pairs a previous run left pinned at 'running'/
     # 'pending' - those are in COVERED_STATUSES, so without this a re-run skips
@@ -337,6 +340,12 @@ async def run_engagement_loop(run_id: str) -> dict:
                     await events.emit(
                         engagement.id, events.PHASE_CHANGED, msg,
                         run_id=run.id, phase=phase, level=events.LEVEL_INFO)
+
+                # Is the run still learning anything, or just busy?
+                try:
+                    await _report_stall(engagement, run, progress)
+                except Exception:  # noqa: BLE001 - never fail a run on this
+                    logger.debug("[%s] progress check skipped", run.id)
 
                 # If the run has earned a session, start using it. Done
                 # before planning so the tasks this iteration launches are the
@@ -884,6 +893,82 @@ async def _discover_params(engagement, run) -> None:
 # a slow leak. Only the recent runs can still be mid-flight.
 _ANALYSED: "OrderedDict[str, set]" = OrderedDict()
 _ANALYSED_MAX = 64
+
+
+# Consecutive iterations that add no new fact before the run says so out loud.
+# Three, not one: a single quiet iteration is normal (a long scan finishing),
+# three in a row is a loop.
+STALL_ITERATIONS = 3
+
+
+async def _count_facts(engagement_id: str) -> Optional[tuple]:
+    """(assets, findings, leads) for this engagement, or None if unavailable.
+
+    The three things that mean the run learned something. Deliberately not
+    "jobs launched" or "commands run": those are the numbers that go up while
+    nothing happens, which is the whole problem.
+    """
+    try:
+        from app import db
+        async with db.acquire() as conn:
+            row = await conn.fetchrow(
+                "SELECT (SELECT COUNT(*) FROM assets WHERE engagement_id=$1) AS a,"
+                "       (SELECT COALESCE(SUM(jsonb_array_length(findings_json::jsonb)), 0)"
+                "          FROM jobs WHERE engagement_id=$1) AS f,"
+                "       (SELECT COUNT(*) FROM leads WHERE engagement_id=$1) AS l",
+                engagement_id)
+        if row is None:
+            return None
+        return (int(row["a"] or 0), int(row["f"] or 0), int(row["l"] or 0))
+    except Exception:  # noqa: BLE001 - a progress check is not worth a failure
+        return None
+
+
+async def _report_stall(engagement, run, seen: Dict[str, Any]) -> None:
+    """Say plainly whether the run is still learning anything.
+
+    OWASP GenAI's "LLM Exploit Generation Phase 2" reports this as the thing
+    an operator most needs and least gets: "the volume of activity looks like
+    progress", and "the agent reports a real breakthrough with the same
+    confidence as a hallucinated dead end, so a novice has no signal to tell
+    real progress from a loop that is only using up resources". Across both of
+    its tracks, "a human was the success detector".
+
+    This does not stop the run - the phase budgets do that, and an operator who
+    asked for no limits should not get a silent early exit. It makes the
+    difference visible, which is the part that was missing.
+    """
+    facts = await _count_facts(engagement.id)
+    if facts is None:
+        return
+    previous = seen.get("facts")
+    seen["facts"] = facts
+    if previous is None:
+        return
+
+    if facts != previous:
+        seen["quiet"] = 0
+        if seen.pop("said_stalled", None):
+            gained = tuple(now - was for now, was in zip(facts, previous, strict=True))
+            await events.emit(
+                engagement.id, events.THOUGHT,
+                f"Moving again: {gained[0]} new asset(s), {gained[1]} new "
+                f"finding(s), {gained[2]} new lead(s) since the last check.",
+                run_id=run.id, level=events.LEVEL_INFO)
+        return
+
+    seen["quiet"] = int(seen.get("quiet") or 0) + 1
+    if seen["quiet"] < STALL_ITERATIONS or seen.get("said_stalled"):
+        return
+    seen["said_stalled"] = True
+    await events.emit(
+        engagement.id, events.THOUGHT,
+        f"No new asset, finding or lead in {seen['quiet']} iterations - the "
+        f"run is busy but it is not learning anything. Jobs are still being "
+        f"launched, so the console will keep moving; that is activity, not "
+        f"progress. It will carry on to the next phase when this one's budget "
+        f"is spent.",
+        run_id=run.id, level=events.LEVEL_INFO)
 
 
 async def _analyse_traffic(engagement, run, *, active: bool = False) -> None:

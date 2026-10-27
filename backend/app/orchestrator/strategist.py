@@ -111,6 +111,10 @@ class Advice:
     chase_classes: List[str] = field(default_factory=list)
     hot_assets: Set[str] = field(default_factory=set)
     identity: Optional[Dict[str, Any]] = None
+    # Leads nothing has been run against yet. Zero means the board is fully
+    # worked through, which is a real and reportable state: it says the run
+    # has acted on everything it knows, rather than that it found nothing.
+    untouched: int = 0
     rationale: str = ""
 
     @property
@@ -122,6 +126,7 @@ class Advice:
             "chase_classes": list(self.chase_classes),
             "hot_assets": sorted(self.hot_assets),
             "has_identity": self.identity is not None,
+            "untouched": self.untouched,
             "rationale": self.rationale,
         }
 
@@ -158,9 +163,20 @@ class Strategist:
 
     def _from_leads(self, leads: List[bb.Lead]) -> Advice:
         """Fold the board into advice. Pure, so it is directly testable."""
-        # Strongest kind first, then confidence within a kind. Deliberately
-        # NOT the board's own order - see KIND_PRIORITY.
-        ranked = sorted(leads, key=lambda l: (KIND_PRIORITY.get(l.kind, 99),
+        # A lead something has already been run against goes last, whatever
+        # its kind. This is the fix for the failure OWASP GenAI's "LLM Exploit
+        # Generation Phase 2" found in every agentic framework it tested: an
+        # agent cracked one user's password and then looped on other users'
+        # hashes while ignoring a password-reset route it had already found,
+        # "because it never ranked the value of its findings". Ranking is only
+        # half of it - without recording what has been TRIED, the same top
+        # lead wins every round and the rest of the board waits forever.
+        #
+        # Consumed does not mean finished or worthless: the fact stays on the
+        # board, in the report, and in `hot_assets` below. It stops being the
+        # first thing reached for.
+        ranked = sorted(leads, key=lambda l: (bool(l.consumed_by),
+                                              KIND_PRIORITY.get(l.kind, 99),
                                               -l.confidence, l.id))
         chase: List[str] = []
         for lead in ranked:
@@ -181,8 +197,10 @@ class Strategist:
                 hot.add(str(url))
 
         identity = self._best_identity(leads)
+        fresh = [l for l in leads if not l.consumed_by]
         return Advice(chase_classes=chase, hot_assets=hot, identity=identity,
-                      rationale=self._rationale(leads, chase))
+                      untouched=len(fresh),
+                      rationale=self._rationale(leads, chase, fresh))
 
     def _best_identity(self, leads: List[bb.Lead]) -> Optional[Dict[str, Any]]:
         """The strongest identity the run holds, for the grey-box scanners.
@@ -200,15 +218,21 @@ class Strategist:
         return {"kind": best.kind, "lead_id": best.id, "source": best.source,
                 "confidence": best.confidence, **best.data}
 
-    def _rationale(self, leads: List[bb.Lead], chase: List[str]) -> str:
+    def _rationale(self, leads: List[bb.Lead], chase: List[str],
+                   fresh: Optional[List[bb.Lead]] = None) -> str:
         counts: Dict[str, int] = {}
         for lead in leads:
             counts[lead.kind] = counts.get(lead.kind, 0) + 1
         board = ", ".join(f"{n} {kind}" for kind, n in sorted(counts.items()))
         if not chase:
             return f"The board holds {board}; nothing on it maps to a test yet."
+        tail = ""
+        if fresh is not None:
+            tail = (f" {len(fresh)} of {len(leads)} not yet acted on."
+                    if fresh else
+                    " Everything on it has been acted on at least once.")
         return (f"The board holds {board}; chasing "
-                f"{', '.join(chase[:4])} first.")
+                f"{', '.join(chase[:4])} first.{tail}")
 
     # -- the optional model pass ------------------------------------------
 
