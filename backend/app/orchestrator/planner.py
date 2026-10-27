@@ -264,7 +264,10 @@ class Planner:
                         asset_value=asset.value,
                         asset_source=asset.source or "",
                         tool=item.tool,
-                        options=list(item.default_options),
+                        # Per-asset, not a flat copy: EXP-DAST skips the
+                        # tags its focused siblings are about to send when the
+                        # asset has parameters. See catalog.dast_exclusions.
+                        options=item.options_for(asset),
                         phase=item.phase,
                     )
                 )

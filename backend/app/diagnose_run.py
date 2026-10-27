@@ -341,6 +341,17 @@ async def _agentic_section(conn, engagement_id: str) -> List[str]:
     except Exception:  # noqa: BLE001
         out.append("  strategist        could not be consulted")
 
+    # 5. How loud it was, and what that bought. The report's own section, so
+    # the operator and the client read the same numbers.
+    try:
+        from app.reporting.footprint import collect, summarise
+        for line in summarise(await collect(engagement_id)):
+            out.append(f"  {line[:72]}")
+            for chunk in range(72, len(line), 72):
+                out.append(f"      {line[chunk:chunk + 72]}")
+    except Exception:  # noqa: BLE001
+        pass
+
     return out
 
 

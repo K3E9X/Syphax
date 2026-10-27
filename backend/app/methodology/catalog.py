@@ -46,6 +46,22 @@ class CatalogItem:
     severity_default: str = "info"
     default_options: List[str] = field(default_factory=list)
     applies_when: Dict[str, Any] = field(default_factory=lambda: {"always": True})
+    # Extra flags added ONLY when the asset carries query parameters. Options
+    # were a flat list copied verbatim, which is fine until an item needs to
+    # behave differently on an asset its siblings do not cover - see
+    # dast_exclusions() for the case that forced this.
+    options_with_params: List[str] = field(default_factory=list)
+
+    def options_for(self, asset: Any = None) -> List[str]:
+        """The flags to run with against this asset.
+
+        Falls back to default_options when nothing asset-specific applies, so
+        every item that does not use this is unaffected.
+        """
+        opts = list(self.default_options)
+        if self.options_with_params and getattr(asset, "has_params", False):
+            opts += list(self.options_with_params)
+        return opts
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -469,6 +485,13 @@ CATALOG: List[CatalogItem] = [
         severity_default="high",
         default_options=["-dast"],
         applies_when={"is_endpoint": True},
+        # On a parameterised endpoint the focused -dast items all apply too,
+        # and each is a strict subset of this untagged run - so this one used
+        # to re-send what seven siblings were about to send anyway. Skipping
+        # what they cover keeps the union identical and removes the repeat.
+        # The list is computed from the catalog (_DAST_EXCLUDED below) so it
+        # cannot drift away from the siblings it is meant to track.
+        options_with_params=[],   # filled in below, once the catalog exists
     ),
     CatalogItem(
         id="EXP-RCE",
@@ -613,6 +636,61 @@ CATALOG: List[CatalogItem] = [
 
 
 CATALOG_BY_ID: Dict[str, CatalogItem] = {item.id: item for item in CATALOG}
+
+
+_DAST_CATCH_ALL = "EXP-DAST"
+
+
+def dast_exclusions(catch_all_id: str = _DAST_CATCH_ALL) -> List[str]:
+    """Tags a focused DAST sibling already sends, so the catch-all need not.
+
+    On a parameterised endpoint every `-dast` item applies at once: the
+    untagged catch-all, which runs ALL fuzzing templates, plus seven tagged
+    items that are strict subsets of it. Those seven therefore re-sent
+    payloads the catch-all had already sent - eight nuclei runs per injection
+    point for the coverage of one. That is both wasted run time on a small
+    host and, in OWASP GenAI's Phase 2 wording, "high-frequency, low-diversity
+    tool invocation against a single target", which is the signature they
+    offer defenders for an autonomous agent.
+
+    Computed FROM the catalog rather than written out, so adding or retagging
+    a DAST item cannot leave this list stale and silently restore the overlap
+    - or worse, exclude a tag nothing else covers.
+
+    Only tags from siblings that require parameters are returned, because only
+    those apply where the exclusion is applied (see options_with_params): an
+    endpoint without parameters still gets the full catch-all.
+    """
+    tags: List[str] = []
+    for item in CATALOG:
+        if item.id == catch_all_id or "-dast" not in item.default_options:
+            continue
+        # Only siblings that are GUARANTEED to run wherever the exclusion is
+        # applied. The exclusion is only added on a parameterised endpoint, so
+        # `requires_params` and `always` both qualify - EXP-RCE is `always`,
+        # applies there too, and is the largest overlap of all. A sibling
+        # gated on a technology or on being the base URL does not qualify:
+        # excluding its tags would lose coverage on every target where that
+        # gate is false.
+        gate = item.applies_when or {}
+        if not (gate.get("requires_params") or gate.get("always")):
+            continue
+        opts = item.default_options
+        if "-tags" not in opts:
+            continue
+        for tag in opts[opts.index("-tags") + 1].split(","):
+            tag = tag.strip()
+            if tag and tag not in tags:
+                tags.append(tag)
+    return tags
+
+
+# Applied here rather than inline above, because it is derived from the whole
+# catalog and the catalog does not exist yet at the point the item is defined.
+_DAST_EXCLUDED = dast_exclusions()
+if _DAST_EXCLUDED and _DAST_CATCH_ALL in CATALOG_BY_ID:
+    CATALOG_BY_ID[_DAST_CATCH_ALL].options_with_params = [
+        "-exclude-tags", ",".join(_DAST_EXCLUDED)]
 
 
 def items_for_phase(phase: str) -> List[CatalogItem]:

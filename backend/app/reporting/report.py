@@ -62,10 +62,20 @@ async def build_report(engagement_id: str) -> Dict[str, Any]:
     except Exception:  # noqa: BLE001 - a report must still render
         limits = []
 
+    # What footprint the test left. A client is entitled to know whether their
+    # monitoring should have seen this, and the answer belongs next to the
+    # findings rather than in an operator's console.
+    try:
+        from app.reporting.footprint import collect as collect_footprint
+        footprint = await collect_footprint(engagement_id)
+    except Exception:  # noqa: BLE001 - a report must still render
+        footprint = {}
+
     md = _markdown(e, reportable, chains, tools_used, hosts, tech, cov, vsum,
-                   overall, limits)
+                   overall, limits, footprint)
     return {
         "markdown": md,
+        "footprint": footprint,
         "html": _html(md),
         "meta": {
             "overall_risk": overall,
@@ -169,7 +179,7 @@ def _by_severity(findings: List) -> Dict[str, List]:
 
 
 def _markdown(e, findings, chains, tools, hosts, tech, cov, vsum, overall,
-              limits=()) -> str:
+              limits=(), footprint=None) -> str:
     L: List[str] = []
     ts = time.strftime("%Y-%m-%d %H:%M UTC", time.gmtime())
     L.append("# Penetration Test Report")
@@ -301,7 +311,28 @@ def _markdown(e, findings, chains, tools, hosts, tech, cov, vsum, overall,
     L.append("")
 
     # 7. Appendix
-    L.append("## 7. Appendix")
+    # What the test looked like from the defender's side. A client should be
+    # able to check this against their own monitoring: if nothing in this
+    # section appears in their logs, that is a finding of its own.
+    lines = []
+    try:
+        from app.reporting.footprint import summarise
+        lines = summarise(footprint or {})
+    except Exception:  # noqa: BLE001 - a report must still render
+        lines = []
+    if lines:
+        L.append("## 7. Test Footprint")
+        L.append("")
+        L.append("What this assessment looked like from the outside. Compare it "
+                 "against your own detection: activity listed here that your "
+                 "monitoring did not record is a visibility gap worth closing.")
+        L.append("")
+        for line in lines:
+            L.append(f"- {line}")
+        L.append("")
+        L.append("## 8. Appendix")
+    else:
+        L.append("## 7. Appendix")
     L.append("")
     L.append(f"- Tools: {', '.join(tools) or 'n/a'}")
     L.append("- Limitations: automated assessment with human-validated findings; "

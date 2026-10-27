@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import secrets
 import time
 from typing import List, Optional
 
@@ -185,4 +186,17 @@ def _row_to_job(row) -> Job:
 
 
 def new_job_id() -> str:
-    return f"job_{int(time.time()*1000)}"
+    """A unique job id.
+
+    The millisecond timestamp alone was NOT unique. The orchestrator launches
+    a whole batch in a tight loop, so two jobs created in the same millisecond
+    collided on the primary key and the second insert raised. The engagement
+    and staged-PoC ids already carried randomness for this reason; this one
+    was the odd one out. The timestamp prefix is kept so ids still sort by
+    creation time.
+    """
+    # token_hex(8), not (3). Three bytes is 16.7M values, and a batch can
+    # emit hundreds of ids inside one millisecond - enough for a birthday
+    # collision roughly once every few thousand jobs, which is exactly the
+    # kind of rare silent loss that is impossible to debug later.
+    return f"job_{int(time.time()*1000)}_{secrets.token_hex(8)}"
