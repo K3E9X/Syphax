@@ -398,23 +398,29 @@ async def run_engagement_loop(run_id: str) -> dict:
                     # the leads to change what gets scanned.
                     if current_phase == PHASE_VULN:
                         await _materialise_js(engagement, run)
+                        await _beat(run, runs)
                         # Parameters BEFORE the injection tests are planned.
                         # See _discover_params: every injection item in the
                         # catalog applies only to an endpoint that has them.
                         await _discover_params(engagement, run)
+                        await _beat(run, runs)
                         # The API schema, for the same reason: it is built from
                         # the traffic recon and mapping just captured, and the
                         # contract tests that read it are planned next.
                         await _synthesise_api_schema(engagement, run)
+                        await _beat(run, runs)
                         # The forgotten versions, before the catalog is applied
                         # to the surface: finding /api/v1 and not scanning it
                         # would be worse than not finding it.
                         await _hunt_shadow_apis(engagement, run)
+                        await _beat(run, runs)
                         # P0-1: the traffic analysers, HERE rather than only
                         # at the end. Read-only ones only - the writing ones
                         # wait for the exploitation checkpoint below.
-                        await _analyse_traffic(engagement, run)
+                        await _analyse_traffic(engagement, run, runs)
+                        await _beat(run, runs)
                         await _run_correlation(engagement, run, executor, runs)
+                        await _beat(run, runs)
 
                 # Human checkpoint before exploitation (spec §11 approval).
                 if need_approval and batch[0].phase == PHASE_EXPLOIT:
@@ -430,7 +436,7 @@ async def run_engagement_loop(run_id: str) -> dict:
                     # Approved. The analysers that WRITE to the target or
                     # burst it can run now, and their leads reach the board
                     # before the exploitation batches that follow this one.
-                    await _analyse_traffic(engagement, run, active=True)
+                    await _analyse_traffic(engagement, run, runs, active=True)
 
                 # Launch the batch (respecting the remaining job budget).
                 launched_ids: List[str] = []
@@ -895,6 +901,23 @@ _ANALYSED: "OrderedDict[str, set]" = OrderedDict()
 _ANALYSED_MAX = 64
 
 
+async def _beat(run, runs) -> None:
+    """Refresh the run's heartbeat. Never raises.
+
+    The reaper marks a run 'interrupted' after STALE_AFTER_SECONDS without
+    one, and the heartbeat is taken ONCE per iteration - before the
+    phase-transition block. That block can take minutes: materialising the JS,
+    probing for parameters, synthesising a schema, hunting shadow APIs, and
+    now fourteen traffic analysers. A long pre-step must not be mistaken for a
+    dead loop and have its run killed out from under it.
+    """
+    try:
+        run.heartbeat_at = time.time()
+        await runs.update(run)
+    except Exception:  # noqa: BLE001 - a heartbeat is not worth failing a run
+        logger.debug("could not refresh the heartbeat")
+
+
 # Consecutive iterations that add no new fact before the run says so out loud.
 # Three, not one: a single quiet iteration is normal (a long scan finishing),
 # three in a row is a loop.
@@ -971,7 +994,8 @@ async def _report_stall(engagement, run, seen: Dict[str, Any]) -> None:
         run_id=run.id, level=events.LEVEL_INFO)
 
 
-async def _analyse_traffic(engagement, run, *, active: bool = False) -> None:
+async def _analyse_traffic(engagement, run, runs=None, *,
+                           active: bool = False) -> None:
     """Run the traffic analysers DURING the engagement (P0-1).
 
     They used to run once, from _finalize_engagement. So every finding they
@@ -1006,12 +1030,20 @@ async def _analyse_traffic(engagement, run, *, active: bool = False) -> None:
     try:
         from app.analysis import (ACTIVE_STEPS, FINAL_ONLY_STEPS,
                                   run_analysis)
+        # One heartbeat per analyser: a single slow one must not cost the
+        # whole run, which is what happens when the reaper sees ten minutes
+        # of silence.
+        async def _alive(_name):
+            if runs is not None:
+                await _beat(run, runs)
+
         if active:
             result = await run_analysis(engagement.id, allow_active=True,
-                                        only=ACTIVE_STEPS)
+                                        only=ACTIVE_STEPS, on_step=_alive)
         else:
             result = await run_analysis(engagement.id, allow_active=False,
-                                        skip=ACTIVE_STEPS | FINAL_ONLY_STEPS)
+                                        skip=ACTIVE_STEPS | FINAL_ONLY_STEPS,
+                                        on_step=_alive)
     except Exception:  # noqa: BLE001 - analysis must never fail the run
         logger.exception("[%s] mid-run traffic analysis failed", run.id)
         return

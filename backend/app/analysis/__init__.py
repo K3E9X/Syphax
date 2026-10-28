@@ -89,13 +89,20 @@ FINAL_ONLY_STEPS = frozenset({"llm_recon"})
 
 async def run_analysis(engagement_id: str, *, allow_active: bool = True,
                        only: Optional[Iterable[str]] = None,
-                       skip: Optional[Iterable[str]] = None) -> Dict[str, Dict]:
+                       skip: Optional[Iterable[str]] = None,
+                       on_step=None) -> Dict[str, Dict]:
     """Run the traffic-driven analyzers. Each is isolated so a failure in one
     (e.g. malformed flow) doesn't abort the rest.
 
     `allow_active` lets the caller suppress the analyzers that send crafted
     exploit payloads (cve_checks) when exploitation was denied/stopped - they
     also self-gate on allow_active_exploit, this is the per-run override.
+
+    `on_step` is awaited after each analyser with its name. The caller uses it
+    to prove it is still alive: a full pass is fourteen analysers over the
+    captured flows and can take minutes, and the orchestrator's reaper marks a
+    run 'interrupted' after ten minutes without a heartbeat. A long analysis
+    must not look like a dead loop.
 
     `only` / `skip` select which steps run, which is what lets this be called
     more than once in a run. It used to be called exactly once, from
@@ -194,6 +201,11 @@ async def run_analysis(engagement_id: str, *, allow_active: bool = True,
         except Exception:  # noqa: BLE001
             logger.exception("[%s] analyzer %s failed", engagement_id, name)
             out[name] = {"error": 1}
+        if on_step is not None:
+            try:
+                await on_step(name)
+            except Exception:  # noqa: BLE001 - a heartbeat is not worth a failure
+                logger.debug("[%s] on_step after %s failed", engagement_id, name)
     return out
 
 

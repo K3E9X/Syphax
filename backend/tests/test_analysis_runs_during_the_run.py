@@ -94,7 +94,7 @@ def test_the_active_pass_runs_only_after_the_approval():
     from app.orchestrator import loop
     src = inspect.getsource(loop.run_engagement_loop)
     approval = src.index("_await_exploit_approval")
-    active = src.index("_analyse_traffic(engagement, run, active=True)")
+    active = src.index("_analyse_traffic(engagement, run, runs, active=True)")
     assert approval < active, (
         "the writing analysers would run before the human approved "
         "exploitation")
@@ -104,7 +104,7 @@ def test_a_denied_approval_never_reaches_the_active_pass():
     from app.orchestrator import loop
     src = inspect.getsource(loop.run_engagement_loop)
     denied = src.index('run.stop_reason = "exploit_denied"')
-    active = src.index("_analyse_traffic(engagement, run, active=True)")
+    active = src.index("_analyse_traffic(engagement, run, runs, active=True)")
     between = src[denied:active]
     assert "break" in between, (
         "a denied approval must leave the loop before the active analysers")
@@ -114,7 +114,7 @@ def test_the_read_only_pass_runs_when_vuln_analysis_starts():
     from app.orchestrator import loop
     src = inspect.getsource(loop.run_engagement_loop)
     phase = src.index("if current_phase == PHASE_VULN:")
-    call = src.index("await _analyse_traffic(engagement, run)")
+    call = src.index("await _analyse_traffic(engagement, run, runs)")
     exploit = src.index("batch[0].phase == PHASE_EXPLOIT")
     assert phase < call < exploit
 
@@ -191,3 +191,69 @@ def test_the_two_passes_do_not_block_each_other():
     loop._ANALYSED["r1"] = {"read-only"}
     assert "active" not in loop._ANALYSED["r1"]
     loop._ANALYSED.clear()
+
+
+# ---- a long pre-step must not look like a dead loop -------------------
+
+def test_the_transition_block_heartbeats_between_steps():
+    """The heartbeat is taken ONCE per iteration, before this block. The block
+    materialises JS, probes for parameters, synthesises a schema, hunts shadow
+    APIs and runs fourteen analysers - and the reaper marks a run
+    'interrupted' after ten minutes of silence. Without a beat in here, a slow
+    pre-step gets its own run killed out from under it."""
+    from app.orchestrator import loop
+    src = inspect.getsource(loop.run_engagement_loop)
+    block = src[src.index("if current_phase == PHASE_VULN:"):]
+    block = block[:block.index("# Human checkpoint")]
+    for step in ("_materialise_js", "_discover_params", "_synthesise_api_schema",
+                 "_hunt_shadow_apis", "_analyse_traffic", "_run_correlation"):
+        # The CALL, not the name: every one of these is also mentioned in a
+        # comment above itself, and matching the comment measures the wrong
+        # distance.
+        call = f"await {step}("
+        assert call in block, f"{step} is no longer called here"
+        after = block[block.index(call):]
+        assert "_beat(run, runs)" in after[:200], (
+            f"{step} is not followed by a heartbeat")
+
+
+def test_one_slow_analyser_does_not_cost_the_run():
+    """Fourteen analysers run back to back inside one pre-step, so beating
+    only around the step is not enough - one of them can exceed the window on
+    its own."""
+    from app.orchestrator import loop
+    src = inspect.getsource(loop._analyse_traffic)
+    assert "on_step=_alive" in src
+    assert "_beat(run, runs)" in src
+
+
+def test_run_analysis_reports_progress_between_analysers():
+    from app.analysis import run_analysis
+    src = inspect.getsource(run_analysis)
+    assert "on_step" in src
+    # and a failing callback never breaks the analysis
+    tail = src[src.index("if on_step is not None:"):]
+    assert "except Exception" in tail
+
+
+def test_the_heartbeat_never_fails_a_run():
+    from app.orchestrator import loop
+    src = inspect.getsource(loop._beat)
+    assert "except Exception" in src
+
+
+@pytest.mark.asyncio
+async def test_on_step_follows_the_steps_that_actually_ran():
+    """It reports progress, so it must not report progress that did not
+    happen: a selector matching nothing runs nothing and beats nothing."""
+    from app.analysis import run_analysis
+
+    seen = []
+
+    async def _noted(name):
+        seen.append(name)
+
+    result = await run_analysis("e", allow_active=False,
+                                only={"no-such-analyser"}, on_step=_noted)
+    assert result == {}
+    assert seen == []
