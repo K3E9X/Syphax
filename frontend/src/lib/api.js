@@ -139,6 +139,10 @@ export const api = {
     }),
     findings: (id) => request(`/api/engagements/${id}/findings`),
     chains: (id) => request(`/api/engagements/${id}/chains`),
+    // The exploitation blackboard: the chainable facts a run established.
+    // Identity values come back redacted - the board proves the run HAS a
+    // credential, it never reprints one.
+    leads: (id) => request(`/api/engagements/${id}/leads`),
     reportJson: (id) => request(`/api/engagements/${id}/report.json`),
     verifyProof: (fid) => request(`/api/findings/${fid}/verify-proof`, { method: 'POST' }),
     memory: (id) => request(`/api/engagements/${id}/memory`),

@@ -166,6 +166,14 @@ async def engagement_state(engagement_id: str) -> dict:
 
     validated = await _vf.list(engagement_id)
     chains = await _chains.list(engagement_id)
+    # The blackboard, alongside the rest of the run's working state: it
+    # refreshes with everything else instead of needing its own fetch and its
+    # own lifecycle. Identity values are redacted by to_public().
+    try:
+        from app.orchestrator.blackboard import Blackboard
+        leads = [lead.to_public() for lead in await Blackboard(engagement_id).leads()]
+    except Exception:  # noqa: BLE001 - the board never fails the state view
+        leads = []
     validation_summary = await _vf.summary(engagement_id)
     from app.llm import usage as llm_usage
     llm = await llm_usage.summary(engagement_id)
@@ -257,6 +265,7 @@ async def engagement_state(engagement_id: str) -> dict:
             [_vf_public(v) for v in validated]),
         "validation_summary": validation_summary,
         "chains": chains,
+        "leads": leads,
         "categories": _CATEGORY_META,
     }
 

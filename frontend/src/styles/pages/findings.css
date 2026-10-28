@@ -72,6 +72,14 @@
 .frefs { margin: 8px 0 2px; }
 .ftag { display: inline-block; padding: 2px 7px; border: 1px solid var(--border); border-radius: 999px; background: var(--surface); font-family: var(--font-mono); font-size: 10px; color: var(--text-secondary); text-decoration: none; }
 a.ftag:hover { color: var(--text-primary); border-color: var(--text-faint); }
+/* A lead that grants the run an identity it did not start with - the
+   black-box to grey-box bridge. Marked because it is the single most
+   consequential thing that can land on the board. */
+.ftag--id { border-color: var(--term-ok, #22c55e); color: var(--term-ok, #22c55e); }
+/* A lead a tool has already been run against. Dimmed rather than hidden: the
+   fact is still true and still in the report, it is just no longer the thing
+   the strategist reaches for first. */
+.row--muted td { opacity: .55; }
 .shadow__h { display: flex; align-items: center; gap: 8px; font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--text-secondary); margin-bottom: 6px; }
 .shadow__tag { font-family: var(--font-mono); text-transform: none; letter-spacing: 0; color: var(--text-primary); }
 .shadow__row { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px; color: var(--text-secondary); }

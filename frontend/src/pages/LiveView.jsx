@@ -6,7 +6,7 @@ import TokenPanel from '../components/TokenPanel.jsx';
 import { Notice, activateOnKey } from '../components/ui.jsx';
 import KnowledgeMap from '../components/KnowledgeMap.jsx';
 import { mapFromFindings } from '../lib/knowledgeMap.js';
-import { AuditTrail, ChainList, CoverageMatrix } from '../components/live/Panels.jsx';
+import { AuditTrail, ChainList, CoverageMatrix, LeadBoard } from '../components/live/Panels.jsx';
 
 const PHASES = ['recon', 'mapping', 'vuln_analysis', 'exploitation', 'validation'];
 const PHASE_LABEL = { recon: 'Recon', mapping: 'Mapping', vuln_analysis: 'Vuln analysis', exploitation: 'Exploitation', validation: 'Validation' };
@@ -209,6 +209,7 @@ export default function LiveView() {
   const findingsAll = s.validated_findings || [];
   const km = mapFromFindings(findingsAll, { confirmed: (f) => f.status === 'confirmed' });
   const chains = s.chains || [];
+  const leads = s.leads || [];
   const active = run0.status === 'running' || run0.status === 'queued';
 
   const info = events.filter((e) => e.level !== 'verbose');
@@ -225,6 +226,7 @@ export default function LiveView() {
     { key: 'coverage', label: 'Coverage', count: coverage.length },
     { key: 'jobs', label: 'Jobs', count: jobs.length },
     { key: 'chains', label: 'Chains', count: chains.length },
+    { key: 'leads', label: 'Leads', count: leads.length },
     { key: 'tokens', label: 'Tokens' },
     { key: 'audit', label: 'Audit' },
   ];
@@ -537,6 +539,7 @@ export default function LiveView() {
           )}
 
           {tab === 'chains' && <ChainList chains={chains} />}
+          {tab === 'leads' && <LeadBoard leads={leads} />}
           {tab === 'audit' && <AuditTrail audit={audit} time={time} />}
           {tab === 'tokens' && (
             <TokenPanel usage={usage.data} loading={usage.loading} error={usage.error} onRetry={usage.reload} />

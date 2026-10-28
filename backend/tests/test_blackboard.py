@@ -112,3 +112,31 @@ def test_the_schema_is_registered_at_import():
     from app import db
     from app.orchestrator import blackboard  # noqa: F401
     assert any("CREATE TABLE IF NOT EXISTS leads" in s for s in db._schemas)
+
+
+def test_the_state_endpoint_carries_the_board():
+    """The agentic layer was invisible: syphax grew a blackboard, a strategist
+    reading it and a consumption loop, and the only way to see any of it was a
+    psql prompt. The route existed and nothing called it.
+
+    It rides on /state rather than needing its own fetch, so it refreshes with
+    the rest of the run's working state."""
+    import inspect
+
+    from app.api import orchestrator
+    src = inspect.getsource(orchestrator.engagement_state)
+    assert "Blackboard" in src
+    assert '"leads": leads' in src
+    # and a board failure never takes the state view down with it
+    block = src[src.index("Blackboard"):]
+    assert "except Exception" in block
+
+
+def test_the_state_view_shows_only_the_redacted_values():
+    """to_public(), not the raw lead: an identity value must not reach the
+    browser just because it travelled through a different endpoint."""
+    import inspect
+
+    from app.api import orchestrator
+    src = inspect.getsource(orchestrator.engagement_state)
+    assert "lead.to_public()" in src

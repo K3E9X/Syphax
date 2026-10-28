@@ -8,6 +8,67 @@
  */
 import { Async, Card } from '../ui.jsx';
 
+/* The exploitation blackboard.
+ *
+ * The chainable facts a run established - a credential it proved works, an
+ * endpoint that answered without one, a parameter a tool confirmed injectable.
+ * The strategist reads these to decide what runs next, so this is the panel
+ * that answers "what does this run actually know, and has it acted on it".
+ *
+ * An empty board during a run is itself information: it means nothing found
+ * so far was chainable, so the plan is the plain methodology order.
+ */
+const IDENTITY_NOTE = 'An identity this run earned. Values are redacted: the '
+  + 'board proves the run holds one, it never reprints it.';
+
+export function LeadBoard({ leads }) {
+  const untouched = leads.filter((l) => !(l.consumed_by || []).length).length;
+  return (
+    <div className="card">
+      <div className="card__head">
+        <span className="card__title">Blackboard</span>
+        <span className="card__meta">
+          {leads.length} chainable fact(s) · {untouched} not yet acted on
+        </span>
+      </div>
+      <div className="tbl-scroll">
+        <table className="tbl">
+          <thead>
+            <tr><th>Kind</th><th>Value</th><th>Confidence</th><th>Found by</th><th>Acted on by</th></tr>
+          </thead>
+          <tbody>
+            {leads.map((l) => {
+              const acted = l.consumed_by || [];
+              return (
+                <tr key={l.id} className={acted.length ? 'row--muted' : undefined}>
+                  <td>
+                    <span className={'ftag' + (l.grants_identity ? ' ftag--id' : '')}
+                          title={l.grants_identity ? IDENTITY_NOTE : undefined}>
+                      {l.kind}
+                    </span>
+                  </td>
+                  <td className="mono" style={{ wordBreak: 'break-all' }}>{l.value}</td>
+                  <td className="mono">{Math.round((l.confidence || 0) * 100)}%</td>
+                  <td className="mono">{l.source || '-'}</td>
+                  <td className="mono">{acted.length ? acted.join(', ') : <span style={{ color: 'var(--text-faint)' }}>not yet</span>}</td>
+                </tr>
+              );
+            })}
+            {leads.length === 0 && (
+              <tr><td colSpan={5}><div className="empty">
+                Nothing on the board yet. A fact lands here when a tool confirms
+                something chainable &mdash; a working credential, an endpoint that
+                answered without one, a parameter confirmed injectable. Until
+                then the plan follows the plain methodology order.
+              </div></td></tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 export function ChainList({ chains }) {
   return (
     <div className="card">
